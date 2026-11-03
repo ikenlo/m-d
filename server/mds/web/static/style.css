@@ -343,7 +343,7 @@ tr.click:hover td { background: var(--surface-2); }
 .client-box { display: flex; align-items: center; gap: 12px; padding: 12px; border-radius: 10px; background: var(--surface-2); border: 1px solid var(--line); }
 @media (max-width: 600px) {
   .overlay { align-items: flex-end; }
-  .sheet { height: auto; max-height: 92vh; border-radius: 18px 18px 0 0; padding-bottom: calc(24px + env(safe-area-inset-bottom, 0px)); animation: rise .2s ease-out; }
+  .sheet { height: auto; max-height: 92%; border-radius: 18px 18px 0 0; padding-bottom: calc(24px + env(safe-area-inset-bottom, 0px)); animation: rise .2s ease-out; }
 }
 @keyframes fade { from { opacity: 0; } }
 @keyframes slide { from { transform: translateX(30px); opacity: .6; } }

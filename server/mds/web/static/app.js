@@ -311,10 +311,38 @@ function bugReportForm() {
     field("Опис", text),
     h("button", { type: "button", class: "btn", onclick: () => file.click() }, icon("image", "sm"), "Додати знімок екрана"), file, preview,
     send));
-  text.focus();
+  autoFocus(text);
 }
 
 // ============================================================ бічна панель
+// На телефонах (сенсорний екран) не відкриваємо клавіатуру автоматично — вона закриває вікно
+const isTouch = () => window.matchMedia && window.matchMedia("(pointer: coarse)").matches;
+function autoFocus(el, select = false) {
+  if (isTouch()) return;
+  select ? el.select() : el.focus();
+}
+
+// Вікно над клавіатурою: на iPhone клавіатура зменшує видиму область (visualViewport),
+// тож підганяємо підкладку під видиму частину екрана, а поле в фокусі прокручуємо в поле зору
+function fitToKeyboard(ov) {
+  const vv = window.visualViewport;
+  if (!vv) return () => {};
+  const fit = () => {
+    ov.style.top = vv.offsetTop + "px";
+    ov.style.height = vv.height + "px";
+    ov.style.bottom = "auto";
+  };
+  const onFocus = (e) => {
+    if (e.target.matches("input, textarea, select")) setTimeout(() => e.target.scrollIntoView({ block: "center", behavior: "smooth" }), 250);
+  };
+  vv.addEventListener("resize", fit);
+  vv.addEventListener("scroll", fit);
+  ov.addEventListener("focusin", onFocus);
+  fit();
+  return () => { vv.removeEventListener("resize", fit); vv.removeEventListener("scroll", fit); };
+}
+let unfitSheet = () => {};
+
 function openSheet(title, ...content) {
   closeSheet();
   const ov = h("div", { class: "overlay", id: "overlay", onclick: (e) => { if (e.target === ov) closeSheet(); } },
@@ -322,9 +350,10 @@ function openSheet(title, ...content) {
       h("div", { class: "sheet-head" }, h("h2", {}, title), h("button", { class: "x", onclick: closeSheet, "aria-label": "Закрити" }, icon("x"))),
       ...content));
   document.body.append(ov);
+  unfitSheet = fitToKeyboard(ov);
   return ov;
 }
-function closeSheet() { const o = document.getElementById("overlay"); if (o) o.remove(); }
+function closeSheet() { unfitSheet(); unfitSheet = () => {}; const o = document.getElementById("overlay"); if (o) o.remove(); }
 document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeSheet(); });
 // Масштабування сторінки вимкнено: програма має виглядати як застосунок
 ["gesturestart", "gesturechange", "gestureend"].forEach((ev) => document.addEventListener(ev, (e) => e.preventDefault(), { passive: false }));
@@ -644,7 +673,9 @@ function closeOrderSheet(a, onChange) {
   openSheet("Закрити замовлення",
     h("div", { class: "muted", style: { marginBottom: "10px" } }, `${a.service_name} · ${a.client.name}`),
     h("div", { class: "stack" }, field("Фактична вартість, ₴", amount), field("Спосіб оплати", methods), matsBox, btn));
-  amount.select();
+  autoFocus(amount, true);
+  // на телефоні: торкнулися суми — одразу виділяємо її, щоб ввести нову
+  amount.addEventListener("focus", () => setTimeout(() => amount.select(), 0));
 }
 
 function apptForm({ appt = null, master_id = null, date = today(), time = "10:00" } = {}, onChange) {
