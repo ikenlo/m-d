@@ -818,9 +818,11 @@ async function pendingBlock(onChange) {
       h("div", { class: "grow", style: { minWidth: "180px" } },
         h("div", {}, h("b", {}, a.client.name), " · ", h("a", { href: "tel:" + a.client.phone }, a.client.phone)),
         h("div", { class: "muted small" }, a.service_name, isMgr ? ` · ${a.master_name}` : "", a.source === "telegram" ? " · з Telegram" : ""),
-        a.awaiting_client ? h("span", { class: "chip st-in_progress", style: { marginTop: "4px", whiteSpace: "normal" } }, "запропоновано інший час — чекаємо відповіді клієнта") : null),
+        a.awaiting_client ? h("div", { class: "chip st-in_progress", style: { marginTop: "6px", whiteSpace: "normal", borderRadius: "8px" } }, `Запропоновано ${hm(a.starts_at)} — чекаємо відповіді клієнта в боті`) : null),
       h("div", { class: "row" },
-        h("button", { class: "btn sm primary", onclick: async () => { await run(() => api.post(`/api/appointments/${a.id}/status`, { status: "confirmed" }), "Запис підтверджено"); onChange(); } }, icon("ok", "sm"), "Підтвердити"),
+        h("button", { class: "btn sm primary", title: a.awaiting_client ? "Якщо клієнт погодився телефоном, а не в боті" : null,
+          onclick: async () => { await run(() => api.post(`/api/appointments/${a.id}/status`, { status: "confirmed" }), "Запис підтверджено"); onChange(); } },
+          icon("ok", "sm"), a.awaiting_client ? "Клієнт погодився" : "Підтвердити"),
         h("button", { class: "btn sm", onclick: () => proposeForm(a, onChange) }, icon("clock", "sm"), "Інший час"),
         h("button", { class: "btn sm danger", onclick: () => declineBusy(a, onChange) }, "Зайнято")))));
 }
