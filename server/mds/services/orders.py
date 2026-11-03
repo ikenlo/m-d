@@ -71,7 +71,11 @@ def _order_snapshot(o: Order) -> dict:
 
 
 def _build_materials(s: Session, items: list[dict]) -> list[OrderMaterial]:
-    """items: [{material_id?, name?, qty (може бути дробовим), unit_cost?}]"""
+    """items: [{material_id?, name?, qty, unit_cost?}]
+
+    Матеріал зі складу (material_id): qty — у базових одиницях матеріалу (г / мл / шт),
+    собівартість рахується від ціни упаковки. Довільний матеріал (без material_id):
+    qty — штуки, unit_cost — ціна за штуку; на склад не впливає."""
     out = []
     for it in items or []:
         qty_milli = round(float(it.get("qty", 1)) * 1000)
@@ -89,7 +93,13 @@ def _build_materials(s: Session, items: list[dict]) -> list[OrderMaterial]:
         unit_cost = int(unit_cost)
         if unit_cost < 0 or not name:
             raise ValidationError("Невірні дані матеріалу")
-        total = (unit_cost * qty_milli + 500) // 1000
+        if mat is not None and it.get("unit_cost") is None:
+            from .stock import display_name, line_cost
+
+            name = display_name(mat) if not it.get("name") else name
+            total = line_cost(mat, qty_milli)
+        else:
+            total = (unit_cost * qty_milli + 500) // 1000
         out.append(OrderMaterial(material_id=mat.id if mat else None, name=name, qty=qty_milli, unit_cost=unit_cost, total=total))
     return out
 
@@ -192,6 +202,9 @@ def close_order(
         s.flush()
     except IntegrityError:
         raise Conflict("Замовлення вже проведено", code="already_closed") from None
+    from .stock import apply_order
+
+    apply_order(s, actor, o)
     ledger(
         s, actor, "order_closed", "order", o.id,
         master_id=master.id, amount=amount, master_amount=split.master,
@@ -221,8 +234,12 @@ def correct_order(s: Session, actor: Actor, order_id: int, data: dict, reason: s
     share_bp = int(data.get("share_bp", o.share_bp))
     mode = data.get("materials_mode", o.materials_mode)
     if "materials" in data:
+        from .stock import apply_order, reverse_order
+
+        reverse_order(s, actor, o)
         o.materials = _build_materials(s, data["materials"])
         s.flush()
+        apply_order(s, actor, o)
     mat_total = sum(m.total for m in o.materials)
     split = compute_split(amount, mat_total, share_bp, mode)
 

@@ -62,11 +62,13 @@ def _parse_hm(v: str) -> time:
 
 
 def working_hours(s: Session, master: User, day: date) -> tuple[datetime, datetime] | None:
-    sched = master.schedule if master.schedule is not None else get_setting(s, "schedule")
-    span = (sched or {}).get(str(day.weekday()))
-    if not span:
+    """Робочі години майстра на дату: зміна на дату → шаблон майстра → графік салону."""
+    from .schedule import day_span
+
+    start, end, _ = day_span(s, master, day)
+    if not start:
         return None
-    return datetime.combine(day, _parse_hm(span[0])), datetime.combine(day, _parse_hm(span[1]))
+    return datetime.combine(day, _parse_hm(start)), datetime.combine(day, _parse_hm(end))
 
 
 def _overlapping(

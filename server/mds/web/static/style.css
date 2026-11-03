@@ -66,6 +66,7 @@
 
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; }
+html { touch-action: manipulation; -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
 body {
   background: var(--bg);
   color: var(--ink);
@@ -407,3 +408,6 @@ details[open] > summary svg:last-child { transform: rotate(90deg); }
   .kpi-tile { padding: 12px; }
   .appt { flex-wrap: wrap; }
 }
+
+/* iOS збільшує сторінку при фокусі на полі з шрифтом < 16px — тримаємо 16px на телефонах */
+@media (max-width: 900px) { input, select, textarea { font-size: 16px; } }
