@@ -78,7 +78,9 @@ def _build_materials(s: Session, items: list[dict]) -> list[OrderMaterial]:
     qty — штуки, unit_cost — ціна за штуку; на склад не впливає."""
     out = []
     for it in items or []:
-        qty_milli = round(float(it.get("qty", 1)) * 1000)
+        from .stock import to_milli
+
+        qty_milli = to_milli(it.get("qty", 1))
         if qty_milli <= 0:
             raise ValidationError("Кількість матеріалу має бути більшою за 0")
         mat = None

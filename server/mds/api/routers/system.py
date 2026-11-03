@@ -3,11 +3,13 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy.orm import Session
 
+from ... import __version__
 from ...models import Role
-from pydantic import BaseModel, Field
+from pydantic import Field
 
 from ...services import backup, bugreport, journal
 from ...services.common import Actor, all_settings, update_settings
+from ..schemas import BaseModel
 from ..deps import get_actor, get_session
 
 router = APIRouter(prefix="/api", tags=["system"])
@@ -65,4 +67,5 @@ def bug_report(body: BugReportIn, request: Request, actor: Actor = Depends(get_a
 
 @router.get("/health")
 def health():
-    return {"ok": True}
+    """Перевірка роботи сервера; version — щоб звірити розгорнуту версію з тегом у Git."""
+    return {"ok": True, "version": __version__}

@@ -544,6 +544,16 @@ def client_rebook(s: Session, actor: Actor, old_appt_id: int, starts_at: datetim
     if actor.role != "client":
         raise Forbidden("Лише для клієнта")
     old = get_appointment(s, actor, old_appt_id)  # перевіряє, що запис цього клієнта
+    if old.status != ApptStatus.CANCELLED:
+        raise Conflict("Ця пропозиція вже неактуальна")
+    # захист від подвійного натискання / вибору кількох запропонованих часів
+    dup = s.scalar(select(Appointment.id).where(
+        Appointment.client_id == old.client_id, Appointment.master_id == old.master_id,
+        Appointment.service_id == old.service_id, Appointment.starts_at >= clock.now(),
+        Appointment.status.in_((ApptStatus.PENDING, ApptStatus.CONFIRMED)),
+    ))
+    if dup:
+        raise Conflict("Ви вже записані — новий запис не потрібен. Перенести його можна в меню бота.")
     return create_appointment(s, actor, master_id=old.master_id, service_id=old.service_id,
                               starts_at=starts_at, client_id=old.client_id)
 

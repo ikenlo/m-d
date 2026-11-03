@@ -5,7 +5,7 @@ from datetime import date
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
-from ...errors import ValidationError
+from ...errors import Forbidden
 from ...models import Order, Role
 from ...services import analytics, expenses, journal, orders
 from ...services.common import Actor, get_or_404
@@ -33,7 +33,7 @@ def list_orders(period: str | None = None, date_from: date | None = None, date_t
 def get_order(order_id: int, actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
     o = get_or_404(s, Order, order_id, "Замовлення")
     if not actor.is_director and o.master_id != actor.user_id:
-        raise ValidationError("Недоступно")
+        raise Forbidden("Немає доступу до цього замовлення")
     out = orders.order_public(o)
     if actor.is_director:
         out["history"] = journal.audit_list(s, actor, entity="order", entity_id=o.id)

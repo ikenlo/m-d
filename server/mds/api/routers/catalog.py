@@ -55,10 +55,7 @@ def search_clients(q: str = "", actor: Actor = Depends(get_actor), s: Session = 
 
 @router.post("/clients", status_code=201)
 def create_client(body: ClientIn, actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
-    c = catalog.get_or_create_client(s, actor, body.name, body.phone)
-    if body.notes:
-        c.notes = body.notes
-    return catalog.client_public(c)
+    return catalog.client_public(catalog.create_client(s, actor, body.name, body.phone, body.notes))
 
 
 @router.patch("/clients/{client_id}")

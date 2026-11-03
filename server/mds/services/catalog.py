@@ -240,6 +240,18 @@ def get_or_create_client(
     return c
 
 
+def create_client(s: Session, actor: Actor, name: str, phone: str, notes: str | None = None) -> Client:
+    """Додати клієнта вручну (директор/адміністратор). Існуючий номер — повертає наявного клієнта;
+    нотатки змінюються лише з записом у журнал."""
+    actor.require(Role.DIRECTOR, Role.ADMIN)
+    c = get_or_create_client(s, actor, name, phone)
+    if notes and notes != c.notes:
+        before = c.notes
+        c.notes = notes
+        audit(s, actor, "client", c.id, "update", {"notes": before}, {"notes": notes})
+    return c
+
+
 def update_client(s: Session, actor: Actor, client_id: int, data: dict) -> Client:
     actor.require(Role.DIRECTOR, Role.ADMIN)
     c: Client = get_or_404(s, Client, client_id, "Клієнта")

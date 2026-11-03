@@ -8,8 +8,14 @@
 "use strict";
 
 // ============================================================ API
+// сховище може бути недоступне (приватний режим, заборона сайтам) — програма працює і без нього
+const store = {
+  get(k) { try { return localStorage.getItem(k); } catch (_) { return null; } },
+  set(k, v) { try { localStorage.setItem(k, v); } catch (_) { /* лише на сесію */ } },
+  del(k) { try { localStorage.removeItem(k); } catch (_) { /* немає сховища */ } },
+};
 const api = {
-  token: localStorage.getItem("mds_token"),
+  token: store.get("mds_token"),
   async req(method, path, body) {
     const opts = { method, headers: {} };
     if (this.token) opts.headers.Authorization = "Bearer " + this.token;
@@ -402,7 +408,7 @@ function currentRoute() { return (location.hash.replace(/^#\/?/, "") || "").spli
 
 function logout() {
   api.token = null;
-  localStorage.removeItem("mds_token");
+  store.del("mds_token");
   state.user = null;
   renderLogin();
 }
@@ -448,7 +454,7 @@ function renderLogin() {
     try {
       const r = await api.post("/api/auth/login", { username: user.value, password: pass.value });
       api.token = r.token;
-      localStorage.setItem("mds_token", r.token);
+      store.set("mds_token", r.token);
       location.hash = "";
       await boot();
     } catch (err) {

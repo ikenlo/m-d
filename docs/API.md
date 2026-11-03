@@ -16,7 +16,8 @@
 | `POST /api/users/{id}/reset-password` | директор | Скидання пароля |
 | `GET/POST /api/services`, `PATCH /api/services/{id}` | читання — усі; зміна — директор | Послуги |
 | `GET/POST /api/materials`, `PATCH /api/materials/{id}` | те саме | Матеріали |
-| `GET/POST /api/clients`, `GET/PATCH /api/clients/{id}` | персонал | Клієнти та історія відвідувань |
+| `GET /api/clients`, `GET /api/clients/{id}` | персонал (майстер — лише свої клієнти) | Клієнти та історія відвідувань |
+| `POST /api/clients`, `PATCH /api/clients/{id}` | директор, адміністратор | Додати / змінити клієнта (із записом у журнал) |
 | `GET /api/appointments?date_from&date_to&master_id` | персонал (майстер — лише свої) | Календар |
 | `GET /api/availability?master_id&service_id&day` | персонал | Вільні слоти |
 | `POST /api/appointments`, `PATCH /api/appointments/{id}` | персонал | Створення / перенесення / зміна |
@@ -33,4 +34,4 @@
 | `GET/PUT /api/settings` | читання — усі; зміна — директор | Налаштування |
 | `GET /api/journal/ledger`, `GET /api/journal/audit` | директор | Журнали |
 | `GET/POST /api/backups` | директор | Резервні копії |
-| `GET /api/health` | — | Перевірка роботи |
+| `GET /api/health` | — | Перевірка роботи; `version` — розгорнута версія |
