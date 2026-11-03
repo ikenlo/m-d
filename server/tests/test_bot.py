@@ -320,13 +320,17 @@ def test_master_flow_add_list_close_earn_shift(h, db, pins):
 
     # закрити замовлення з іншою сумою
     h.click(f"s:cl:{appt_id}")
+    h.send("Анна Коваленко")
     h.send("620")
+    assert [b.text for b in h.session.buttons()][:2] == ["💵 Готівка", "💳 Картка"]
+    assert not any("Переказ" in b.text for b in h.session.buttons())
     h.click_text("💵 Готівка")
     assert "Замовлення закрито" in h.session.texts()[-1] and "310 ₴" in h.session.texts()[-1]
     h.click(f"s:pm:{appt_id}:62000:cash")  # повторне натискання — без задвоєння
     with db.session() as s:
         from mds.models import Order
         assert s.query(Order).count() == 1
+        assert s.get(Appointment, appt_id).client.name == "Анна Коваленко"
 
     h.click("s:earn")
     assert "Сьогодні: <b>310 ₴</b>" in h.session.texts()[-1]

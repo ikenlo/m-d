@@ -427,28 +427,40 @@ def build_staff_router() -> Router:
                     await cb.answer(EXPIRED, show_alert=True)
                     return
                 a = bookings.get_appointment(s, Actor.of(u), appt_id)
-                price, title = a.price, f"{a.service.name} · {a.client.name}"
+                price, service, client_name = a.price, a.service.name, a.client.name
         except DomainError as e:
             await cb.answer(e.message, show_alert=True)
             return
         await state.set_state(CloseOrder.amount)
-        await state.set_data({"appt_id": appt_id})
+        await state.set_data({"appt_id": appt_id, "amount": price})
         await cb.message.edit_text(
-            f"💳 <b>Закрити замовлення</b>\n{v.e(title)}\n\nСума: <b>{fmt(price)}</b>\n"
-            "Оберіть спосіб оплати. Якщо сума інша — надішліть її числом (напр. 750).",
+            f"💳 <b>Закрити замовлення</b>\n{v.e(service)}\n👤 Клієнт: <b>{v.e(client_name)}</b>\n\nСума: <b>{fmt(price)}</b>\n\n"
+            "• Ім'я неправильне (нікнейм з Telegram)? Надішліть <b>ім'я та прізвище</b> повідомленням.\n"
+            "• Сума інша? Надішліть її числом (напр. 750).\n"
+            "Потім оберіть спосіб оплати:",
             reply_markup=v.pay_method_kb(appt_id, price),
         )
         await cb.answer()
 
     @router.message(CloseOrder.amount)
     async def close_amount(message: Message, state: FSMContext):
+        """Число — нова сума; текст — ім'я та прізвище клієнта."""
         data = await state.get_data()
-        amount = _parse_amount(message.text or "")
-        if amount is None:
-            await message.answer("Надішліть суму числом, наприклад 750 або 750.50")
+        text = (message.text or "").strip()
+        amount = _parse_amount(text)
+        if amount is not None:
+            await state.update_data(amount=amount)
+        elif len(text) >= 2 and not text.startswith("/"):
+            name = " ".join(text.split())[:128]
+            await state.update_data(client_name=name)
+        else:
+            await message.answer("Надішліть суму числом (750) або ім'я та прізвище клієнта.")
             return
-        await message.answer(f"Сума: <b>{fmt(amount)}</b>. Оберіть спосіб оплати:",
-                             reply_markup=v.pay_method_kb(data["appt_id"], amount))
+        data = await state.get_data()
+        who = data.get("client_name")
+        await message.answer(
+            (f"👤 Клієнт: <b>{v.e(who)}</b>\n" if who else "") + f"Сума: <b>{fmt(data['amount'])}</b>. Оберіть спосіб оплати:",
+            reply_markup=v.pay_method_kb(data["appt_id"], data["amount"]))
 
     @router.callback_query(F.data.startswith("s:pm:"))
     async def close_do(cb: CallbackQuery, db: Database, staff: StaffSessions, state: FSMContext):
@@ -459,8 +471,10 @@ def build_staff_router() -> Router:
                 if not u:
                     await cb.answer(EXPIRED, show_alert=True)
                     return
+                data = await state.get_data()
                 o = orders.close_order(s, Actor.of(u), int(appt_id), amount=int(amount), payment_method=method,
-                                       idempotency_key=f"tg-close-{appt_id}")
+                                       idempotency_key=f"tg-close-{appt_id}",
+                                       client_name=data.get("client_name") if str(data.get("appt_id")) == appt_id else None)
                 text = (f"✅ <b>Замовлення закрито</b>\n{v.e(o.service.name)} · {v.e(o.client.name)}\n"
                         f"Сума: {fmt(o.amount)}\nЗаробіток майстра: <b>{fmt(o.master_earning)}</b>")
         except DomainError as e:

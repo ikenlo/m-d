@@ -145,6 +145,7 @@ class CloseOrderIn(BaseModel):
     payment_method: str
     materials: list[MaterialLine] = []
     idempotency_key: str | None = Field(default=None, max_length=64)
+    client_name: str | None = Field(default=None, max_length=128)  # ім'я та прізвище клієнта
 
 
 class OrderCorrectionIn(BaseModel):

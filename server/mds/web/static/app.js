@@ -91,7 +91,8 @@ const STATUS = {
   completed: "Завершено", cancelled: "Скасовано", no_show: "Не прийшов",
 };
 const SHIFT_STATUS = { open: "Відкрита", closed: "Очікує виплати", paid: "Виплачено" };
-const PAY = { cash: "Готівка", card: "Картка", transfer: "Переказ" };
+const PAY = { cash: "Готівка", card: "Картка", transfer: "Переказ" }; // «Переказ» — лише для старих записів
+const PAY_CHOICES = { cash: "Готівка", card: "Картка" };
 const ROLES = { director: "Директор", admin: "Адміністратор", master: "Майстер" };
 const MAT_MODES = {
   salon: "Матеріали за рахунок салону",
@@ -648,8 +649,18 @@ function closeOrderSheet(a, onChange) {
   const custom = [];
   const amount = h("input", { class: "huge", inputmode: "decimal", value: kopToInput(a.price) });
   const PAY_ICON = { cash: "banknote", card: "card", transfer: "transfer" };
-  const methods = h("div", { class: "choice" }, Object.entries(PAY).map(([k, t]) =>
+  const methods = h("div", { class: "choice", style: { gridTemplateColumns: "1fr 1fr" } }, Object.entries(PAY_CHOICES).map(([k, t]) =>
     h("button", { type: "button", onclick: (e) => { method = k; [...methods.children].forEach((b) => b.classList.remove("on")); e.currentTarget.classList.add("on"); } }, icon(PAY_ICON[k]), t)));
+  // ім'я та прізвище клієнта — для нормальної бази (з Telegram часто приходить нікнейм)
+  const [first0, ...rest0] = (a.client.name || "").split(/\s+/).filter(Boolean);
+  const firstName = h("input", { value: first0 || "", placeholder: "Ім'я", autocomplete: "off", autocapitalize: "words", id: "close-first" });
+  const lastName = h("input", { value: rest0.join(" "), placeholder: "Прізвище", autocomplete: "off", autocapitalize: "words", id: "close-last" });
+  const looksLikeNick = /[_@\d]|^[A-Za-z]+$/.test(a.client.name || "") || a.source === "telegram";
+  const clientBox = h("div", { class: "card", style: { padding: "12px", background: looksLikeNick ? "var(--warn-bg)" : null } },
+    h("div", { class: "row small", style: { marginBottom: "8px" } }, icon("user", "sm"), h("b", {}, "Клієнт"),
+      h("span", { class: "muted" }, a.client.phone),
+      looksLikeNick ? h("span", { class: "muted grow right" }, "перевірте ім'я — могло прийти з Telegram") : null),
+    h("div", { class: "form-grid", style: { gridTemplateColumns: "1fr 1fr" } }, firstName, lastName));
   const svc = state.services.find((s) => s.id === a.service_id) || {};
   const isColoring = /фарб|мелір|blonde|чорн|тон/i.test([svc.category, svc.subcategory, svc.name].join(" "));
   const matsBox = materialsPicker(mats, custom, { open: isColoring });
@@ -658,10 +669,12 @@ function closeOrderSheet(a, onChange) {
     const kop = toKop(amount.value);
     if (!(kop >= 0)) return toast("Вкажіть фактичну вартість", true);
     if (!method) return toast("Оберіть спосіб оплати", true);
+    const clientName = [firstName.value, lastName.value].map((x) => x.trim()).filter(Boolean).join(" ");
+    if (firstName.value.trim().length < 2) { firstName.focus(); return toast("Вкажіть ім'я клієнта", true); }
     const materials = [...mats.entries()].filter(([, q]) => q > 0).map(([id, q]) => ({ material_id: id, qty: q })).concat(custom);
     btn.disabled = true;
     try {
-      const o = await run(() => api.post(`/api/appointments/${a.id}/close`, { amount: kop, payment_method: method, materials, idempotency_key: key }));
+      const o = await run(() => api.post(`/api/appointments/${a.id}/close`, { amount: kop, payment_method: method, materials, idempotency_key: key, client_name: clientName }));
       closeSheet();
       toast(`Замовлення закрито. Заробіток майстра: ${money(o.master_earning)}`);
       state.materials = await api.get("/api/materials").catch(() => state.materials);
@@ -670,8 +683,8 @@ function closeOrderSheet(a, onChange) {
   } }, icon("ok"), "Закрити замовлення");
 
   openSheet("Закрити замовлення",
-    h("div", { class: "muted", style: { marginBottom: "10px" } }, `${a.service_name} · ${a.client.name}`),
-    h("div", { class: "stack" }, field("Фактична вартість, ₴", amount), field("Спосіб оплати", methods), matsBox, btn));
+    h("div", { class: "muted", style: { marginBottom: "10px" } }, `${a.service_name} · ${hm(a.starts_at)}`),
+    h("div", { class: "stack" }, clientBox, field("Фактична вартість, ₴", amount), field("Спосіб оплати", methods), matsBox, btn));
   autoFocus(amount, true);
   // на телефоні: торкнулися суми — одразу виділяємо її, щоб ввести нову
   amount.addEventListener("focus", () => setTimeout(() => amount.select(), 0));
@@ -1071,7 +1084,7 @@ function cashBlock(r) {
     // каса салону
     h("div", { class: "kpi-label", style: { margin: "4px 0 6px" } }, "Каса"),
     line("Готівка від клієнтів", c.from_clients),
-    line("Карткою / переказом — на рахунок", c.noncash, "muted"),
+    line("Карткою — на рахунок салону", c.noncash, "muted"),
     h("div", { class: "sum-line total" }, h("span", {}, "🏦 Залишити в касі"), h("span", {}, money(c.leave_in_till))));
 }
 
@@ -1232,7 +1245,7 @@ VIEWS.dashboard = async (main) => {
             h("div", { class: "sum-line total" }, h("span", {}, "Борг по зарплаті зараз"), h("span", {}, money(s.salary_debt_total))),
             s.salary_debt_total > 0 ? h("a", { href: "#/shifts", class: "small" }, "Підтвердити виплати →") : null),
           h("div", { class: "card" }, h("div", { class: "card-head" }, h("h3", {}, "Оплати клієнтів")),
-            [["cash", "banknote"], ["card", "card"], ["transfer", "transfer"]].map(([k, ic]) => {
+            [["cash", "banknote"], ["card", "card"], ["transfer", "transfer"]].filter(([k]) => k !== "transfer" || s.by_payment.transfer).map(([k, ic]) => {
               const v = s.by_payment[k] || 0;
               return h("div", { class: "stack", style: { marginBottom: "8px" } },
                 h("div", { class: "sum-line", style: { padding: 0 } }, h("span", { class: "row" }, icon(ic, "sm"), PAY[k]), h("b", {}, money(v))),
@@ -1302,7 +1315,7 @@ VIEWS.shifts = async (main) => {
     const mst = select(state.masters.map((m) => [m.id, m.full_name]), shift?.master_id);
     if (shift) mst.disabled = true;
     const amount = h("input", { inputmode: "decimal", value: shift ? kopToInput(shift.payout_due) : "" });
-    const method = select(Object.entries(PAY), shift?.report?.cash?.mode === "take_from_till" ? "card" : "cash");
+    const method = select(Object.entries(PAY_CHOICES), shift?.report?.cash?.mode === "take_from_till" ? "card" : "cash");
     const note = h("input", { placeholder: shift ? "" : "Аванс, премія…" });
     const btn = h("button", { class: "btn gold big", onclick: async () => {
       btn.disabled = true;
@@ -1340,7 +1353,7 @@ VIEWS.orders = async (main) => {
 async function orderSheet(id, onChange) {
   const o = await run(() => api.get("/api/orders/" + id));
   const amount = h("input", { inputmode: "decimal", value: kopToInput(o.amount) });
-  const method = select(Object.entries(PAY), o.payment_method);
+  const method = select(Object.entries(o.payment_method === "transfer" ? PAY : PAY_CHOICES), o.payment_method);
   const share = h("input", { type: "number", min: 0, max: 100, step: 0.5, value: o.share_bp / 100 });
   const mode = select(Object.entries(MAT_MODES), o.materials_mode);
   const reason = h("input", { placeholder: "Обов'язково: чому виправляємо" });

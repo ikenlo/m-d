@@ -63,12 +63,14 @@ def test_full_workday_flow(client):
     # приймає клієнта і закриває замовлення
     assert client.post(f"/api/appointments/{appt['id']}/status", headers=m1, json={"status": "in_progress"}).status_code == 200
     body = {"amount": 65000, "payment_method": "card", "materials": [{"material_id": ids["gel"], "qty": 1}],
-            "idempotency_key": "tap-1"}
+            "idempotency_key": "tap-1", "client_name": "Анна Коваленко"}
     r1 = client.post(f"/api/appointments/{appt['id']}/close", headers=m1, json=body)
     r2 = client.post(f"/api/appointments/{appt['id']}/close", headers=m1, json=body)
     assert r1.status_code == 200 and r2.status_code == 200
     assert r1.json()["id"] == r2.json()["id"]
     assert r1.json()["master_earning"] == 32500
+    r = client.get("/api/appointments?date_from=2026-11-02", headers=m1)
+    assert r.json()[0]["client"]["name"] == "Анна Коваленко"
     r3 = client.post(f"/api/appointments/{appt['id']}/close", headers=m1, json={**body, "idempotency_key": "tap-2"})
     assert r3.status_code == 409
 
