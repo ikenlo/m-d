@@ -28,7 +28,11 @@ const api = {
       throw new Error("Сесія завершилась");
     }
     const data = res.status === 204 ? null : await res.json().catch(() => null);
-    if (!res.ok) throw new Error((data && data.detail) || "Помилка " + res.status);
+    if (!res.ok) {
+      const msg = (data && data.detail) || "Помилка " + res.status;
+      if (res.status >= 500 || res.status === 0) pushErr(`${method} ${path} → ${res.status}: ${msg}`);
+      throw new Error(msg);
+    }
     return data;
   },
   get(p) { return this.req("GET", p); },
@@ -143,6 +147,8 @@ const ICONS = {
   move: '<path d="M5 9l-3 3 3 3M9 5l3-3 3 3M15 19l-3 3-3-3M19 9l3 3-3 3M2 12h20M12 2v20"/>',
   lock: '<rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>',
   trash: '<path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/>',
+  bug: '<rect x="8" y="6" width="8" height="14" rx="4"/><path d="M19 7l-3 2M5 7l3 2M19 19l-3-2M5 19l3-2M20 13h-4M4 13h4M10 4l1 2M14 4l-1 2"/>',
+  image: '<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="M21 15l-5-5L5 21"/>',
 };
 function icon(name, cls = "") {
   const s = document.createElementNS("http://www.w3.org/2000/svg", "svg");
@@ -248,6 +254,65 @@ function labelTables(root) {
   });
 }
 new MutationObserver(() => labelTables(document)).observe(document.documentElement, { childList: true, subtree: true });
+
+// ------------------------------------------------------------ баг-репорт
+// Останні помилки програми — додаються до звіту, щоб було легше знайти причину
+const recentErrors = [];
+const pushErr = (msg) => { recentErrors.push(`${new Date().toLocaleTimeString("uk-UA")} ${String(msg).slice(0, 300)}`); if (recentErrors.length > 5) recentErrors.shift(); };
+window.addEventListener("error", (e) => pushErr(e.message || "Помилка"));
+window.addEventListener("unhandledrejection", (e) => pushErr(e.reason?.message || e.reason || "Помилка"));
+
+function readImage(file) {
+  // зменшуємо знімок до 1600 px, щоб швидко відправлявся
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      const k = Math.min(1, 1600 / Math.max(img.width, img.height));
+      const c = document.createElement("canvas");
+      c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
+      c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+      URL.revokeObjectURL(img.src);
+      resolve(c.toDataURL("image/jpeg", 0.85));
+    };
+    img.onerror = () => reject(new Error("Не вдалося відкрити зображення"));
+    img.src = URL.createObjectURL(file);
+  });
+}
+
+function bugReportForm() {
+  // назва сторінки так, як її бачить користувач («Календар», «Склад»…)
+  const page = document.querySelector(".main h1")?.textContent?.trim() || (location.hash.replace(/^#\/?/, "") || "головна").split("?")[0];
+  const text = h("textarea", { rows: 5, id: "bug-text", placeholder: "Що сталося? Що ви робили перед цим? Наприклад: «Натиснула «Закрити замовлення» — нічого не відбувається»" });
+  let image = null;
+  const preview = h("div", { class: "row" });
+  const file = h("input", { type: "file", accept: "image/*", style: { display: "none" }, onchange: async (e) => {
+    const f = e.target.files[0];
+    if (!f) return;
+    try {
+      image = await readImage(f);
+      preview.replaceChildren(h("img", { src: image, alt: "Знімок екрана", style: { maxHeight: "120px", borderRadius: "8px", border: "1px solid var(--line)" } }),
+        h("button", { type: "button", class: "btn sm ghost", onclick: () => { image = null; file.value = ""; preview.replaceChildren(); } }, icon("x", "sm"), "Прибрати"));
+    } catch (err) { toast(err.message, true); }
+  } });
+  const send = h("button", { class: "btn primary big", onclick: async () => {
+    if (text.value.trim().length < 3) return toast("Опишіть, будь ласка, що сталося", true);
+    send.disabled = true;
+    try {
+      const r = await run(() => api.post("/api/bug-report", {
+        text: text.value.trim(), page, image,
+        context: { device: navigator.userAgent, screen: `${window.innerWidth}×${window.innerHeight}`, version: "web", errors: recentErrors },
+      }));
+      closeSheet();
+      toast(r.delivered ? "Дякуємо! Повідомлення надіслано директору в Telegram" : "Збережено. Директор ще не підключив Telegram — повідомлення буде в журналі");
+    } catch (_) { send.disabled = false; }
+  } }, icon("send"), "Надіслати директору");
+  openSheet("Повідомити про помилку", h("div", { class: "stack" },
+    h("p", { class: "muted", style: { margin: 0 } }, "Звіт прийде директору в Telegram разом зі сторінкою, пристроєм і технічними даними."),
+    field("Опис", text),
+    h("button", { type: "button", class: "btn", onclick: () => file.click() }, icon("image", "sm"), "Додати знімок екрана"), file, preview,
+    send));
+  text.focus();
+}
 
 // ============================================================ бічна панель
 function openSheet(title, ...content) {
@@ -395,6 +460,7 @@ function renderApp() {
     h("div", { class: "side-foot" },
       h("a", { href: "#/profile", style: { display: "contents" } }, avatar(state.user.full_name),
         h("div", { class: "who" }, h("b", {}, state.user.full_name), h("span", {}, ROLES[role]))),
+      h("button", { class: "icon-btn", title: "Повідомити про помилку", "aria-label": "Повідомити про помилку", onclick: bugReportForm }, icon("bug")),
       h("button", { class: "icon-btn", title: dark ? "Світла тема" : "Темна тема", "aria-label": "Змінити тему", onclick: toggleTheme }, icon(dark ? "sun" : "moon")),
       h("button", { class: "icon-btn", title: "Вийти", "aria-label": "Вийти", onclick: logout }, icon("logout"))));
 
@@ -424,6 +490,7 @@ function viewMore(main) {
   const dark = document.documentElement.getAttribute("data-theme") === "dark";
   main.append(h("div", { class: "card", style: { padding: "6px" } }, NAV[state.user.role].map(([id, ico, label]) =>
     h("a", { href: "#/" + id, class: "row", style: { padding: "12px", color: "var(--ink)" } }, icon(ico), h("span", { class: "grow" }, label), icon("right", "sm"))),
+    h("button", { class: "btn ghost", style: { width: "100%", justifyContent: "flex-start", padding: "12px" }, onclick: bugReportForm }, icon("bug"), "Повідомити про помилку"),
     h("button", { class: "btn ghost", style: { width: "100%", justifyContent: "flex-start", padding: "12px" }, onclick: toggleTheme }, icon(dark ? "sun" : "moon"), dark ? "Світла тема" : "Темна тема"),
     h("button", { class: "btn ghost", style: { width: "100%", justifyContent: "flex-start", padding: "12px", color: "var(--danger)" }, onclick: logout }, icon("logout"), "Вийти")));
 }
@@ -979,6 +1046,7 @@ VIEWS.profile = async (main) => {
       u.role === "master" && u.share_bp !== null ? h("div", { class: "info-row" }, icon("percent"), "Ваш відсоток: ", h("b", {}, pct(u.share_bp))) : null,
       h("div", { class: "row" },
         h("button", { class: "btn", onclick: toggleTheme }, icon(dark ? "sun" : "moon", "sm"), dark ? "Світла тема" : "Темна тема"),
+        h("button", { class: "btn", onclick: bugReportForm }, icon("bug", "sm"), "Повідомити про помилку"),
         h("button", { class: "btn danger", onclick: logout }, icon("logout", "sm"), "Вийти"))),
     h("div", { class: "card stack" }, h("h3", {}, "Сповіщення в Telegram"),
       h("p", { class: "muted", style: { margin: 0 } }, u.telegram_linked ? "Telegram підключено ✓" : "Увійдіть у бот через «Для майстрів» з PIN — або отримайте код і надішліть боту: /link КОД"),

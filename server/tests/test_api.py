@@ -204,3 +204,10 @@ def test_pending_api(client):
     r = client.post(f"/api/appointments/{appt_id}/decline-busy", headers=m1)
     assert r.status_code == 200 and r.json()["notified"]
     assert client.post(f"/api/appointments/{appt_id}/decline-busy", headers=m1).status_code == 409
+
+
+def test_bug_report_api(client):
+    m1 = login(client, "olena", "Master123")
+    r = client.post("/api/bug-report", headers=m1, json={"text": "Кнопка не працює", "page": "today"})
+    assert r.status_code == 201 and r.json()["ok"] is True
+    assert client.post("/api/bug-report", json={"text": "анонімно"}).status_code == 401

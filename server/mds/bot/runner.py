@@ -14,7 +14,7 @@ from aiogram.client.session.aiohttp import AiohttpSession
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.fsm.storage.memory import MemoryStorage
-from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+from aiogram.types import FSInputFile, InlineKeyboardButton, InlineKeyboardMarkup
 
 from ..db import Database
 from ..services import notifications
@@ -69,7 +69,13 @@ async def deliver_outbox(bot: Bot, db: Database) -> int:
                     markup = InlineKeyboardMarkup(inline_keyboard=[
                         [InlineKeyboardButton(text=t, callback_data=d) for t, d in row] for row in n.buttons
                     ])
-                await bot.send_message(n.chat_id, n.text, parse_mode=None, reply_markup=markup)
+                if n.photo_path and os.path.exists(n.photo_path):
+                    # підпис до фото — до 1024 символів; повний текст окремим повідомленням
+                    await bot.send_photo(n.chat_id, FSInputFile(n.photo_path), caption=n.text[:1000], parse_mode=None)
+                    if len(n.text) > 1000:
+                        await bot.send_message(n.chat_id, n.text, parse_mode=None, reply_markup=markup)
+                else:
+                    await bot.send_message(n.chat_id, n.text, parse_mode=None, reply_markup=markup)
                 notifications.mark_sent(n)
                 sent += 1
             except Exception as e:  # noqa: BLE001 — помилка одного повідомлення не зупиняє чергу

@@ -397,6 +397,8 @@ class Notification(Base):
     text: Mapped[str] = mapped_column(Text)
     # кнопки під повідомленням: [[["Текст", "callback_data"], ...], ...]
     buttons: Mapped[list | None] = mapped_column(JSON)
+    # фото до повідомлення (файл у data_dir), напр. знімок екрана в баг-репорті
+    photo_path: Mapped[str | None] = mapped_column(String(255))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
     sent_at: Mapped[datetime | None] = mapped_column(DateTime)
     attempts: Mapped[int] = mapped_column(Integer, default=0)

@@ -4,7 +4,9 @@ from fastapi import APIRouter, Depends, Request
 from sqlalchemy.orm import Session
 
 from ...models import Role
-from ...services import backup, journal
+from pydantic import BaseModel, Field
+
+from ...services import backup, bugreport, journal
 from ...services.common import Actor, all_settings, update_settings
 from ..deps import get_actor, get_session
 
@@ -45,6 +47,20 @@ def create_backup(request: Request, actor: Actor = Depends(get_actor)):
     cfg = request.app.state.config
     path = backup.make_backup(cfg.database_url, cfg.backup_dir, cfg.backup_keep)
     return {"name": path.name}
+
+
+class BugReportIn(BaseModel):
+    text: str
+    page: str | None = None
+    context: dict | None = None
+    image: str | None = Field(default=None, max_length=7_500_000)  # base64 (≤5 МБ)
+
+
+@router.post("/bug-report", status_code=201)
+def bug_report(body: BugReportIn, request: Request, actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
+    """Баг-репорт із програми — директору в Telegram (зі знімком екрана, якщо додано)."""
+    return bugreport.create(s, actor, request.app.state.config.data_dir, text=body.text, page=body.page,
+                            context=body.context, image_b64=body.image)
 
 
 @router.get("/health")

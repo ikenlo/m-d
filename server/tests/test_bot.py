@@ -624,3 +624,37 @@ def test_staff_bot_busy_and_propose(h, db, pins):
         assert s.get(Appointment, appt_id).awaiting_client
     h.click(f"s:busy:{appt_id}")
     assert "час зайнятий" in h.session.texts()[-1]
+
+
+def test_bug_report_goes_to_director_with_screenshot(h, db, seed, tmp_path):
+    import base64
+    from aiogram.methods import SendPhoto
+    from mds.models import AuditLog, Notification
+    from mds.services import bugreport
+    png = base64.b64encode(b"\x89PNG\r\n\x1a\n" + b"0" * 100).decode()
+    with db.session() as s:
+        s.get(User, seed["director"]).telegram_chat_id = 9001
+    from mds.errors import ValidationError
+    with db.session() as s, pytest.raises(ValidationError):
+        bugreport.create(s, seed["actors"]["m1"], tmp_path, text="x")
+    with db.session() as s:
+        r = bugreport.create(s, seed["actors"]["m1"], tmp_path, text="Не закривається замовлення", page="today",
+                             context={"device": "iPhone", "screen": "390×844", "errors": ["POST /api → 500: збій"]},
+                             image_b64="data:image/png;base64," + png)
+        assert r == {"ok": True, "delivered": 1}
+    with db.session() as s:
+        n = s.query(Notification).one()
+        assert n.chat_id == 9001 and n.photo_path.endswith(".png")
+        assert "Не закривається замовлення" in n.text and "Сторінка: today" in n.text and "500: збій" in n.text
+        assert s.query(AuditLog).filter_by(entity="bug_report").count() == 1
+    asyncio.run(deliver_outbox(h.bot, db))
+    assert any(isinstance(c, SendPhoto) and c.chat_id == 9001 for c in h.session.calls)
+
+
+def test_bug_report_rejects_non_image(db, seed, tmp_path):
+    import base64
+    from mds.errors import ValidationError
+    from mds.services import bugreport
+    with db.session() as s, pytest.raises(ValidationError):
+        bugreport.create(s, seed["actors"]["m1"], tmp_path, text="Щось не так",
+                         image_b64=base64.b64encode(b"<script>alert(1)</script>").decode())
