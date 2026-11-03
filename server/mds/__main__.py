@@ -7,6 +7,7 @@
   python -m mds serve                — лише API та веб-панель
   python -m mds bot                  — лише Telegram-бот
   python -m mds backup               — зробити резервну копію зараз
+  python -m mds start                — для хостингу: міграції + перший директор зі змінних + run
 """
 
 from __future__ import annotations
@@ -62,6 +63,67 @@ def cmd_init(cfg: Config, args) -> None:
     print(f"Готово. Директор '{username}' створений. Запустіть: python -m mds run")
 
 
+def bootstrap_director(cfg: Config) -> str:
+    """Перший запуск на хостингу без консолі: створити директора зі змінних оточення
+    MDS_DIRECTOR_USERNAME / MDS_DIRECTOR_PASSWORD / MDS_DIRECTOR_NAME, якщо директора ще немає."""
+    import os
+
+    from sqlalchemy import select
+
+    from .models import Role, User
+    from .services import users
+    from .services.common import Actor
+
+    db = _db(cfg)
+    with db.session() as s:
+        if s.scalar(select(User).where(User.role == Role.DIRECTOR)):
+            return "exists"
+        username = os.getenv("MDS_DIRECTOR_USERNAME", "").strip()
+        password = os.getenv("MDS_DIRECTOR_PASSWORD", "")
+        if not username or not password:
+            logging.getLogger("mds").warning(
+                "Директора ще немає. Задайте MDS_DIRECTOR_USERNAME і MDS_DIRECTOR_PASSWORD та перезапустіть сервіс."
+            )
+            return "missing"
+        users.create_user(s, Actor.system(), username=username, password=password,
+                          full_name=os.getenv("MDS_DIRECTOR_NAME", "Директор").strip() or "Директор", role=Role.DIRECTOR)
+    logging.getLogger("mds").info("Створено директора '%s'. Змінну MDS_DIRECTOR_PASSWORD тепер можна видалити.", username)
+    return "created"
+
+
+def bootstrap_catalog(cfg: Config) -> int:
+    """Якщо послуг ще немає — завантажити прайс салону з mds/seed/services.json."""
+    import json
+    from pathlib import Path
+
+    from sqlalchemy import func, select
+
+    from .models import Service
+    from .services import catalog
+    from .services.common import Actor
+
+    db = _db(cfg)
+    with db.session() as s:
+        if s.scalar(select(func.count(Service.id))):
+            return 0
+        data = json.loads((Path(__file__).parent / "seed" / "services.json").read_text(encoding="utf-8"))
+        for i, x in enumerate(data["services"]):
+            catalog.create_service(s, Actor.system(), {
+                "name": x["name"], "section": x.get("section"), "category": x.get("category"),
+                "subcategory": x.get("subcategory"), "price": int(x["price_uah"]) * 100,
+                "price_from": bool(x.get("price_from")), "duration_min": int(x["duration_min"]), "sort_order": i,
+            })
+    logging.getLogger("mds").info("Завантажено прайс: %d послуг", len(data["services"]))
+    return len(data["services"])
+
+
+def cmd_start(cfg: Config, args) -> None:
+    upgrade(cfg.database_url)
+    bootstrap_director(cfg)
+    bootstrap_catalog(cfg)
+    cmd_serve(cfg, args, with_bot=True)
+
+
 def cmd_create_user(cfg: Config, args) -> None:
     from .services import users
     from .services.common import Actor
@@ -85,7 +147,7 @@ def cmd_serve(cfg: Config, args, *, with_bot: bool = False) -> None:
     from .api.app import create_app
 
     app = create_app(cfg, _db(cfg), background=True, with_bot=with_bot)
-    uvicorn.run(app, host=args.host or cfg.host, port=args.port or cfg.port, proxy_headers=True)
+    uvicorn.run(app, host=args.host or cfg.host, port=args.port or cfg.port, proxy_headers=True, forwarded_allow_ips="*")
 
 
 def cmd_bot(cfg: Config, _args) -> None:
@@ -114,7 +176,7 @@ def main(argv: list[str] | None = None) -> None:
     cu.add_argument("--role", choices=["director", "admin", "master"], required=True)
     cu.add_argument("--password")
 
-    for name in ("run", "serve"):
+    for name in ("run", "serve", "start"):
         sp = sub.add_parser(name)
         sp.add_argument("--host")
         sp.add_argument("--port", type=int)
@@ -132,6 +194,7 @@ def main(argv: list[str] | None = None) -> None:
         "serve": cmd_serve,
         "run": lambda c, a: cmd_serve(c, a, with_bot=True),
         "bot": cmd_bot,
+        "start": cmd_start,
     }[args.cmd](cfg, args)
 
 

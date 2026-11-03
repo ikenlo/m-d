@@ -14,7 +14,10 @@ def _env(name: str, default: str) -> str:
 
 @dataclass
 class Config:
-    data_dir: Path = field(default_factory=lambda: Path(_env("DATA_DIR", "./data")).resolve())
+    # На Railway дані зберігаються на підключеному диску (Volume), якщо MDS_DATA_DIR не задано
+    data_dir: Path = field(
+        default_factory=lambda: Path(_env("DATA_DIR", os.getenv("RAILWAY_VOLUME_MOUNT_PATH") or "./data")).resolve()
+    )
     database_url: str = ""
     secret_key: str = ""
     token_ttl_hours: int = field(default_factory=lambda: int(_env("TOKEN_TTL_HOURS", "12")))
@@ -24,7 +27,8 @@ class Config:
     backup_interval_hours: int = field(default_factory=lambda: int(_env("BACKUP_INTERVAL_HOURS", "24")))
     backup_keep: int = field(default_factory=lambda: int(_env("BACKUP_KEEP", "30")))
     host: str = field(default_factory=lambda: _env("HOST", "0.0.0.0"))
-    port: int = field(default_factory=lambda: int(_env("PORT", "8000")))
+    # хостинги (Railway, Render) передають порт у змінній PORT
+    port: int = field(default_factory=lambda: int(_env("PORT", os.getenv("PORT") or "8000")))
 
     def __post_init__(self) -> None:
         self.data_dir.mkdir(parents=True, exist_ok=True)

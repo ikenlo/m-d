@@ -28,3 +28,30 @@ def test_cli_init_and_backup(tmp_path, monkeypatch, capsys):
     out = capsys.readouterr().out
     assert "директор уже існує" in out and "Створено: anna" in out
     assert list((tmp_path / "backups").glob("mds-*.db"))
+
+
+def test_hosting_bootstrap_director_from_env(tmp_path, monkeypatch):
+    from mds.__main__ import bootstrap_director
+    from mds.config import Config
+    from mds.db import Database
+    from mds.models import User
+
+    monkeypatch.delenv("MDS_DATA_DIR", raising=False)
+    monkeypatch.delenv("MDS_DATABASE_URL", raising=False)
+    monkeypatch.setenv("RAILWAY_VOLUME_MOUNT_PATH", str(tmp_path / "vol"))
+    monkeypatch.setenv("PORT", "4321")
+    cfg = Config()
+    assert cfg.data_dir == (tmp_path / "vol").resolve() and cfg.port == 4321
+    upgrade(cfg.database_url)
+    assert bootstrap_director(cfg) == "missing"
+    monkeypatch.setenv("MDS_DIRECTOR_USERNAME", "margaryta")
+    monkeypatch.setenv("MDS_DIRECTOR_PASSWORD", "Salon2026!")
+    monkeypatch.setenv("MDS_DIRECTOR_NAME", "Маргарита")
+    assert bootstrap_director(cfg) == "created"
+    assert bootstrap_director(cfg) == "exists"
+    from mds.__main__ import bootstrap_catalog
+    n = bootstrap_catalog(cfg)
+    assert n == 42 and bootstrap_catalog(cfg) == 0  # вдруге не дублює
+    with Database(cfg.database_url).session() as s:
+        u = s.query(User).one()
+        assert (u.username, u.full_name, u.role) == ("margaryta", "Маргарита", "director")

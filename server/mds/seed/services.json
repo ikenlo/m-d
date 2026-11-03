@@ -1,0 +1,383 @@
+{
+ "_comment": "Прайс салону M&D (з Price_List_Salon.xlsx, виправлено: «До лопаток» 500 грн, модельна стрижка 30 хв). Завантажується при першому запуску, якщо послуг ще немає.",
+ "services": [
+  {
+   "section": "Чоловічі",
+   "category": "Стрижки та послуги",
+   "subcategory": null,
+   "name": "Стрижка модельна",
+   "price_uah": 450,
+   "price_from": false,
+   "duration_min": 30
+  },
+  {
+   "section": "Чоловічі",
+   "category": "Стрижки та послуги",
+   "subcategory": null,
+   "name": "Стрижка під насадки",
+   "price_uah": 350,
+   "price_from": false,
+   "duration_min": 30
+  },
+  {
+   "section": "Чоловічі",
+   "category": "Стрижки та послуги",
+   "subcategory": null,
+   "name": "Стрижка машинка + ножиці",
+   "price_uah": 400,
+   "price_from": false,
+   "duration_min": 30
+  },
+  {
+   "section": "Жіночі",
+   "category": "Стрижка",
+   "subcategory": null,
+   "name": "Коротке волосся (1 довжина)",
+   "price_uah": 400,
+   "price_from": false,
+   "duration_min": 30
+  },
+  {
+   "section": "Жіночі",
+   "category": "Стрижка",
+   "subcategory": null,
+   "name": "До плечей (2 довжина)",
+   "price_uah": 450,
+   "price_from": false,
+   "duration_min": 60
+  },
+  {
+   "section": "Жіночі",
+   "category": "Стрижка",
+   "subcategory": null,
+   "name": "До лопаток (3 довжина)",
+   "price_uah": 500,
+   "price_from": false,
+   "duration_min": 60
+  },
+  {
+   "section": "Жіночі",
+   "category": "Стрижка",
+   "subcategory": null,
+   "name": "Довге волосся (4 довжина)",
+   "price_uah": 550,
+   "price_from": true,
+   "duration_min": 60
+  },
+  {
+   "section": "Жіночі",
+   "category": "Стрижка",
+   "subcategory": null,
+   "name": "Дуже довге / густе волосся (5 довжина)",
+   "price_uah": 650,
+   "price_from": true,
+   "duration_min": 60
+  },
+  {
+   "section": "Жіночі",
+   "category": "Фарбування",
+   "subcategory": "В один тон",
+   "name": "Коротке волосся (1 довжина)",
+   "price_uah": 1000,
+   "price_from": false,
+   "duration_min": 120
+  },
+  {
+   "section": "Жіночі",
+   "category": "Фарбування",
+   "subcategory": "В один тон",
+   "name": "До плечей (2 довжина)",
+   "price_uah": 1500,
+   "price_from": false,
+   "duration_min": 150
+  },
+  {
+   "section": "Жіночі",
+   "category": "Фарбування",
+   "subcategory": "В один тон",
+   "name": "До лопаток (3 довжина)",
+   "price_uah": 2000,
+   "price_from": false,
+   "duration_min": 150
+  },
+  {
+   "section": "Жіночі",
+   "category": "Фарбування",
+   "subcategory": "В один тон",
+   "name": "Нижче лопаток (4 довжина)",
+   "price_uah": 2500,
+   "price_from": true,
+   "duration_min": 180
+  },
+  {
+   "section": "Жіночі",
+   "category": "Фарбування",
+   "subcategory": "В один тон",
+   "name": "До пояса (5 довжина)",
+   "price_uah": 3000,
+   "price_from": false,
+   "duration_min": 210
+  },
+  {
+   "section": "Жіночі",
+   "category": "Фарбування",
+   "subcategory": "Мелірування",
+   "name": "До плечей (2 довжина)",
+   "price_uah": 3000,
+   "price_from": false,
+   "duration_min": 300
+  },
+  {
+   "section": "Жіночі",
+   "category": "Фарбування",
+   "subcategory": "Мелірування",
+   "name": "До лопаток (3 довжина)",
+   "price_uah": 4500,
+   "price_from": false,
+   "duration_min": 300
+  },
+  {
+   "section": "Жіночі",
+   "category": "Фарбування",
+   "subcategory": "Мелірування",
+   "name": "Нижче лопаток (4 довжина)",
+   "price_uah": 5500,
+   "price_from": true,
+   "duration_min": 330
+  },
+  {
+   "section": "Жіночі",
+   "category": "Фарбування",
+   "subcategory": "Мелірування",
+   "name": "До пояса (5 довжина)",
+   "price_uah": 6500,
+   "price_from": false,
+   "duration_min": 360
+  },
+  {
+   "section": "Жіночі",
+   "category": "Фарбування",
+   "subcategory": "Total Blonde",
+   "name": "Висвітлення короткого волосся",
+   "price_uah": 2000,
+   "price_from": false,
+   "duration_min": 180
+  },
+  {
+   "section": "Жіночі",
+   "category": "Фарбування",
+   "subcategory": "Total Blonde",
+   "name": "До плечей (2 довжина)",
+   "price_uah": 2500,
+   "price_from": false,
+   "duration_min": 180
+  },
+  {
+   "section": "Жіночі",
+   "category": "Фарбування",
+   "subcategory": "Total Blonde",
+   "name": "До лопаток (3 довжина)",
+   "price_uah": 3500,
+   "price_from": false,
+   "duration_min": 210
+  },
+  {
+   "section": "Жіночі",
+   "category": "Фарбування",
+   "subcategory": "Total Blonde",
+   "name": "Нижче лопаток (4 довжина)",
+   "price_uah": 5000,
+   "price_from": true,
+   "duration_min": 240
+  },
+  {
+   "section": "Жіночі",
+   "category": "Фарбування",
+   "subcategory": "Total Blonde",
+   "name": "До пояса (5 довжина)",
+   "price_uah": 6500,
+   "price_from": false,
+   "duration_min": 360
+  },
+  {
+   "section": "Жіночі",
+   "category": "Фарбування",
+   "subcategory": "Складні фарбування",
+   "name": "До плечей (2 довжина)",
+   "price_uah": 4000,
+   "price_from": false,
+   "duration_min": 330
+  },
+  {
+   "section": "Жіночі",
+   "category": "Фарбування",
+   "subcategory": "Складні фарбування",
+   "name": "До лопаток (3 довжина)",
+   "price_uah": 5500,
+   "price_from": false,
+   "duration_min": 360
+  },
+  {
+   "section": "Жіночі",
+   "category": "Фарбування",
+   "subcategory": "Складні фарбування",
+   "name": "Нижче лопаток (4 довжина)",
+   "price_uah": 6500,
+   "price_from": true,
+   "duration_min": 390
+  },
+  {
+   "section": "Жіночі",
+   "category": "Фарбування",
+   "subcategory": "Складні фарбування",
+   "name": "До пояса (5 довжина)",
+   "price_uah": 8000,
+   "price_from": false,
+   "duration_min": 420
+  },
+  {
+   "section": "Жіночі",
+   "category": "Фарбування",
+   "subcategory": "Вихід з чорного",
+   "name": "Коротке волосся",
+   "price_uah": 3000,
+   "price_from": false,
+   "duration_min": 240
+  },
+  {
+   "section": "Жіночі",
+   "category": "Фарбування",
+   "subcategory": "Вихід з чорного",
+   "name": "До плечей",
+   "price_uah": 4000,
+   "price_from": false,
+   "duration_min": 270
+  },
+  {
+   "section": "Жіночі",
+   "category": "Фарбування",
+   "subcategory": "Вихід з чорного",
+   "name": "До лопаток",
+   "price_uah": 5500,
+   "price_from": false,
+   "duration_min": 300
+  },
+  {
+   "section": "Жіночі",
+   "category": "Фарбування",
+   "subcategory": "Вихід з чорного",
+   "name": "Нижче лопаток",
+   "price_uah": 7000,
+   "price_from": true,
+   "duration_min": 390
+  },
+  {
+   "section": "Жіночі",
+   "category": "Холодна реконструкція",
+   "subcategory": null,
+   "name": "20–30 см",
+   "price_uah": 1400,
+   "price_from": true,
+   "duration_min": 90
+  },
+  {
+   "section": "Жіночі",
+   "category": "Холодна реконструкція",
+   "subcategory": null,
+   "name": "30–40 см",
+   "price_uah": 1700,
+   "price_from": true,
+   "duration_min": 120
+  },
+  {
+   "section": "Жіночі",
+   "category": "Холодна реконструкція",
+   "subcategory": null,
+   "name": "40–50 см (до лопаток)",
+   "price_uah": 1900,
+   "price_from": true,
+   "duration_min": 120
+  },
+  {
+   "section": "Жіночі",
+   "category": "Холодна реконструкція",
+   "subcategory": null,
+   "name": "50–60 см (нижче лопаток)",
+   "price_uah": 2100,
+   "price_from": true,
+   "duration_min": 150
+  },
+  {
+   "section": "Жіночі",
+   "category": "Холодна реконструкція",
+   "subcategory": null,
+   "name": "60–70 см (до пояса)",
+   "price_uah": 2300,
+   "price_from": true,
+   "duration_min": 150
+  },
+  {
+   "section": "Жіночі",
+   "category": "Брови та вії",
+   "subcategory": null,
+   "name": "Видалення пушку",
+   "price_uah": 150,
+   "price_from": false,
+   "duration_min": 10
+  },
+  {
+   "section": "Жіночі",
+   "category": "Брови та вії",
+   "subcategory": null,
+   "name": "Фарбування вій",
+   "price_uah": 200,
+   "price_from": false,
+   "duration_min": 20
+  },
+  {
+   "section": "Жіночі",
+   "category": "Брови та вії",
+   "subcategory": null,
+   "name": "Корекція брів (пінцет/віск)",
+   "price_uah": 300,
+   "price_from": false,
+   "duration_min": 30
+  },
+  {
+   "section": "Жіночі",
+   "category": "Брови та вії",
+   "subcategory": null,
+   "name": "Фарбування + корекція брів",
+   "price_uah": 400,
+   "price_from": false,
+   "duration_min": 60
+  },
+  {
+   "section": "Жіночі",
+   "category": "Брови та вії",
+   "subcategory": null,
+   "name": "Ламінування вій + фарбування",
+   "price_uah": 700,
+   "price_from": false,
+   "duration_min": 60
+  },
+  {
+   "section": "Жіночі",
+   "category": "Макіяж та зачіски",
+   "subcategory": null,
+   "name": "Укладка / зачіска (хвилі, пучок)",
+   "price_uah": 800,
+   "price_from": true,
+   "duration_min": 60
+  },
+  {
+   "section": "Жіночі",
+   "category": "Макіяж та зачіски",
+   "subcategory": null,
+   "name": "Макіяж (вечірній / денний / весільний)",
+   "price_uah": 1000,
+   "price_from": false,
+   "duration_min": 60
+  }
+ ]
+}

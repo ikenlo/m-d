@@ -25,7 +25,7 @@ build-backend = "setuptools.build_meta"
 include = ["mds*"]
 
 [tool.setuptools.package-data]
-mds = ["web/static/*"]
+mds = ["web/static/*", "seed/*.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

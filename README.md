@@ -21,6 +21,9 @@
 | Журнал фінансових операцій, історія змін, виправлення директором | ✅ |
 | Автоматичне резервне копіювання | ✅ |
 | Веб-панель (PWA) — встановлюється на Android і Windows як застосунок | ✅ |
+| Каталог: розділ → тип → вид → послуга, ціни «від», прайс салону (42 послуги) | ✅ |
+| Бот: швидкий запис (передзвоніть), вільний час, контакти, розділ «Для майстрів» з PIN | ✅ |
+| Розгортання на Railway з GitHub (Dockerfile, railway.json) | ✅ |
 | Нативні застосунки Android / Windows | наступний етап — див. [docs/ROADMAP.md](docs/ROADMAP.md) |
 
 ## Швидкий старт
@@ -43,7 +46,8 @@ MDS_TELEGRAM_TOKEN=123:ABC python -m mds run           # API + панель + б
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — архітектура, технології, модель даних
 - [docs/FINANCE.md](docs/FINANCE.md) — фінансові правила: поділ, матеріали, прибуток, виправлення
 - [docs/API.md](docs/API.md) — REST API (інтерактивно: `/docs` на сервері)
-- [docs/OPERATIONS.md](docs/OPERATIONS.md) — встановлення, бот, бекапи, оновлення
+- [docs/DEPLOY_RAILWAY.md](docs/DEPLOY_RAILWAY.md) — **запуск на Railway й оплата, покроково**
+- [docs/OPERATIONS.md](docs/OPERATIONS.md) — встановлення на свій сервер, бот, бекапи, оновлення
 - [docs/ROADMAP.md](docs/ROADMAP.md) — план розвитку (Android, Windows, далі)
 - [CLAUDE.md](CLAUDE.md) — правила подальшої розробки (для Claude Code і розробників)
 
