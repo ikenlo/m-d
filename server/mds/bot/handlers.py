@@ -85,27 +85,74 @@ def build_router() -> Router:
         await cb.message.edit_text(v.free_text(day, rows), reply_markup=markup)
         await cb.answer()
 
+    # Запис: розділ (Чоловічі/Жіночі) → тип (Стрижка/Фарбування…) → послуга → майстер → день → час.
+    # Крок пропускається, якщо в ньому лише один варіант.
+    def _tree(s):
+        return catalog.service_tree(catalog.list_services(s))
+
+    def _step_sections(tree):
+        if len(tree) == 1:
+            return _step_categories(tree, 0, back=None)
+        return "Оберіть розділ:", v.sections_kb([sec for sec, _ in tree])
+
+    def _step_categories(tree, i: int, back: str | None = "book"):
+        sec, cats = tree[i]
+        if len(cats) == 1:
+            return _step_services(tree, i, 0, back=back)
+        return f"<b>{v.e(sec)}</b> — оберіть тип послуги:", v.categories_kb(i, [c for c, _ in cats], back)
+
+    def _step_services(tree, i: int, j: int, back: str | None):
+        sec, cats = tree[i]
+        cat, items = cats[j]
+        title = v.e(sec) if cat == "Послуги" else f"{v.e(sec)} · {v.e(cat)}"
+        return f"<b>{title}</b> — оберіть послугу:", v.services_kb(items, back)
+
     @router.message(Command("book"))
     @router.message(F.text == v.BTN_BOOK)
     async def book_start(message: Message, db: Database, state: FSMContext):
         await state.clear()
         with db.session() as s:
-            services = catalog.list_services(s)
-            kb = v.services_kb(services)
-        if not services:
-            await message.answer("Запис тимчасово недоступний.")
-            return
-        await message.answer("Оберіть послугу:", reply_markup=kb)
-
+            tree = _tree(s)
+            if not tree:
+                await message.answer("Запис тимчасово недоступний.")
+                return
+            text, markup = _step_sections(tree)
+        await message.answer(text, reply_markup=markup)
 
     @router.callback_query(F.data == "book")
     async def book_again(cb: CallbackQuery, db: Database, state: FSMContext):
         await state.clear()
         with db.session() as s:
-            kb = v.services_kb(catalog.list_services(s))
-        await cb.message.edit_text("Оберіть послугу:", reply_markup=kb)
+            text, markup = _step_sections(_tree(s))
+        await cb.message.edit_text(text, reply_markup=markup)
         await cb.answer()
 
+    @router.callback_query(F.data.startswith("sec:"))
+    async def pick_section(cb: CallbackQuery, db: Database):
+        i = int(cb.data.split(":")[1])
+        with db.session() as s:
+            tree = _tree(s)
+            if i >= len(tree):
+                await cb.answer("Каталог оновився, почніть спочатку", show_alert=True)
+                return
+            text, markup = _step_categories(tree, i)
+        await cb.message.edit_text(text, reply_markup=markup)
+        await cb.answer()
+
+    @router.callback_query(F.data.startswith("cat:"))
+    async def pick_category(cb: CallbackQuery, db: Database):
+        _, i, j = cb.data.split(":")
+        with db.session() as s:
+            tree = _tree(s)
+            if int(i) >= len(tree) or int(j) >= len(tree[int(i)][1]):
+                await cb.answer("Каталог оновився, почніть спочатку", show_alert=True)
+                return
+            back = f"sec:{i}" if len(tree) > 1 else "book"
+            if len(tree[int(i)][1]) == 1:
+                back = "book"
+            text, markup = _step_services(tree, int(i), int(j), back)
+        await cb.message.edit_text(text, reply_markup=markup)
+        await cb.answer()
 
     @router.callback_query(F.data.startswith("svc:"))
     async def pick_service(cb: CallbackQuery, db: Database):

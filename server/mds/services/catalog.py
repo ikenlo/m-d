@@ -16,6 +16,7 @@ def service_public(x: Service) -> dict:
     return {
         "id": x.id,
         "name": x.name,
+        "section": x.section,
         "category": x.category,
         "duration_min": x.duration_min,
         "price": x.price,
@@ -39,7 +40,8 @@ def create_service(s: Session, actor: Actor, data: dict) -> Service:
     _check_service(data)
     x = Service(
         name=data["name"].strip(),
-        category=data.get("category"),
+        section=(data.get("section") or "").strip() or None,
+        category=(data.get("category") or "").strip() or None,
         duration_min=int(data["duration_min"]),
         price=int(data["price"]),
         price_from=bool(data.get("price_from", False)),
@@ -57,11 +59,32 @@ def update_service(s: Session, actor: Actor, service_id: int, data: dict) -> Ser
     _check_service(data)
     x: Service = get_or_404(s, Service, service_id, "Послугу")
     before = service_public(x)
-    for k in ("name", "category", "duration_min", "price", "price_from", "is_active", "sort_order"):
+    for k in ("name", "section", "category", "duration_min", "price", "price_from", "is_active", "sort_order"):
         if k in data:
             setattr(x, k, data[k])
     audit(s, actor, "service", x.id, "update", before, service_public(x))
     return x
+
+
+def service_tree(services: list[Service]) -> list[tuple[str, list[tuple[str, list[Service]]]]]:
+    """Дерево каталогу для запису: [(розділ, [(тип, [послуги])])] у порядку sort_order.
+    Порожній розділ/тип групується як «Послуги»."""
+    tree: dict[str, dict[str, list[Service]]] = {}
+    for x in services:
+        tree.setdefault(x.section or "Послуги", {}).setdefault(x.category or "Послуги", []).append(x)
+
+    def sec_key(sec: str) -> tuple:
+        # спершу «Чоловічі», потім «Жіночі», далі решта за порядком сортування послуг
+        pref = SECTION_ORDER.index(sec.lower()) if sec.lower() in SECTION_ORDER else len(SECTION_ORDER)
+        return (pref, min(x.sort_order for items in tree[sec].values() for x in items), sec)
+
+    def cats(sec: str) -> list[tuple[str, list[Service]]]:
+        return sorted(tree[sec].items(), key=lambda kv: (min(x.sort_order for x in kv[1]), kv[0]))
+
+    return [(sec, cats(sec)) for sec in sorted(tree, key=sec_key)]
+
+
+SECTION_ORDER = ["чоловічі", "жіночі"]
 
 
 def list_services(s: Session, active_only: bool = True) -> list[Service]:

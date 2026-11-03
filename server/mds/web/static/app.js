@@ -377,7 +377,7 @@ function apptForm({ appt = null, master_id = null, date = today(), time = "10:00
   const isMaster = state.user.role === "master";
   const masters = isMaster ? [{ id: state.user.id, full_name: state.user.full_name }] : state.masters;
   const activeServices = state.services.filter((s) => s.is_active);
-  const svc = select(activeServices.map((s) => [s.id, `${s.name} · ${priceText(s)} · ${s.duration_min} хв`]), appt ? appt.service_id : activeServices[0]?.id);
+  const svc = select(activeServices.map((s) => [s.id, `${s.section ? s.section + " · " : ""}${s.name} · ${priceText(s)} · ${s.duration_min} хв`]), appt ? appt.service_id : activeServices[0]?.id);
   const mst = select(masters.map((m) => [m.id, m.full_name]), appt ? appt.master_id : master_id || masters[0]?.id);
   const d = h("input", { type: "date", value: appt ? appt.starts_at.slice(0, 10) : date });
   const t = h("input", { type: "time", step: 300, value: appt ? hm(appt.starts_at) : time });
@@ -951,8 +951,8 @@ VIEWS.catalog = async (main) => {
   const [services, materials] = await Promise.all([api.get("/api/services?all=true"), api.get("/api/materials?all=true")]);
   main.append(topbar("Послуги та матеріали", h("button", { class: "btn gold", onclick: () => svcForm(null) }, "+ Послуга"), h("button", { class: "btn", onclick: () => matForm(null) }, "+ Матеріал")));
   main.append(h("h2", {}, "Послуги"), h("div", { class: "card table-wrap" }, h("table", {},
-    h("tr", {}, h("th", {}, "Назва"), h("th", {}, "Категорія"), h("th", { class: "num" }, "Тривалість"), h("th", { class: "num" }, "Ціна"), h("th", {})),
-    services.map((s) => h("tr", { class: "click", onclick: () => svcForm(s) }, h("td", {}, s.name), h("td", {}, s.category || ""), h("td", { class: "num" }, s.duration_min, " хв"),
+    h("tr", {}, h("th", {}, "Назва"), h("th", {}, "Розділ"), h("th", {}, "Тип"), h("th", { class: "num" }, "Тривалість"), h("th", { class: "num" }, "Ціна"), h("th", {})),
+    services.map((s) => h("tr", { class: "click", onclick: () => svcForm(s) }, h("td", {}, s.name), h("td", {}, s.section || ""), h("td", {}, s.category || ""), h("td", { class: "num" }, s.duration_min, " хв"),
       h("td", { class: "num" }, priceText(s)), h("td", {}, s.is_active ? "" : h("span", { class: "chip" }, "прихована")))))));
   main.append(h("h2", { style: { marginTop: "22px" } }, "Матеріали та розхідники"), materials.length ? h("div", { class: "card table-wrap" }, h("table", {},
     h("tr", {}, h("th", {}, "Назва"), h("th", {}, "Одиниця"), h("th", { class: "num" }, "Собівартість"), h("th", {})),
@@ -961,18 +961,23 @@ VIEWS.catalog = async (main) => {
 
   function svcForm(s) {
     const name = h("input", { value: s?.name || "" });
-    const cat = h("input", { value: s?.category || "", placeholder: "Нігті, Волосся…" });
+    const uniq = (k) => [...new Set(services.map((x) => x[k]).filter(Boolean))];
+    const sec = h("input", { value: s?.section || "", placeholder: "Чоловічі / Жіночі", list: "dl-sec" });
+    const cat = h("input", { value: s?.category || "", placeholder: "Стрижка, Фарбування…", list: "dl-cat" });
+    const dls = [h("datalist", { id: "dl-sec" }, uniq("section").map((x) => h("option", { value: x }))),
+      h("datalist", { id: "dl-cat" }, uniq("category").map((x) => h("option", { value: x })))];
     const dur = h("input", { type: "number", min: 5, step: 5, value: s?.duration_min || 60 });
     const price = h("input", { inputmode: "decimal", value: s ? kopToInput(s.price) : "" });
     const order = h("input", { type: "number", value: s?.sort_order || 0 });
     const active = h("input", { type: "checkbox", checked: s ? s.is_active : true });
     const from = h("input", { type: "checkbox", checked: s ? s.price_from : false });
-    openSheet(s ? s.name : "Нова послуга", h("div", { class: "stack" }, field("Назва", name), field("Категорія", cat),
+    openSheet(s ? s.name : "Нова послуга", h("div", { class: "stack" }, dls, field("Назва", name),
+      h("div", { class: "form-grid" }, field("Розділ (крок 1 у боті)", sec), field("Тип послуги (крок 2)", cat)),
       h("div", { class: "form-grid" }, field("Тривалість, хв (для календаря)", dur), field("Ціна, ₴", price), field("Порядок", order)),
       h("label", { class: "row" }, from, "Ціна «від» (остаточна сума — після послуги)"),
       h("label", { class: "row" }, active, "Доступна для запису"),
       h("button", { class: "btn gold big", onclick: async () => {
-        const body = { name: name.value, category: cat.value || null, duration_min: +dur.value, price: toKop(price.value), price_from: from.checked, sort_order: +order.value, is_active: active.checked };
+        const body = { name: name.value, section: sec.value.trim() || null, category: cat.value.trim() || null, duration_min: +dur.value, price: toKop(price.value), price_from: from.checked, sort_order: +order.value, is_active: active.checked };
         await run(() => (s ? api.patch("/api/services/" + s.id, body) : api.post("/api/services", body)), "Збережено");
         closeSheet(); await loadRefs(); reload();
       } }, "Зберегти")));

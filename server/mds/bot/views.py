@@ -70,22 +70,40 @@ def _dur(minutes: int) -> str:
 
 
 def services_text(services: list[Service], salon: str) -> str:
+    from ..services.catalog import service_tree
+
     if not services:
         return "Список послуг поки порожній."
-    lines = [f"✨ <b>Послуги салону {salon}</b>\n"]
-    cat = object()
-    for x in services:
-        if x.category != cat:
-            cat = x.category
-            if cat:
-                lines.append(f"\n<b>{e(cat)}</b>")
-        # тривалість клієнтам не показуємо — вона потрібна лише календарю
-        lines.append(f"• {e(x.name)} — <b>{price_text(x)}</b>")
+    lines = [f"✨ <b>Послуги салону {e(salon)}</b>"]
+    for sec, cats in service_tree(services):
+        lines.append(f"\n<b>{e(sec).upper()}</b>")
+        for cat, items in cats:
+            if len(cats) > 1 or cat != "Послуги":
+                lines.append(f"<i>{e(cat)}</i>")
+            # тривалість клієнтам не показуємо — вона потрібна лише календарю
+            lines += [f"• {e(x.name)} — <b>{price_text(x)}</b>" for x in items]
     return "\n".join(lines)
 
 
-def services_kb(services: list[Service]) -> InlineKeyboardMarkup:
-    return kb([[(f"{x.name} · {price_text(x)}", f"svc:{x.id}")] for x in services])
+def services_kb(services: list[Service], back: str | None = None) -> InlineKeyboardMarkup:
+    rows = [[(f"{x.name} · {price_text(x)}", f"svc:{x.id}")] for x in services]
+    if back:
+        rows.append([("« Назад", back)])
+    return kb(rows)
+
+
+SECTION_ICON = {"чоловічі": "💈", "жіночі": "💇‍♀️"}
+
+
+def sections_kb(sections: list[str]) -> InlineKeyboardMarkup:
+    return kb([[(f"{SECTION_ICON.get(sec.lower(), '✨')} {sec}", f"sec:{i}")] for i, sec in enumerate(sections)])
+
+
+def categories_kb(sec_idx: int, cats: list[str], back: str | None) -> InlineKeyboardMarkup:
+    rows = [[(c, f"cat:{sec_idx}:{j}")] for j, c in enumerate(cats)]
+    if back:
+        rows.append([("« Назад", back)])
+    return kb(rows)
 
 
 def masters_kb(service_id: int, masters: list[User]) -> InlineKeyboardMarkup:

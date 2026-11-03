@@ -450,7 +450,7 @@ def build_staff_router() -> Router:
         await cb.answer()
 
     def _services_kb(s, master_id: int):
-        rows = [[(f"{x.name} · {v.price_text(x)}", f"s:as:{master_id}:{x.id}")] for x in catalog.list_services(s)]
+        rows = [[((f"{x.section} · " if x.section else "") + f"{x.name} · {v.price_text(x)}", f"s:as:{master_id}:{x.id}")] for x in catalog.list_services(s)]
         return v.kb(rows + [[("« Меню", "s:menu")]])
 
     @router.callback_query(F.data.startswith("s:am:"))

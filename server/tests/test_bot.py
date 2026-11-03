@@ -402,3 +402,32 @@ def test_price_from_shown_and_duration_hidden(h, db, seed):
     text = h.session.texts()[-1]
     assert "Довге волосся — <b>від 550 ₴</b>" in text
     assert "хв" not in text and "год" not in text
+
+
+def test_booking_goes_section_then_type_then_service(h, db, seed):
+    from mds.models import Service
+    from mds.services import catalog
+    d = seed["actors"]["director"]
+    with db.session() as s:
+        for x in s.query(Service):
+            x.is_active = False
+        for name, sec, cat, price in [("Модельна стрижка", "Чоловічі", "Стрижка", 45000),
+                                      ("Коротке волосся", "Жіночі", "Стрижка", 40000),
+                                      ("AirTouch", "Жіночі", "Фарбування", 300000)]:
+            catalog.create_service(s, d, {"name": name, "section": sec, "category": cat, "price": price, "duration_min": 60})
+    h.send("📅 Записатися")
+    assert [b.text for b in h.session.buttons()] == ["💈 Чоловічі", "💇‍♀️ Жіночі"]
+    h.click_text("💇‍♀️ Жіночі")
+    assert [b.text for b in h.session.buttons()] == ["Стрижка", "Фарбування", "« Назад"]
+    h.click_text("Фарбування")
+    assert "Жіночі · Фарбування" in h.session.texts()[-1]
+    assert [b.text for b in h.session.buttons()][0] == "AirTouch · 3 000 ₴"
+    h.click_text("AirTouch")
+    assert "оберіть майстра" in h.session.texts()[-1].lower()
+    # у чоловічих один тип — крок «тип» пропускається
+    h.send("📅 Записатися")
+    h.click_text("💈 Чоловічі")
+    assert [b.text for b in h.session.buttons()][0].startswith("Модельна стрижка")
+    h.send("💅 Послуги та ціни")
+    t = h.session.texts()[-1]
+    assert t.index("ЧОЛОВІЧІ") < t.index("ЖІНОЧІ") < t.index("<i>Фарбування</i>")
