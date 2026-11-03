@@ -16,9 +16,13 @@ from ..models import Appointment, Notification, Role, User
 MAX_ATTEMPTS = 5
 
 
-def enqueue(s: Session, chat_id: int | None, text: str) -> None:
-    if chat_id:
-        s.add(Notification(chat_id=chat_id, text=text))
+def enqueue(s: Session, chat_id: int | None, text: str, buttons: list | None = None) -> bool:
+    """Поставити повідомлення в чергу. buttons — рядки кнопок [[текст, callback_data], ...].
+    Повертає False, якщо в отримувача немає Telegram."""
+    if not chat_id:
+        return False
+    s.add(Notification(chat_id=chat_id, text=text, buttons=buttons))
+    return True
 
 
 def notify_directors(s: Session, text: str, exclude_user_id: int | None = None) -> None:

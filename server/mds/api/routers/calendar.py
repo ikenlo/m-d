@@ -8,7 +8,15 @@ from sqlalchemy.orm import Session
 from ...services import bookings, orders
 from ...services.common import Actor
 from ..deps import get_actor, get_session
+from datetime import datetime
+
+from pydantic import BaseModel
+
 from ..schemas import AppointmentIn, AppointmentPatch, CloseOrderIn, StatusIn
+
+
+class ProposeIn(BaseModel):
+    starts_at: datetime
 
 router = APIRouter(prefix="/api", tags=["calendar"])
 
@@ -32,6 +40,25 @@ def create_appointment(body: AppointmentIn, actor: Actor = Depends(get_actor), s
     data = body.model_dump()
     data["starts_at"] = data["starts_at"].replace(tzinfo=None, second=0, microsecond=0)
     return bookings.appt_public(bookings.create_appointment(s, actor, **data))
+
+
+@router.get("/appointments/pending")
+def pending(actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
+    """Непідтверджені записи (майстер — лише свої)."""
+    return [bookings.appt_public(a) for a in bookings.pending_list(s, actor)]
+
+
+@router.post("/appointments/{appt_id}/decline-busy")
+def decline_busy(appt_id: int, actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
+    """«Час зайнятий»: бот запропонує клієнту найближчі вільні години."""
+    return bookings.decline_busy(s, actor, appt_id)
+
+
+@router.post("/appointments/{appt_id}/propose")
+def propose(appt_id: int, body: ProposeIn, actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
+    """Запропонувати клієнту інший час (клієнт підтверджує в боті)."""
+    a, notified = bookings.propose_time(s, actor, appt_id, body.starts_at.replace(tzinfo=None, second=0, microsecond=0))
+    return {**bookings.appt_public(a), "notified": notified}
 
 
 @router.get("/appointments/{appt_id}")

@@ -14,6 +14,7 @@ from aiogram.client.session.aiohttp import AiohttpSession
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.fsm.storage.memory import MemoryStorage
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 from ..db import Database
 from ..services import notifications
@@ -63,7 +64,12 @@ async def deliver_outbox(bot: Bot, db: Database) -> int:
     with db.session() as s:
         for n in notifications.pending(s):
             try:
-                await bot.send_message(n.chat_id, n.text, parse_mode=None)
+                markup = None
+                if n.buttons:
+                    markup = InlineKeyboardMarkup(inline_keyboard=[
+                        [InlineKeyboardButton(text=t, callback_data=d) for t, d in row] for row in n.buttons
+                    ])
+                await bot.send_message(n.chat_id, n.text, parse_mode=None, reply_markup=markup)
                 notifications.mark_sent(n)
                 sent += 1
             except Exception as e:  # noqa: BLE001 — помилка одного повідомлення не зупиняє чергу

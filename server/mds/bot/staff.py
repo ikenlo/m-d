@@ -366,14 +366,39 @@ def build_staff_router() -> Router:
                 if not u:
                     await cb.answer(EXPIRED, show_alert=True)
                     return
-                a = bookings.reschedule(s, Actor.of(u), int(appt_id), starts_at=v.parse_dt(dt))
+                cur = bookings.get_appointment(s, Actor.of(u), int(appt_id))
+                if cur.status == ApptStatus.PENDING:
+                    # непідтверджений запис — це пропозиція клієнту, він підтвердить у боті
+                    a, notified = bookings.propose_time(s, Actor.of(u), int(appt_id), v.parse_dt(dt))
+                    head = "🕐 Клієнту запропоновано новий час" if notified else "🕐 Час змінено. Клієнт не в Telegram — зателефонуйте йому"
+                else:
+                    a = bookings.reschedule(s, Actor.of(u), int(appt_id), starts_at=v.parse_dt(dt))
+                    head = "🔁 Перенесено"
                 text = v.staff_appt_text(a, show_master=u.role == Role.DIRECTOR)
                 markup = v.staff_appt_kb(a, u.role == Role.DIRECTOR)
         except DomainError as e:
             await cb.answer(e.message, show_alert=True)
             return
-        await cb.message.edit_text("🔁 Перенесено\n" + text, reply_markup=markup)
-        await cb.answer("Перенесено")
+        await cb.message.edit_text(head + "\n" + text, reply_markup=markup)
+        await cb.answer("Готово")
+
+    @router.callback_query(F.data.startswith("s:busy:"))
+    async def busy(cb: CallbackQuery, db: Database, staff: StaffSessions):
+        appt_id = int(cb.data.split(":")[2])
+        try:
+            with db.session() as s:
+                u = current(s, staff, cb.message.chat.id)
+                if not u:
+                    await cb.answer(EXPIRED, show_alert=True)
+                    return
+                r = bookings.decline_busy(s, Actor.of(u), appt_id)
+        except DomainError as e:
+            await cb.answer(e.message, show_alert=True)
+            return
+        msg = ("⛔ Клієнту відповіли, що час зайнятий, і запропонували вільні години."
+               if r["notified"] else "⛔ Запис знято. Клієнт не в Telegram — зателефонуйте йому.")
+        await cb.message.edit_text(msg, reply_markup=v.kb([[("☰ Меню", "s:menu")]]))
+        await cb.answer()
 
     # -------------------------------------------------- закриття замовлення
 

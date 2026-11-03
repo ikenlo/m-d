@@ -1,3 +1,5 @@
+from datetime import datetime
+
 
 import pytest
 from fastapi.testclient import TestClient
@@ -181,3 +183,24 @@ def test_bot_pin_and_staff_code_via_api(client):
     assert client.put("/api/settings", headers=d, json={"bot_staff_code": "12a4"}).status_code == 422
     r = client.put("/api/settings", headers=d, json={"bot_staff_code": "5555", "salon_address": "Київ"})
     assert r.json()["bot_staff_code"] == "5555"
+
+
+def test_pending_api(client):
+    from mds.services import bookings
+    from mds.services.common import Actor
+    ids = client.ids
+    db = client.app.state.db
+    with db.session() as s:
+        a = bookings.create_appointment(s, Actor.telegram(555), master_id=ids["m1"], service_id=ids["haircut"],
+                                        starts_at=datetime(2026, 11, 2, 10), client_name="К", client_phone="0931234567")
+        appt_id = a.id
+    m1 = login(client, "olena", "Master123")
+    m2 = login(client, "iryna", "Master123")
+    assert [x["id"] for x in client.get("/api/appointments/pending", headers=m1).json()] == [appt_id]
+    assert client.get("/api/appointments/pending", headers=m2).json() == []
+    assert client.post(f"/api/appointments/{appt_id}/propose", headers=m2, json={"starts_at": "2026-11-02T15:00"}).status_code == 403
+    r = client.post(f"/api/appointments/{appt_id}/propose", headers=m1, json={"starts_at": "2026-11-02T15:00"})
+    assert r.status_code == 200 and r.json()["notified"] and r.json()["awaiting_client"]
+    r = client.post(f"/api/appointments/{appt_id}/decline-busy", headers=m1)
+    assert r.status_code == 200 and r.json()["notified"]
+    assert client.post(f"/api/appointments/{appt_id}/decline-busy", headers=m1).status_code == 409

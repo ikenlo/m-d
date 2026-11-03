@@ -360,9 +360,9 @@ def staff_appt_kb(a: Appointment, is_director: bool) -> InlineKeyboardMarkup | N
         return None
     rows = []
     if a.status == ApptStatus.PENDING:
-        rows.append([("✅ Підтвердити", f"s:cf:{a.id}")])
+        rows.append([("✅ Підтвердити", f"s:cf:{a.id}"), ("⛔ Зайнято", f"s:busy:{a.id}")])
     rows.append([("💳 Закрити замовлення", f"s:cl:{a.id}")])
-    row = [("🔁 Перенести", f"s:mv:{a.id}")]
+    row = [("🕐 Інший час" if a.status == ApptStatus.PENDING else "🔁 Перенести", f"s:mv:{a.id}")]
     row.append(("🗑 Видалити", f"s:del:{a.id}") if is_director else ("❌ Скасувати", f"s:del:{a.id}"))
     rows.append(row)
     if a.status != ApptStatus.IN_PROGRESS:

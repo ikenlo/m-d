@@ -154,7 +154,7 @@ svg.i.lg { width: 22px; height: 22px; }
 .card + .card { margin-top: 12px; }
 .grid > .card + .card, .grid > .stack > .card + .card { margin-top: 0; }
 .grid > .stack > * + * { margin-top: 12px; }
-.card-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
+.card-head { display: flex; align-items: center; justify-content: space-between; gap: 4px 10px; margin-bottom: 10px; flex-wrap: wrap; }
 .card-head h3 { margin: 0; }
 .section { margin-top: 22px; }
 .grid { display: grid; gap: 12px; }

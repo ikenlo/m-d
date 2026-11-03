@@ -415,6 +415,8 @@ function apptSheet(a, onChange) {
   if (canEdit) {
     if (a.status === "pending") {
       secondary.append(h("button", { class: "btn", onclick: () => done(() => api.post(`/api/appointments/${a.id}/status`, { status: "confirmed" }), "Підтверджено") }, icon("ok", "sm"), "Підтвердити"));
+      secondary.append(h("button", { class: "btn", onclick: () => proposeForm(a, onChange) }, icon("clock", "sm"), "Інший час"));
+      secondary.append(h("button", { class: "btn danger", onclick: () => declineBusy(a, onChange) }, icon("cancel", "sm"), "Зайнято"));
     }
     if (a.status !== "in_progress") {
       secondary.append(h("button", { class: "btn", onclick: () => done(() => api.post(`/api/appointments/${a.id}/status`, { status: "in_progress" }), "Клієнта прийнято") }, icon("play", "sm"), "Клієнт прийшов"));
@@ -658,6 +660,67 @@ async function clientSheet(id) {
 // ============================================================ екрани
 const VIEWS = {};
 
+// ---------- Непідтверджені записи (блок угорі для майстра й адміністратора)
+function dayWord(iso) {
+  const d = iso.slice(0, 10);
+  if (d === today()) return "Сьогодні";
+  if (d === addDays(today(), 1)) return "Завтра";
+  return `${weekday(d)}, ${dm(d)}`;
+}
+
+function proposeForm(a, onChange) {
+  const d = h("input", { type: "date", value: a.starts_at.slice(0, 10), min: today(), id: "propose-day" });
+  const box = h("div", { class: "row" });
+  const load = async () => {
+    box.replaceChildren(h("span", { class: "muted small" }, "Шукаю вільний час…"));
+    const list = await api.get(`/api/availability?master_id=${a.master_id}&service_id=${a.service_id}&day=${d.value}`).catch(() => []);
+    box.replaceChildren(...(list.length ? list.map((t) => h("button", { class: "btn sm", onclick: async () => {
+      const r = await run(() => api.post(`/api/appointments/${a.id}/propose`, { starts_at: `${d.value}T${t}` }));
+      closeSheet();
+      toast(r.notified ? "Клієнту надіслано пропозицію в Telegram" : `Час змінено. Клієнт не в Telegram — зателефонуйте: ${a.client.phone}`);
+      onChange();
+    } }, t)) : [h("span", { class: "muted small" }, "На цей день вільного часу немає")]));
+  };
+  d.addEventListener("change", load);
+  openSheet("Запропонувати інший час", h("div", { class: "stack" },
+    h("div", { class: "muted" }, `${a.client.name} хоче на ${dayWord(a.starts_at)} о ${hm(a.starts_at)} · ${a.service_name}`),
+    field("День", d), h("div", { class: "kpi-label" }, "Вільний час майстра"), box,
+    h("p", { class: "muted small" }, a.client.telegram_linked
+      ? "Клієнт отримає в боті: «Майстер пропонує інший час» з кнопками «Підходить» / «Інший час» / «Скасувати»."
+      : `Клієнт записаний не через Telegram — після зміни зателефонуйте йому: ${a.client.phone}`)));
+  load();
+}
+
+function declineBusy(a, onChange) {
+  confirmSheet("Цей час зайнятий?", a.client.telegram_linked
+    ? `Запис ${dayWord(a.starts_at)} о ${hm(a.starts_at)} буде знято. Бот напише клієнту, що час зайнятий, і запропонує найближчі вільні години.`
+    : `Запис буде знято. Клієнт не в Telegram — зателефонуйте йому: ${a.client.phone}`,
+  "Так, зайнято", async () => {
+    const r = await run(() => api.post(`/api/appointments/${a.id}/decline-busy`));
+    toast(r.notified ? "Клієнту запропоновано інший вільний час" : "Запис знято. Зателефонуйте клієнту");
+    onChange();
+  }, { danger: true });
+}
+
+async function pendingBlock(onChange) {
+  const list = await api.get("/api/appointments/pending").catch(() => []);
+  if (!list.length) return null;
+  const isMgr = state.user.role !== "master";
+  return h("div", { class: "card", style: { borderColor: "rgba(183,121,31,.45)", background: "linear-gradient(180deg, var(--warn-bg), var(--surface) 70%)", marginBottom: "14px" } },
+    h("div", { class: "card-head" }, h("h3", { class: "row", style: { gap: "8px" } }, icon("alert"), `Непідтверджені записи: ${list.length}`),
+      h("span", { class: "muted small" }, "Підтвердіть, запропонуйте інший час або дайте відповідь «зайнято»")),
+    list.map((a) => h("div", { class: "row", style: { padding: "10px 0", borderTop: "1px solid var(--line)", alignItems: "flex-start" } },
+      h("div", { style: { minWidth: "96px" } }, h("b", {}, dayWord(a.starts_at)), h("div", { style: { fontSize: "18px", fontWeight: 700 } }, hm(a.starts_at))),
+      h("div", { class: "grow", style: { minWidth: "180px" } },
+        h("div", {}, h("b", {}, a.client.name), " · ", h("a", { href: "tel:" + a.client.phone }, a.client.phone)),
+        h("div", { class: "muted small" }, a.service_name, isMgr ? ` · ${a.master_name}` : "", a.source === "telegram" ? " · з Telegram" : ""),
+        a.awaiting_client ? h("span", { class: "chip st-in_progress", style: { marginTop: "4px" } }, "запропоновано інший час — чекаємо відповіді клієнта") : null),
+      h("div", { class: "row" },
+        h("button", { class: "btn sm primary", onclick: async () => { await run(() => api.post(`/api/appointments/${a.id}/status`, { status: "confirmed" }), "Запис підтверджено"); onChange(); } }, icon("ok", "sm"), "Підтвердити"),
+        h("button", { class: "btn sm", onclick: () => proposeForm(a, onChange) }, icon("clock", "sm"), "Інший час"),
+        h("button", { class: "btn sm danger", onclick: () => declineBusy(a, onChange) }, "Зайнято")))));
+}
+
 // ---------- Сьогодні (майстер)
 VIEWS.today = async (main) => {
   const d = today();
@@ -676,6 +739,8 @@ VIEWS.today = async (main) => {
     h("div", { class: "card kpi-tile" }, h("div", { class: "kpi-top" }, h("span", { class: "kpi-ico" }, icon("check", "sm")), h("span", { class: "kpi-label" }, "Зміна")),
       h("div", { class: "kpi-value", style: { fontSize: "18px" } }, shift ? "Відкрита з " + hm(shift.opened_at) : "Не відкрита"),
       h("a", { href: "#/shift", class: "small" }, shift ? "Закрити зміну →" : "Деталі →"))));
+  const pend = await pendingBlock(reload);
+  if (pend) main.insertBefore(pend, main.children[1]);
   if (!active.length) { main.append(h("div", { class: "card" }, emptyState("На сьогодні записів немає", "calendar"))); return; }
   for (const a of active) {
     const done = a.status === "completed";
@@ -717,6 +782,8 @@ VIEWS.calendar = async (main) => {
   main.append(strip);
 
   const list = await api.get(`/api/appointments?date_from=${day}`);
+  const pend = await pendingBlock(reload);
+  if (pend) main.append(pend);
   if (!isMaster) {
     // «Швидкий запис» з Telegram: клієнти просять передзвонити
     const calls = await api.get("/api/callbacks").catch(() => []);

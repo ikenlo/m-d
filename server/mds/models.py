@@ -224,6 +224,8 @@ class Appointment(Base):
     source: Mapped[str] = mapped_column(String(16), default="staff")  # staff | telegram
     comment: Mapped[str | None] = mapped_column(Text)
     cancel_reason: Mapped[str | None] = mapped_column(Text)
+    # майстер запропонував клієнту інший час — чекаємо відповіді в боті
+    awaiting_client: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
     created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=_now, onupdate=_now)
@@ -393,6 +395,8 @@ class Notification(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     chat_id: Mapped[int] = mapped_column(BigInteger)
     text: Mapped[str] = mapped_column(Text)
+    # кнопки під повідомленням: [[["Текст", "callback_data"], ...], ...]
+    buttons: Mapped[list | None] = mapped_column(JSON)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
     sent_at: Mapped[datetime | None] = mapped_column(DateTime)
     attempts: Mapped[int] = mapped_column(Integer, default=0)
