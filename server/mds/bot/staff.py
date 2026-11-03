@@ -445,13 +445,25 @@ def build_staff_router() -> Router:
                 markup = v.kb([[(m.full_name, f"s:am:{m.id}")] for m in masters] + [[("« Меню", "s:menu")]])
                 text = "➕ Новий запис — оберіть майстра:"
             else:
-                markup, text = _services_kb(s, u.id), "➕ Новий запис — оберіть послугу:"
+                text, markup = _services_step(s, u.id)
+                text = "➕ " + text
         await cb.message.edit_text(text, reply_markup=markup)
         await cb.answer()
 
-    def _services_kb(s, master_id: int):
-        rows = [[((f"{x.section} · " if x.section else "") + f"{x.name} · {v.price_text(x)}", f"s:as:{master_id}:{x.id}")] for x in catalog.list_services(s)]
-        return v.kb(rows + [[("« Меню", "s:menu")]])
+    def _services_step(s, master_id: int, path: list[int] | None = None):
+        tree = catalog.service_tree(catalog.list_services(s))
+        return v.tree_step(tree, path or [], f"s:t:{master_id}", lambda x: f"s:as:{master_id}:{x.id}", back_root="s:menu")
+
+    @router.callback_query(F.data.startswith("s:t:"))
+    async def add_tree(cb: CallbackQuery, db: Database, staff: StaffSessions):
+        _, _, master_id, path = cb.data.split(":")
+        with db.session() as s:
+            if not current(s, staff, cb.message.chat.id):
+                await cb.answer(EXPIRED, show_alert=True)
+                return
+            text, markup = _services_step(s, int(master_id), v.parse_path(path))
+        await cb.message.edit_text("➕ " + text, reply_markup=markup)
+        await cb.answer()
 
     @router.callback_query(F.data.startswith("s:am:"))
     async def add_master(cb: CallbackQuery, db: Database, staff: StaffSessions):
@@ -460,8 +472,8 @@ def build_staff_router() -> Router:
             if not current(s, staff, cb.message.chat.id):
                 await cb.answer(EXPIRED, show_alert=True)
                 return
-            markup = _services_kb(s, master_id)
-        await cb.message.edit_text("➕ Оберіть послугу:", reply_markup=markup)
+            text, markup = _services_step(s, master_id)
+        await cb.message.edit_text("➕ " + text, reply_markup=markup)
         await cb.answer()
 
     @router.callback_query(F.data.startswith("s:as:"))

@@ -18,6 +18,7 @@ def service_public(x: Service) -> dict:
         "name": x.name,
         "section": x.section,
         "category": x.category,
+        "subcategory": x.subcategory,
         "duration_min": x.duration_min,
         "price": x.price,
         "price_from": bool(x.price_from),
@@ -42,6 +43,7 @@ def create_service(s: Session, actor: Actor, data: dict) -> Service:
         name=data["name"].strip(),
         section=(data.get("section") or "").strip() or None,
         category=(data.get("category") or "").strip() or None,
+        subcategory=(data.get("subcategory") or "").strip() or None,
         duration_min=int(data["duration_min"]),
         price=int(data["price"]),
         price_from=bool(data.get("price_from", False)),
@@ -59,29 +61,44 @@ def update_service(s: Session, actor: Actor, service_id: int, data: dict) -> Ser
     _check_service(data)
     x: Service = get_or_404(s, Service, service_id, "Послугу")
     before = service_public(x)
-    for k in ("name", "section", "category", "duration_min", "price", "price_from", "is_active", "sort_order"):
+    for k in ("name", "section", "category", "subcategory", "duration_min", "price", "price_from", "is_active", "sort_order"):
         if k in data:
             setattr(x, k, data[k])
     audit(s, actor, "service", x.id, "update", before, service_public(x))
     return x
 
 
-def service_tree(services: list[Service]) -> list[tuple[str, list[tuple[str, list[Service]]]]]:
-    """Дерево каталогу для запису: [(розділ, [(тип, [послуги])])] у порядку sort_order.
-    Порожній розділ/тип групується як «Послуги»."""
-    tree: dict[str, dict[str, list[Service]]] = {}
+Node = tuple[str, list]  # (назва, діти): діти — вузли або, на останньому рівні, послуги
+
+
+def service_tree(services: list[Service]) -> list[Node]:
+    """Дерево каталогу для запису: розділ → тип → підтип → послуги.
+
+    [(розділ, [(тип, [(підтип, [Service, ...]), ...]), ...]), ...]
+    Порожній розділ/тип групується як «Послуги»; порожній підтип — "" (рівень пропускається).
+    Порядок: «Чоловічі», «Жіночі», далі — за sort_order послуг.
+    """
+    tree: dict[str, dict[str, dict[str, list[Service]]]] = {}
     for x in services:
-        tree.setdefault(x.section or "Послуги", {}).setdefault(x.category or "Послуги", []).append(x)
+        tree.setdefault(x.section or "Послуги", {}).setdefault(x.category or "Послуги", {}) \
+            .setdefault(x.subcategory or "", []).append(x)
+
+    def first(node) -> int:
+        if isinstance(node, list):
+            return min(x.sort_order for x in node)
+        return min(first(ch) for ch in node.values())
 
     def sec_key(sec: str) -> tuple:
-        # спершу «Чоловічі», потім «Жіночі», далі решта за порядком сортування послуг
         pref = SECTION_ORDER.index(sec.lower()) if sec.lower() in SECTION_ORDER else len(SECTION_ORDER)
-        return (pref, min(x.sort_order for items in tree[sec].values() for x in items), sec)
+        return (pref, first(tree[sec]), sec)
 
-    def cats(sec: str) -> list[tuple[str, list[Service]]]:
-        return sorted(tree[sec].items(), key=lambda kv: (min(x.sort_order for x in kv[1]), kv[0]))
+    def ordered(d: dict) -> list:
+        return sorted(d.items(), key=lambda kv: (first(kv[1]), kv[0]))
 
-    return [(sec, cats(sec)) for sec in sorted(tree, key=sec_key)]
+    return [
+        (sec, [(cat, [(sub, items) for sub, items in ordered(subs)]) for cat, subs in ordered(tree[sec])])
+        for sec in sorted(tree, key=sec_key)
+    ]
 
 
 SECTION_ORDER = ["чоловічі", "жіночі"]

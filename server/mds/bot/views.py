@@ -77,11 +77,14 @@ def services_text(services: list[Service], salon: str) -> str:
     lines = [f"✨ <b>Послуги салону {e(salon)}</b>"]
     for sec, cats in service_tree(services):
         lines.append(f"\n<b>{e(sec).upper()}</b>")
-        for cat, items in cats:
+        for cat, subs in cats:
             if len(cats) > 1 or cat != "Послуги":
-                lines.append(f"<i>{e(cat)}</i>")
-            # тривалість клієнтам не показуємо — вона потрібна лише календарю
-            lines += [f"• {e(x.name)} — <b>{price_text(x)}</b>" for x in items]
+                lines.append(f"\n<b><i>{e(cat)}</i></b>")
+            for sub, items in subs:
+                if sub:
+                    lines.append(f"<i>{e(sub)}</i>")
+                # тривалість клієнтам не показуємо — вона потрібна лише календарю
+                lines += [f"• {e(x.name)} — <b>{price_text(x)}</b>" for x in items]
     return "\n".join(lines)
 
 
@@ -93,17 +96,63 @@ def services_kb(services: list[Service], back: str | None = None) -> InlineKeybo
 
 
 SECTION_ICON = {"чоловічі": "💈", "жіночі": "💇‍♀️"}
+LEVEL_PROMPT = ["Оберіть розділ:", "оберіть тип послуги:", "оберіть вид:", "оберіть послугу:"]
 
 
-def sections_kb(sections: list[str]) -> InlineKeyboardMarkup:
-    return kb([[(f"{SECTION_ICON.get(sec.lower(), '✨')} {sec}", f"sec:{i}")] for i, sec in enumerate(sections)])
+def _children(tree: list, path: list[int]) -> list:
+    node = tree
+    for i in path:
+        node = node[i][1]
+    return node
 
 
-def categories_kb(sec_idx: int, cats: list[str], back: str | None) -> InlineKeyboardMarkup:
-    rows = [[(c, f"cat:{sec_idx}:{j}")] for j, c in enumerate(cats)]
-    if back:
-        rows.append([("« Назад", back)])
-    return kb(rows)
+def _auto(children: list) -> bool:
+    """Рівень, де вибору немає (один варіант), пропускається."""
+    return len(children) == 1 and not isinstance(children[0], Service)
+
+
+def tree_step(tree: list, path: list[int], prefix: str, leaf_cb, back_root: str | None = None):
+    """Один крок вибору послуги в дереві каталогу.
+
+    path — індекси вже обраних вузлів; prefix — початок callback_data
+    (вузли кодуються як "<prefix>:1.0.2"); leaf_cb(service) -> callback_data послуги.
+    Повертає (текст, клавіатуру). Рівні з одним варіантом пропускаються автоматично.
+    """
+    if path and any(i >= len(_children(tree, path[:k])) for k, i in enumerate(path)):
+        path = []  # каталог змінився — починаємо з початку
+    children = _children(tree, path)
+    while children and _auto(children):
+        path = path + [0]
+        children = _children(tree, path)
+    labels, node = [], tree
+    for i in path:
+        if node[i][0] and node[i][0] != "Послуги":
+            labels.append(node[i][0])
+        node = node[i][1]
+    leaf = bool(children) and isinstance(children[0], Service)
+    if leaf:
+        rows = [[(f"{x.name} · {price_text(x)}", leaf_cb(x))] for x in children]
+        prompt = LEVEL_PROMPT[-1]
+    else:
+        def label(name: str) -> str:
+            return f"{SECTION_ICON.get(name.lower(), '✨')} {name}" if not path else name
+        rows = [[(label(name), f"{prefix}:{'.'.join(map(str, path + [i]))}")] for i, (name, _) in enumerate(children)]
+        prompt = LEVEL_PROMPT[min(len(path), 2)]
+    # «Назад» — до найближчого рівня, де був вибір
+    back_path = path[:-1]
+    while back_path and not len(_children(tree, back_path)) > 1:
+        back_path = back_path[:-1]
+    if path and (back_path or len(_children(tree, [])) > 1):
+        rows.append([("« Назад", f"{prefix}:{'.'.join(map(str, back_path))}")])
+    elif back_root:
+        rows.append([("« Назад", back_root)])
+    title = " · ".join(e(x) for x in labels)
+    text = f"<b>{title}</b> — {prompt}" if title else prompt[0].upper() + prompt[1:]
+    return text, kb(rows)
+
+
+def parse_path(v: str) -> list[int]:
+    return [int(x) for x in v.split(".") if x != ""]
 
 
 def masters_kb(service_id: int, masters: list[User]) -> InlineKeyboardMarkup:

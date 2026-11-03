@@ -431,3 +431,42 @@ def test_booking_goes_section_then_type_then_service(h, db, seed):
     h.send("💅 Послуги та ціни")
     t = h.session.texts()[-1]
     assert t.index("ЧОЛОВІЧІ") < t.index("ЖІНОЧІ") < t.index("<i>Фарбування</i>")
+
+
+def test_three_level_coloring_and_back_navigation(h, db, seed):
+    from mds.models import Service
+    from mds.services import catalog
+    d = seed["actors"]["director"]
+    rows = [
+        ("Модельна", "Чоловічі", "Стрижки та послуги", None, 45000),
+        ("Коротке волосся", "Жіночі", "Стрижка", None, 40000),
+        ("До плечей", "Жіночі", "Фарбування", "В один тон", 150000),
+        ("До плечей", "Жіночі", "Фарбування", "Мелірування", 300000),
+        ("Нижче лопаток", "Жіночі", "Фарбування", "Мелірування", 550000),
+    ]
+    with db.session() as s:
+        for x in s.query(Service):
+            x.is_active = False
+        for i, (name, sec, cat, sub, price) in enumerate(rows):
+            catalog.create_service(s, d, {"name": name, "section": sec, "category": cat, "subcategory": sub,
+                                          "price": price, "duration_min": 60, "sort_order": i,
+                                          "price_from": name == "Нижче лопаток"})
+    h.send("📅 Записатися")
+    h.click_text("💇‍♀️ Жіночі")
+    h.click_text("Фарбування")
+    assert [b.text for b in h.session.buttons()] == ["В один тон", "Мелірування", "« Назад"]
+    h.click_text("Мелірування")
+    assert "Жіночі · Фарбування · Мелірування" in h.session.texts()[-1]
+    assert [b.text for b in h.session.buttons()] == ["До плечей · 3 000 ₴", "Нижче лопаток · від 5 500 ₴", "« Назад"]
+    h.click_text("« Назад")
+    assert [b.text for b in h.session.buttons()][:2] == ["В один тон", "Мелірування"]
+    h.click_text("« Назад")
+    assert [b.text for b in h.session.buttons()][:2] == ["Стрижка", "Фарбування"]
+    h.click_text("« Назад")
+    assert [b.text for b in h.session.buttons()] == ["💈 Чоловічі", "💇‍♀️ Жіночі"]
+    # у чоловічих один тип — одразу послуги, «Назад» веде до розділів
+    h.click_text("💈 Чоловічі")
+    assert [b.text for b in h.session.buttons()] == ["Модельна · 450 ₴", "« Назад"]
+    h.send("💅 Послуги та ціни")
+    t = h.session.texts()[-1]
+    assert "<i>Мелірування</i>" in t and t.index("В один тон") < t.index("Мелірування")

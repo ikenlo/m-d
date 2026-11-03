@@ -132,6 +132,8 @@ class Service(Base):
     # каталог для запису: розділ («Чоловічі», «Жіночі») → тип («Стрижка», «Фарбування») → послуга
     section: Mapped[str | None] = mapped_column(String(64))
     category: Mapped[str | None] = mapped_column(String(64))
+    # необов'язковий третій рівень: «Фарбування» → «Мелірування» → послуга
+    subcategory: Mapped[str | None] = mapped_column(String(64))
     duration_min: Mapped[int] = mapped_column(Integer)
     price: Mapped[int] = mapped_column(Integer)  # копійки
     # ціна «від»: остаточна сума залежить від довжини/густоти волосся тощо
