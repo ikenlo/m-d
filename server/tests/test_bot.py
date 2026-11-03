@@ -224,3 +224,170 @@ def test_env_aware_session_uses_proxy_env_and_custom_ca(monkeypatch):
 
     assert asyncio.run(check()) is True
     assert s._connector_init["ssl"] is not None
+
+
+# ---------------------------------------------------------------- персонал
+
+@pytest.fixture
+def pins(db, seed):
+    from mds.services import users as us
+    from mds.services.common import Actor as A
+    with db.session() as s:
+        us.set_bot_pin(s, A.system(), seed["m1"], "1111")
+        us.set_bot_pin(s, A.system(), seed["director"], "9999")
+    return seed
+
+
+def staff_login(h, uid, pin, code="0000"):
+    h.send("👩‍🎨 Для майстрів")
+    h.send(code)
+    h.click(f"s:who:{uid}")
+    h.send(pin)
+
+
+def test_client_free_time_and_contacts(h, db, seed):
+    from mds.services import bookings
+    from mds.services.common import Actor as A, update_settings
+    with db.session() as s:
+        bookings.create_appointment(s, seed["actors"]["admin"], master_id=seed["m1"], service_id=seed["haircut"],
+                                    starts_at=datetime(2026, 11, 2, 12), client_name="X", client_phone="0500000000")
+        update_settings(s, A.system(), {"salon_address": "Київ, вул. Хрещатик, 1", "salon_phone": "+380671234567"})
+    h.send("🕐 Вільний час")
+    h.click("free:20261102")
+    text = h.session.texts()[-1]
+    assert "Олена</b>: 09:00–12:00, 13:00–20:00" in text
+    assert "Ірина</b>: 09:00–20:00" in text
+    h.send("📍 Контакти")
+    assert "Хрещатик" in h.session.texts()[-1] and "Неділя: вихідний" in h.session.texts()[-1]
+
+
+def test_staff_wrong_code_is_rejected(h, pins):
+    h.send("👩‍🎨 Для майстрів")
+    assert "код доступу" in h.session.texts()[-1]
+    h.send("1234")
+    assert "Цей розділ не для вас" in h.session.texts()[-1]
+    # без коду вибір людини не працює
+    h.click(f"s:who:{pins['m1']}")
+    assert any("не для вас" in a for a in h.session.alerts())
+
+
+def test_staff_code_shows_only_people_with_pin(h, pins):
+    h.send("👩‍🎨 Для майстрів")
+    h.send("0000")
+    names = [b.text for b in h.session.buttons()]
+    assert any("Олена" in n for n in names) and any("Марина" in n for n in names)
+    assert not any("Ірина" in n for n in names)  # немає PIN
+
+
+def test_staff_pin_bruteforce_lock(h, pins):
+    h.send("👩‍🎨 Для майстрів")
+    h.send("0000")
+    for _ in range(5):
+        h.click(f"s:who:{pins['m1']}")
+        h.send("0001")
+    assert "Забагато" in h.session.texts()[-1]
+    h.send("👩‍🎨 Для майстрів")
+    assert "Забагато" in h.session.texts()[-1]
+
+
+def test_master_flow_add_list_close_earn_shift(h, db, pins):
+    from aiogram.methods import DeleteMessage
+    staff_login(h, pins["m1"], "1111")
+    assert "Олена" in h.session.texts()[-1] and "Оберіть дію" in h.session.texts()[-1]
+    # код і PIN видаляються з чату
+    assert sum(isinstance(c, DeleteMessage) for c in h.session.calls) >= 2
+    with db.session() as s:
+        assert s.get(User, pins["m1"]).telegram_chat_id == TG_ID
+
+    # додати запис
+    h.click("s:add")
+    h.click_text("Стрижка")
+    h.click_text("Пн 02.11")
+    h.click_text("10:00")
+    h.send("0671112233")
+    assert "Новий клієнт" in h.session.texts()[-1]
+    h.send("Анна")
+    assert "Запис створено" in h.session.texts()[-1]
+    with db.session() as s:
+        a = s.query(Appointment).one()
+        assert a.master_id == pins["m1"] and a.client.name == "Анна" and a.status == ApptStatus.CONFIRMED
+        appt_id = a.id
+
+    # мої записи на сьогодні
+    h.click("s:list")
+    h.click("s:ld:20261102")
+    assert "Анна" in h.session.texts()[-1]
+
+    # закрити замовлення з іншою сумою
+    h.click(f"s:cl:{appt_id}")
+    h.send("620")
+    h.click_text("💵 Готівка")
+    assert "Замовлення закрито" in h.session.texts()[-1] and "310 ₴" in h.session.texts()[-1]
+    h.click(f"s:pm:{appt_id}:62000:cash")  # повторне натискання — без задвоєння
+    with db.session() as s:
+        from mds.models import Order
+        assert s.query(Order).count() == 1
+
+    h.click("s:earn")
+    assert "Сьогодні: <b>310 ₴</b>" in h.session.texts()[-1]
+    h.click("s:shift")
+    h.click("s:shiftok")
+    assert "Звіт зміни" in h.session.texts()[-1]
+
+    # майстер не має доступу до фінансів директора
+    h.click("s:fin")
+    assert any("Сесія" in a for a in h.session.alerts())
+
+    h.click("s:logout")
+    h.click("s:list")
+    assert any("Сесія завершилась" in a for a in h.session.alerts())
+
+
+def test_director_flow(h, db, pins):
+    from mds.services import bookings, orders
+    adm = pins["actors"]["admin"]
+    with db.session() as s:
+        a = bookings.create_appointment(s, adm, master_id=pins["m1"], service_id=pins["haircut"],
+                                        starts_at=datetime(2026, 11, 2, 10), client_name="Анна", client_phone="0671112233")
+        b = bookings.create_appointment(s, adm, master_id=pins["m2"], service_id=pins["haircut"],
+                                        starts_at=datetime(2026, 11, 2, 11), client_name="Юля", client_phone="0501112233")
+        orders.close_order(s, pins["actors"]["m2"], b.id, amount=50000, payment_method="card")
+        sh = orders.close_shift(s, pins["actors"]["m2"], pins["m2"])
+        shift_id = sh.id
+    staff_login(h, pins["director"], "9999")
+    assert "Усі записи" in str(h.session.last_markup())
+
+    h.click("s:list")
+    h.click("s:ld:20261102")
+    texts = h.session.texts()
+    assert any("Анна" in t and "Олена" in t for t in texts)
+
+    # перенести
+    h.click(f"s:mv:{a.id}")
+    h.click_text("Пн 02.11")
+    h.click_text("15:00")
+    assert "Перенесено" in h.session.texts()[-1]
+    # видалити (скасування з історією)
+    h.click(f"s:del:{a.id}")
+    h.click(f"s:delok:{a.id}")
+    with db.session() as s:
+        x = s.get(Appointment, a.id)
+        assert x.status == ApptStatus.CANCELLED and "директором" in x.cancel_reason
+        assert x.starts_at == datetime(2026, 11, 2, 15)
+
+    # додати запис іншому майстру
+    h.click("s:add")
+    h.click(f"s:am:{pins['m2']}")
+    h.click_text("Манікюр")
+    h.click_text("Пн 02.11")
+    h.click_text("14:00")
+    h.send("0671112233")  # відомий клієнт — запис одразу
+    assert "Запис створено" in h.session.texts()[-1]
+
+    h.click("s:fin")
+    assert "Виручка: <b>500 ₴</b>" in h.session.texts()[-1]
+    h.click("s:pay")
+    h.click(f"s:po:{shift_id}")
+    assert any("Виплачено" in a for a in h.session.alerts())
+    h.click(f"s:po:{shift_id}")  # вдруге — відмова
+    assert any("вже виплачена" in a for a in h.session.alerts())

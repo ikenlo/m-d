@@ -6,7 +6,7 @@ from aiogram import F, Router
 from aiogram.filters import Command, CommandObject, CommandStart
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from aiogram.types import CallbackQuery, Message
+from aiogram.types import CallbackQuery, InlineKeyboardMarkup, Message
 from sqlalchemy import select
 
 from .. import clock
@@ -14,7 +14,7 @@ from ..db import Database
 from ..errors import DomainError
 from ..models import ApptStatus, Client, Role, Service, User
 from ..services import bookings, catalog, users
-from ..services.common import Actor, get_setting
+from ..services.common import Actor, all_settings, get_setting
 from . import views as v
 
 
@@ -32,7 +32,10 @@ def _client_by_tg(s, tg_id: int) -> Client | None:
 
 def build_router() -> Router:
     """Новий роутер з усіма обробниками (роутер aiogram можна підключити лише до одного диспетчера)."""
+    from .staff import build_staff_router
+
     router = Router(name="mds")
+    router.include_router(build_staff_router())
 
     # ------------------------------------------------------------------ меню
 
@@ -56,6 +59,31 @@ def build_router() -> Router:
             text = v.services_text(catalog.list_services(s), get_setting(s, "salon_name"))
         await message.answer(text, reply_markup=v.main_menu())
 
+
+    @router.message(Command("contacts"))
+    @router.message(F.text == v.BTN_CONTACTS)
+    async def contacts(message: Message, db: Database):
+        with db.session() as s:
+            text = v.contacts_text(all_settings(s))
+        await message.answer(text, reply_markup=v.main_menu())
+
+    @router.message(Command("free"))
+    @router.message(F.text == v.BTN_FREE)
+    async def free_days(message: Message, state: FSMContext):
+        await state.clear()
+        days = v.horizon(clock.now().date(), 7)
+        await message.answer("🕐 Вільний час — оберіть день:", reply_markup=v.days_kb("free", days, "book"))
+
+    @router.callback_query(F.data.startswith("free:"))
+    async def free_day(cb: CallbackQuery, db: Database):
+        day = v.parse_day(cb.data.split(":")[1])
+        with db.session() as s:
+            rows = [(m.full_name, bookings.free_windows(s, m.id, day)) for m in users.list_masters(s)]
+        days = v.horizon(clock.now().date(), 7)
+        days_rows = v.days_kb("free", days, "book").inline_keyboard[:-1]
+        markup = InlineKeyboardMarkup(inline_keyboard=[*days_rows, *v.kb([[("📅 Записатися", "book")]]).inline_keyboard])
+        await cb.message.edit_text(v.free_text(day, rows), reply_markup=markup)
+        await cb.answer()
 
     @router.message(Command("book"))
     @router.message(F.text == v.BTN_BOOK)

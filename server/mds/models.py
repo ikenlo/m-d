@@ -111,6 +111,8 @@ class User(Base):
     schedule: Mapped[dict | None] = mapped_column(JSON)
     telegram_chat_id: Mapped[int | None] = mapped_column(BigInteger)
     telegram_link_code: Mapped[str | None] = mapped_column(String(16), unique=True)
+    # особистий PIN для входу в розділ персоналу Telegram-бота (хеш scrypt)
+    bot_pin_hash: Mapped[str | None] = mapped_column(String(255))
     # безпека
     token_version: Mapped[int] = mapped_column(Integer, default=0)
     failed_logins: Mapped[int] = mapped_column(Integer, default=0)

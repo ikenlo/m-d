@@ -876,11 +876,11 @@ VIEWS.staff = async (main) => {
   main.append(topbar("Персонал", h("button", { class: "btn gold", onclick: () => userForm(null) }, "+ Співробітник")));
   const def = state.settings;
   main.append(h("div", { class: "card table-wrap" }, h("table", {},
-    h("tr", {}, h("th", {}, "Ім'я"), h("th", {}, "Логін"), h("th", {}, "Роль"), h("th", {}, "Відсоток"), h("th", {}, "Матеріали"), h("th", {}, "Telegram"), h("th", {}, "")),
+    h("tr", {}, h("th", {}, "Ім'я"), h("th", {}, "Логін"), h("th", {}, "Роль"), h("th", {}, "Відсоток"), h("th", {}, "Матеріали"), h("th", {}, "Telegram"), h("th", {}, "PIN бота"), h("th", {}, "")),
     users.map((u) => h("tr", { class: "click", onclick: () => userForm(u) }, h("td", {}, u.full_name), h("td", {}, u.username), h("td", {}, ROLES[u.role]),
       h("td", {}, u.role === "master" ? (u.share_bp !== null ? pct(u.share_bp) : pct(def.default_share_bp) + " (стандарт)") : "—"),
       h("td", { class: "small" }, u.role === "master" ? MAT_MODES[u.materials_mode || def.default_materials_mode] : "—"),
-      h("td", {}, u.telegram_linked ? "✓" : ""), h("td", {}, u.is_active ? "" : h("span", { class: "chip" }, "неактивний")))))));
+      h("td", {}, u.telegram_linked ? "✓" : ""), h("td", {}, u.bot_pin_set ? "✓" : ""), h("td", {}, u.is_active ? "" : h("span", { class: "chip" }, "неактивний")))))));
 
   function userForm(u) {
     const isNew = !u;
@@ -892,6 +892,7 @@ VIEWS.staff = async (main) => {
     const share = h("input", { type: "number", min: 0, max: 100, step: 0.5, value: u?.share_bp != null ? u.share_bp / 100 : "", placeholder: `стандарт ${pct(def.default_share_bp)}` });
     const mode = select([["", "Стандарт салону"], ...Object.entries(MAT_MODES)], u?.materials_mode || "");
     const active = h("input", { type: "checkbox", checked: u ? u.is_active : true });
+    const pin = h("input", { inputmode: "numeric", autocomplete: "off", maxlength: 8, placeholder: u?.bot_pin_set ? "задано — введіть новий, щоб змінити" : "4–8 цифр" });
     const svcIds = new Set(u?.service_ids || []);
     const svcBox = h("div", { class: "row" }, state.services.filter((s) => s.is_active).map((s) => h("label", { class: "row small", style: { gap: "4px" } },
       h("input", { type: "checkbox", checked: svcIds.has(s.id), onchange: (e) => (e.target.checked ? svcIds.add(s.id) : svcIds.delete(s.id)) }), s.name)));
@@ -913,6 +914,7 @@ VIEWS.staff = async (main) => {
         full_name: fullName.value.trim(), phone: phone.value.trim() || null, role: role.value,
         share_bp: share.value === "" ? null : Math.round(parseFloat(share.value) * 100),
         materials_mode: mode.value || null, service_ids: [...svcIds],
+        ...(pin.value.trim() ? { bot_pin: pin.value.trim() } : {}),
         schedule: useOwn.checked ? Object.fromEntries(days.map((d) => [String(d.i), d.on.checked ? [d.a.value, d.b.value] : null])) : null,
       };
       save.disabled = true;
@@ -930,7 +932,7 @@ VIEWS.staff = async (main) => {
     openSheet(isNew ? "Новий співробітник" : u.full_name, h("div", { class: "stack" },
       h("div", { class: "form-grid" }, field("Логін", username), field(isNew ? "Пароль" : "Новий пароль", password)),
       h("div", { class: "form-grid" }, field("Ім'я", fullName), field("Телефон", phone)),
-      field("Роль", role),
+      h("div", { class: "form-grid" }, field("Роль", role), field("PIN для Telegram-бота", pin)),
       h("div", { class: "form-grid" }, field("Відсоток майстра, %", share), field("Облік матеріалів", mode)),
       h("details", {}, h("summary", { class: "muted", style: { cursor: "pointer" } }, "Послуги майстра (порожньо = усі)"), svcBox),
       h("details", {}, h("summary", { class: "muted", style: { cursor: "pointer" } }, "Графік роботи"),
@@ -1000,6 +1002,10 @@ VIEWS.settings = async (main) => {
   const horizon = h("input", { type: "number", min: 1, value: s.booking_horizon_days });
   const lead = h("input", { type: "number", min: 0, value: s.booking_min_lead_min });
   const auto = h("input", { type: "checkbox", checked: s.telegram_auto_confirm });
+  const staffCode = h("input", { inputmode: "numeric", maxlength: 8, value: s.bot_staff_code || "" });
+  const addr = h("input", { value: s.salon_address || "" });
+  const phone = h("input", { value: s.salon_phone || "", type: "tel" });
+  const insta = h("input", { value: s.salon_instagram || "", placeholder: "@md.salon" });
   const days = WD_LONG.map((n, i) => {
     const sp = (s.schedule || {})[String(i)];
     const on = h("input", { type: "checkbox", checked: !!sp });
@@ -1014,6 +1020,10 @@ VIEWS.settings = async (main) => {
     h("div", { class: "card stack" }, h("h3", {}, "Запис клієнтів"), field("Назва салону", name),
       h("div", { class: "form-grid" }, field("Крок слотів, хв", step), field("Запис наперед, днів", horizon), field("Мін. хв до запису (бот)", lead)),
       h("label", { class: "row" }, auto, "Записи з Telegram одразу підтверджені")),
+    h("div", { class: "card stack" }, h("h3", {}, "Telegram-бот"),
+      field("Код входу в розділ «Для майстрів»", staffCode),
+      h("p", { class: "muted small" }, "Після коду кожен обирає себе й вводить особистий PIN (задається в розділі «Персонал»)."),
+      field("Адреса салону", addr), h("div", { class: "form-grid" }, field("Телефон", phone), field("Instagram", insta))),
     h("div", { class: "card stack" }, h("h3", {}, "Графік салону"), days.map((d) => d.row)),
     h("div", { class: "card stack" }, h("h3", {}, "Резервні копії"),
       h("p", { class: "muted small" }, "Автоматично щодня. Останні копії:"),
@@ -1023,6 +1033,7 @@ VIEWS.settings = async (main) => {
       const body = {
         salon_name: name.value, default_share_bp: Math.round(parseFloat(share.value) * 100), default_materials_mode: mode.value,
         slot_step_min: +step.value, booking_horizon_days: +horizon.value, booking_min_lead_min: +lead.value, telegram_auto_confirm: auto.checked,
+        bot_staff_code: staffCode.value.trim(), salon_address: addr.value.trim(), salon_phone: phone.value.trim(), salon_instagram: insta.value.trim(),
         schedule: Object.fromEntries(days.map((d) => [String(d.i), d.on.checked ? [d.a.value, d.b.value] : null])),
       };
       state.settings = await run(() => api.put("/api/settings", body), "Налаштування збережено");

@@ -32,6 +32,7 @@ def user_public(u: User) -> dict:
         "schedule": u.schedule,
         "service_ids": sorted(s.id for s in u.services),
         "telegram_linked": u.telegram_chat_id is not None,
+        "bot_pin_set": u.bot_pin_hash is not None,
     }
 
 
@@ -81,6 +82,7 @@ def create_user(
     materials_mode: str | None = None,
     schedule: dict | None = None,
     service_ids: list[int] | None = None,
+    bot_pin: str | None = None,
 ) -> User:
     if actor.role != "system":
         actor.require(Role.DIRECTOR)
@@ -107,6 +109,8 @@ def create_user(
     )
     if service_ids:
         u.services = list(s.scalars(select(Service).where(Service.id.in_(service_ids))))
+    if bot_pin:
+        _set_pin(u, bot_pin)
     s.add(u)
     s.flush()
     audit(s, actor, "user", u.id, "create", None, user_public(u))
@@ -133,6 +137,8 @@ def update_user(s: Session, actor: Actor, user_id: int, data: dict) -> User:
             setattr(u, k, data[k])
     if "service_ids" in data and data["service_ids"] is not None:
         u.services = list(s.scalars(select(Service).where(Service.id.in_(data["service_ids"]))))
+    if data.get("bot_pin"):
+        _set_pin(u, data["bot_pin"])
     if data.get("is_active") is False:
         u.token_version += 1  # завершити всі сесії
     s.flush()
@@ -226,3 +232,53 @@ def masters_for_service(s: Session, service_id: int) -> list[User]:
         if not ids or service_id in ids:
             out.append(m)
     return out
+
+
+# ------------------------------------------------------- вхід персоналу в бот
+
+def _set_pin(u: User, pin: str) -> None:
+    pin = str(pin).strip()
+    if not (pin.isdigit() and 4 <= len(pin) <= 8):
+        raise ValidationError("PIN для бота: від 4 до 8 цифр")
+    u.bot_pin_hash = hash_password(pin)
+
+
+def set_bot_pin(s: Session, actor: Actor, user_id: int, pin: str) -> None:
+    """PIN задає директор (будь-кому) або співробітник собі."""
+    if actor.user_id != user_id:
+        actor.require(Role.DIRECTOR)
+    u: User = get_or_404(s, User, user_id, "Користувача")
+    _set_pin(u, pin)
+    audit(s, actor, "user", u.id, "set_bot_pin")
+
+
+def check_staff_code(s: Session, code: str) -> bool:
+    import hmac
+
+    expected = str(get_setting(s, "bot_staff_code"))
+    return hmac.compare_digest(str(code).strip(), expected)
+
+
+def staff_for_bot(s: Session) -> list[User]:
+    """Хто може увійти в розділ персоналу бота: активні майстри й директори з PIN."""
+    q = select(User).where(
+        User.is_active.is_(True), User.bot_pin_hash.is_not(None), User.role.in_((Role.MASTER, Role.DIRECTOR))
+    )
+    return sorted(s.scalars(q), key=lambda u: (u.role != Role.MASTER, u.full_name))
+
+
+def verify_bot_pin(s: Session, user_id: int, pin: str, chat_id: int | None = None) -> User | None:
+    """Перевірка PIN. При успіху Telegram цього чату прив'язується до співробітника
+    (щоб він отримував сповіщення)."""
+    u = s.get(User, user_id)
+    if u is None or not u.is_active or not u.bot_pin_hash:
+        return None
+    if not verify_password(str(pin).strip(), u.bot_pin_hash):
+        audit(s, Actor.system(), "user", u.id, "bot_pin_failed")
+        return None
+    if chat_id and u.telegram_chat_id != chat_id:
+        for other in s.scalars(select(User).where(User.telegram_chat_id == chat_id)):
+            other.telegram_chat_id = None
+        u.telegram_chat_id = chat_id
+    audit(s, Actor.of(u), "user", u.id, "bot_login")
+    return u

@@ -27,6 +27,7 @@ class UserIn(BaseModel):
     materials_mode: str | None = None
     schedule: dict | None = None
     service_ids: list[int] | None = None
+    bot_pin: str | None = None
 
 
 class UserPatch(BaseModel):
@@ -38,6 +39,7 @@ class UserPatch(BaseModel):
     materials_mode: str | None = None
     schedule: dict | None = None
     service_ids: list[int] | None = None
+    bot_pin: str | None = None  # лише запис; у відповіді — bot_pin_set
 
 
 class PasswordIn(BaseModel):

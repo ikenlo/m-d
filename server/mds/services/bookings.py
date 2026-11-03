@@ -391,3 +391,48 @@ def free_slots_any(s: Session, service_id: int, day: date, *, for_client: bool =
         for t in free_slots(s, m.id, service_id, day, for_client=for_client):
             out.setdefault(t, []).append(m.id)
     return dict(sorted(out.items()))
+
+
+def free_windows(
+    s: Session, master_id: int, day: date, *, for_client: bool = True, min_minutes: int = 30
+) -> list[tuple[datetime, datetime]]:
+    """Вільні проміжки майстра на дату (графік мінус записи), не коротші за min_minutes.
+    Для клієнта — лише з урахуванням мінімального часу до запису."""
+    master: User = get_or_404(s, User, master_id, "Майстра")
+    hours = working_hours(s, master, day)
+    if hours is None or not master.is_active:
+        return []
+    start, end = hours
+    earliest = clock.now()
+    if for_client:
+        earliest += timedelta(minutes=int(get_setting(s, "booking_min_lead_min")))
+    # якщо день уже почався — відлік від найближчого кроку слотів після «зараз»
+    cur = max(start, _ceil_to_step(earliest, int(get_setting(s, "slot_step_min")))) if earliest > start else start
+    busy = sorted(
+        s.scalars(
+            select(Appointment).where(
+                Appointment.master_id == master_id,
+                Appointment.status.in_(ApptStatus.OCCUPYING),
+                Appointment.starts_at < end,
+                Appointment.ends_at > start,
+            )
+        ),
+        key=lambda a: a.starts_at,
+    )
+    out = []
+    for b in busy:
+        if b.starts_at > cur:
+            out.append((cur, min(b.starts_at, end)))
+        cur = max(cur, b.ends_at)
+    if cur < end:
+        out.append((cur, end))
+    return [(a, b) for a, b in out if (b - a) >= timedelta(minutes=min_minutes)]
+
+
+def _ceil_to_step(t: datetime, step_min: int) -> datetime:
+    base = datetime.combine(t.date(), time.min)
+    mins = int((t - base).total_seconds() // 60)
+    if (t - base).total_seconds() % 60:
+        mins += 1
+    mins = -(-mins // step_min) * step_min
+    return base + timedelta(minutes=mins)

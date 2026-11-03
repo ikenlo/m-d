@@ -168,3 +168,16 @@ def test_master_sees_only_own_clients(client):
     assert names == ["Своя"]
     assert client.get(f"/api/clients/{other_client}", headers=m1).status_code == 404
     assert len(client.get("/api/clients", headers=adm).json()) == 2
+
+
+def test_bot_pin_and_staff_code_via_api(client):
+    d = login(client, "director", "Director123")
+    m1 = login(client, "olena", "Master123")
+    uid = client.ids["m1"]
+    assert client.patch(f"/api/users/{uid}", headers=d, json={"bot_pin": "12"}).status_code == 422
+    r = client.patch(f"/api/users/{uid}", headers=d, json={"bot_pin": "4321"})
+    assert r.status_code == 200 and r.json()["bot_pin_set"] is True and "bot_pin_hash" not in r.json()
+    assert client.patch(f"/api/users/{uid}", headers=m1, json={"bot_pin": "1111"}).status_code == 403
+    assert client.put("/api/settings", headers=d, json={"bot_staff_code": "12a4"}).status_code == 422
+    r = client.put("/api/settings", headers=d, json={"bot_staff_code": "5555", "salon_address": "Київ"})
+    assert r.json()["bot_staff_code"] == "5555"

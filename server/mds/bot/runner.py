@@ -18,12 +18,13 @@ from aiogram.fsm.storage.memory import MemoryStorage
 from ..db import Database
 from ..services import notifications
 from .handlers import build_router
+from .staff import StaffSessions
 
 log = logging.getLogger("mds.bot")
 
 
 def build_dispatcher(db: Database) -> Dispatcher:
-    dp = Dispatcher(storage=MemoryStorage(), db=db)
+    dp = Dispatcher(storage=MemoryStorage(), db=db, staff=StaffSessions())
     dp.include_router(build_router())
     return dp
 

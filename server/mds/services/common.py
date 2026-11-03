@@ -132,6 +132,10 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "booking_horizon_days": 30,
     "booking_min_lead_min": 60,  # мінімум хвилин до запису через бот
     "telegram_auto_confirm": False,  # записи з бота одразу підтверджені?
+    "bot_staff_code": "0000",  # спільний код входу в розділ «Для майстрів» у боті
+    "salon_address": "",
+    "salon_phone": "",
+    "salon_instagram": "",
 }
 
 
@@ -186,6 +190,10 @@ def update_settings(s: Session, actor: Actor, data: dict[str, Any]) -> dict[str,
             isinstance(value, int) and 0 <= value <= 365 * 24 * 60
         ):
             raise ValidationError(f"{key}: очікується ціле невід'ємне число")
+        if key == "bot_staff_code" and not (isinstance(value, str) and value.isdigit() and 4 <= len(value) <= 8):
+            raise ValidationError("Код персоналу: від 4 до 8 цифр")
+        if key in ("salon_address", "salon_phone", "salon_instagram", "salon_name") and not isinstance(value, str):
+            raise ValidationError(f"{key}: очікується текст")
         if key == "slot_step_min" and value < 5:
             raise ValidationError("Крок слотів — щонайменше 5 хвилин")
         set_setting(s, actor, key, value)
