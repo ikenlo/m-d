@@ -391,3 +391,14 @@ def test_director_flow(h, db, pins):
     assert any("Виплачено" in a for a in h.session.alerts())
     h.click(f"s:po:{shift_id}")  # вдруге — відмова
     assert any("вже виплачена" in a for a in h.session.alerts())
+
+
+def test_price_from_shown_and_duration_hidden(h, db, seed):
+    from mds.services import catalog
+    with db.session() as s:
+        catalog.create_service(s, seed["actors"]["director"], {"name": "Довге волосся", "category": "Жіночі стрижки",
+                                                               "duration_min": 60, "price": 55000, "price_from": True})
+    h.send("💅 Послуги та ціни")
+    text = h.session.texts()[-1]
+    assert "Довге волосся — <b>від 550 ₴</b>" in text
+    assert "хв" not in text and "год" not in text

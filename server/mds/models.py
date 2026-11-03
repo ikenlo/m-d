@@ -132,6 +132,8 @@ class Service(Base):
     category: Mapped[str | None] = mapped_column(String(64))
     duration_min: Mapped[int] = mapped_column(Integer)
     price: Mapped[int] = mapped_column(Integer)  # копійки
+    # ціна «від»: остаточна сума залежить від довжини/густоти волосся тощо
+    price_from: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     sort_order: Mapped[int] = mapped_column(Integer, default=0)
 

@@ -19,6 +19,7 @@ def service_public(x: Service) -> dict:
         "category": x.category,
         "duration_min": x.duration_min,
         "price": x.price,
+        "price_from": bool(x.price_from),
         "is_active": x.is_active,
         "sort_order": x.sort_order,
     }
@@ -41,6 +42,7 @@ def create_service(s: Session, actor: Actor, data: dict) -> Service:
         category=data.get("category"),
         duration_min=int(data["duration_min"]),
         price=int(data["price"]),
+        price_from=bool(data.get("price_from", False)),
         is_active=data.get("is_active", True),
         sort_order=data.get("sort_order", 0),
     )
@@ -55,7 +57,7 @@ def update_service(s: Session, actor: Actor, service_id: int, data: dict) -> Ser
     _check_service(data)
     x: Service = get_or_404(s, Service, service_id, "Послугу")
     before = service_public(x)
-    for k in ("name", "category", "duration_min", "price", "is_active", "sort_order"):
+    for k in ("name", "category", "duration_min", "price", "price_from", "is_active", "sort_order"):
         if k in data:
             setattr(x, k, data[k])
     audit(s, actor, "service", x.id, "update", before, service_public(x))

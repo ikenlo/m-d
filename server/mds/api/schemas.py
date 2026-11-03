@@ -51,6 +51,7 @@ class ServiceIn(BaseModel):
     duration_min: int
     price: int
     category: str | None = None
+    price_from: bool = False
     is_active: bool = True
     sort_order: int = 0
 
@@ -60,6 +61,7 @@ class ServicePatch(BaseModel):
     duration_min: int | None = None
     price: int | None = None
     category: str | None = None
+    price_from: bool | None = None
     is_active: bool | None = None
     sort_order: int | None = None
 

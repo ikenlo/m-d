@@ -67,6 +67,7 @@ const toKop = (s) => {
   const n = parseFloat(String(s).replace(/\s/g, "").replace(",", "."));
   return Number.isFinite(n) ? Math.round(n * 100) : NaN;
 };
+const priceText = (s) => (s.price_from ? "від " : "") + money(s.price);
 const kopToInput = (k) => ((k || 0) / 100).toString();
 const pct = (bp) => (bp / 100).toLocaleString("uk-UA") + "%";
 const pad = (n) => String(n).padStart(2, "0");
@@ -376,7 +377,7 @@ function apptForm({ appt = null, master_id = null, date = today(), time = "10:00
   const isMaster = state.user.role === "master";
   const masters = isMaster ? [{ id: state.user.id, full_name: state.user.full_name }] : state.masters;
   const activeServices = state.services.filter((s) => s.is_active);
-  const svc = select(activeServices.map((s) => [s.id, `${s.name} · ${money(s.price)} · ${s.duration_min} хв`]), appt ? appt.service_id : activeServices[0]?.id);
+  const svc = select(activeServices.map((s) => [s.id, `${s.name} · ${priceText(s)} · ${s.duration_min} хв`]), appt ? appt.service_id : activeServices[0]?.id);
   const mst = select(masters.map((m) => [m.id, m.full_name]), appt ? appt.master_id : master_id || masters[0]?.id);
   const d = h("input", { type: "date", value: appt ? appt.starts_at.slice(0, 10) : date });
   const t = h("input", { type: "time", step: 300, value: appt ? hm(appt.starts_at) : time });
@@ -952,7 +953,7 @@ VIEWS.catalog = async (main) => {
   main.append(h("h2", {}, "Послуги"), h("div", { class: "card table-wrap" }, h("table", {},
     h("tr", {}, h("th", {}, "Назва"), h("th", {}, "Категорія"), h("th", { class: "num" }, "Тривалість"), h("th", { class: "num" }, "Ціна"), h("th", {})),
     services.map((s) => h("tr", { class: "click", onclick: () => svcForm(s) }, h("td", {}, s.name), h("td", {}, s.category || ""), h("td", { class: "num" }, s.duration_min, " хв"),
-      h("td", { class: "num" }, money(s.price)), h("td", {}, s.is_active ? "" : h("span", { class: "chip" }, "прихована")))))));
+      h("td", { class: "num" }, priceText(s)), h("td", {}, s.is_active ? "" : h("span", { class: "chip" }, "прихована")))))));
   main.append(h("h2", { style: { marginTop: "22px" } }, "Матеріали та розхідники"), materials.length ? h("div", { class: "card table-wrap" }, h("table", {},
     h("tr", {}, h("th", {}, "Назва"), h("th", {}, "Одиниця"), h("th", { class: "num" }, "Собівартість"), h("th", {})),
     materials.map((m) => h("tr", { class: "click", onclick: () => matForm(m) }, h("td", {}, m.name), h("td", {}, m.unit), h("td", { class: "num" }, money(m.unit_cost)),
@@ -965,11 +966,13 @@ VIEWS.catalog = async (main) => {
     const price = h("input", { inputmode: "decimal", value: s ? kopToInput(s.price) : "" });
     const order = h("input", { type: "number", value: s?.sort_order || 0 });
     const active = h("input", { type: "checkbox", checked: s ? s.is_active : true });
+    const from = h("input", { type: "checkbox", checked: s ? s.price_from : false });
     openSheet(s ? s.name : "Нова послуга", h("div", { class: "stack" }, field("Назва", name), field("Категорія", cat),
-      h("div", { class: "form-grid" }, field("Тривалість, хв", dur), field("Ціна, ₴", price), field("Порядок", order)),
+      h("div", { class: "form-grid" }, field("Тривалість, хв (для календаря)", dur), field("Ціна, ₴", price), field("Порядок", order)),
+      h("label", { class: "row" }, from, "Ціна «від» (остаточна сума — після послуги)"),
       h("label", { class: "row" }, active, "Доступна для запису"),
       h("button", { class: "btn gold big", onclick: async () => {
-        const body = { name: name.value, category: cat.value || null, duration_min: +dur.value, price: toKop(price.value), sort_order: +order.value, is_active: active.checked };
+        const body = { name: name.value, category: cat.value || null, duration_min: +dur.value, price: toKop(price.value), price_from: from.checked, sort_order: +order.value, is_active: active.checked };
         await run(() => (s ? api.patch("/api/services/" + s.id, body) : api.post("/api/services", body)), "Збережено");
         closeSheet(); await loadRefs(); reload();
       } }, "Зберегти")));

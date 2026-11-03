@@ -59,6 +59,11 @@ def kb(rows: list[list[tuple[str, str]]]) -> InlineKeyboardMarkup:
     )
 
 
+def price_text(x: Service) -> str:
+    """Ціна для клієнта: «450 ₴» або «від 550 ₴»."""
+    return ("від " if x.price_from else "") + fmt(x.price)
+
+
 def _dur(minutes: int) -> str:
     h, m = divmod(minutes, 60)
     return (f"{h} год " if h else "") + (f"{m} хв" if m else "").strip()
@@ -74,12 +79,13 @@ def services_text(services: list[Service], salon: str) -> str:
             cat = x.category
             if cat:
                 lines.append(f"\n<b>{e(cat)}</b>")
-        lines.append(f"• {e(x.name)} — <b>{fmt(x.price)}</b> ({_dur(x.duration_min).strip()})")
+        # тривалість клієнтам не показуємо — вона потрібна лише календарю
+        lines.append(f"• {e(x.name)} — <b>{price_text(x)}</b>")
     return "\n".join(lines)
 
 
 def services_kb(services: list[Service]) -> InlineKeyboardMarkup:
-    return kb([[(f"{x.name} · {fmt(x.price)}", f"svc:{x.id}")] for x in services])
+    return kb([[(f"{x.name} · {price_text(x)}", f"svc:{x.id}")] for x in services])
 
 
 def masters_kb(service_id: int, masters: list[User]) -> InlineKeyboardMarkup:
@@ -122,7 +128,7 @@ def confirm_kb() -> InlineKeyboardMarkup:
 def appt_text(a: Appointment) -> str:
     return (
         f"<b>{WEEKDAYS[a.starts_at.weekday()]} {a.starts_at:%d.%m.%Y о %H:%M}</b>\n"
-        f"{e(a.service.name)} · {fmt(a.price)}\nМайстер: {e(a.master.full_name)}\n"
+        f"{e(a.service.name)} · {('від ' if a.service.price_from else '') + fmt(a.price)}\nМайстер: {e(a.master.full_name)}\n"
         f"Статус: {STATUS_UA.get(a.status, a.status)}"
     )
 
@@ -138,10 +144,9 @@ def cancel_confirm_kb(appt_id: int) -> InlineKeyboardMarkup:
 def summary_text(service: Service, master_name: str, start: datetime) -> str:
     return (
         "Перевірте запис:\n\n"
-        f"<b>{e(service.name)}</b> · {fmt(service.price)}\n"
+        f"<b>{e(service.name)}</b> · {price_text(service)}\n"
         f"Майстер: {e(master_name)}\n"
-        f"Дата: <b>{WEEKDAYS[start.weekday()]} {start:%d.%m.%Y о %H:%M}</b>\n"
-        f"Тривалість: {_dur(service.duration_min).strip()}"
+        f"Дата: <b>{WEEKDAYS[start.weekday()]} {start:%d.%m.%Y о %H:%M}</b>"
     )
 
 
