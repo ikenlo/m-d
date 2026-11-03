@@ -4,7 +4,35 @@ from __future__ import annotations
 
 from datetime import date, datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel as _PydanticModel
+from pydantic import Field, model_validator
+
+# Межа для будь-якого цілого числа у запиті: 10^12 копійок = 10 млрд грн.
+# Більші числа не вміщаються в INTEGER бази й означають помилку введення.
+MAX_INT = 10**12
+
+
+def _check_ints(v) -> None:
+    if isinstance(v, bool):
+        return
+    if isinstance(v, int) and abs(v) > MAX_INT:
+        raise ValueError("завелике число")
+    if isinstance(v, (list, tuple)):
+        for x in v:
+            _check_ints(x)
+    elif isinstance(v, dict):
+        for x in v.values():
+            _check_ints(x)
+
+
+class BaseModel(_PydanticModel):
+    """Базова вхідна модель: відхиляє завеликі цілі числа (422 замість помилки бази)."""
+
+    @model_validator(mode="after")
+    def _limit_ints(self):
+        for name in type(self).model_fields:
+            _check_ints(getattr(self, name))
+        return self
 
 
 class LoginIn(BaseModel):

@@ -194,8 +194,15 @@ def test_staff_link_and_today(h, db, seed):
     assert "Telegram підключено" in h.session.texts()[-1]
     with db.session() as s:
         assert s.get(User, seed["m1"]).telegram_chat_id == TG_ID
+    from datetime import datetime as _dt
+    from mds.services import bookings
+    with db.session() as s:
+        bookings.create_appointment(s, seed["actors"]["director"], master_id=seed["m1"], service_id=seed["haircut"],
+                                    starts_at=_dt(2026, 11, 2, 15, 0), client_name="Анна <script>",
+                                    client_phone="0675550011")
     h.send("/today")
     assert "Сьогодні" in h.session.texts()[-1]
+    assert "Анна &lt;script&gt;" in h.session.texts()[-1]  # дані клієнта екрановано для HTML
     # код одноразовий
     h2 = BotHarness(db, user_id=77)
     h2.send(f"/link {code}")
@@ -559,6 +566,7 @@ def test_busy_reply_offers_free_slots_and_client_rebooks(h, db, seed):
         n = s.query(Notification).filter_by(chat_id=TG_ID).one()  # одне повідомлення, без дубля «скасовано салоном»
         assert "уже зайнятий" in n.text
         first_cb = n.buttons[0][0][1]
+        n_buttons = n.buttons
         assert first_cb.startswith(f"rb:{appt_id}:") and n.buttons[-1][0][1] == "book"
     # бот доставляє повідомлення з кнопками
     asyncio.run(deliver_outbox(h.bot, db))
@@ -570,6 +578,12 @@ def test_busy_reply_offers_free_slots_and_client_rebooks(h, db, seed):
     with db.session() as s:
         new = s.query(Appointment).order_by(Appointment.id.desc()).first()
         assert new.id != appt_id and new.master_id == seed["m1"] and new.client.telegram_user_id == TG_ID
+    # повторне натискання або інший запропонований час — без другого запису
+    h.click(first_cb)
+    h.click(n_buttons[1][0][1])
+    assert sum("вже записані" in a for a in h.session.alerts()) == 2
+    with db.session() as s:
+        assert s.query(Appointment).filter(Appointment.id != appt_id).count() == 1
     # чужий клієнт не може скористатися кнопкою
     other = BotHarness(db, user_id=42)
     other.click(first_cb)

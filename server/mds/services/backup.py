@@ -7,6 +7,7 @@ PostgreSQL: використовуйте pg_dump за розкладом (див
 from __future__ import annotations
 
 import sqlite3
+from contextlib import closing
 from datetime import datetime
 from pathlib import Path
 
@@ -30,10 +31,11 @@ def make_backup(database_url: str, backup_dir: Path, keep: int = 30) -> Path:
     while dst.exists():
         dst = backup_dir / f"mds-{datetime.now():%Y%m%d-%H%M%S}-{i}.db"
         i += 1
-    with sqlite3.connect(src) as source, sqlite3.connect(dst) as target:
+    # closing(): «with sqlite3.connect()» лише фіксує транзакцію, але не закриває з'єднання
+    with closing(sqlite3.connect(src)) as source, closing(sqlite3.connect(dst)) as target:
         source.backup(target)
     # перевірка цілісності копії
-    with sqlite3.connect(dst) as check:
+    with closing(sqlite3.connect(dst)) as check:
         if check.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
             raise RuntimeError("Резервна копія не пройшла перевірку цілісності")
     rotate(backup_dir, keep)

@@ -473,7 +473,7 @@ def build_router() -> Router:
         except DomainError as e:
             await message.answer(e.message)
             return
-        await message.answer(f"✅ {name}, Telegram підключено. Сюди надходитимуть сповіщення про записи та звіти.")
+        await message.answer(f"✅ {v.e(name)}, Telegram підключено. Сюди надходитимуть сповіщення про записи та звіти.")
 
 
     @router.message(Command("today"))
@@ -489,8 +489,9 @@ def build_router() -> Router:
                 s, actor, date_from=today, date_to=today,
                 master_id=u.id if u.role == Role.MASTER else None, include_cancelled=False,
             )
-            lines = [f"{a.starts_at:%H:%M} {a.service.name} — {a.client.name} {a.client.phone}"
-                     + ("" if u.role == Role.MASTER else f" ({a.master.full_name})") for a in items]
+            # дані клієнтів екрануються: бот відповідає в режимі HTML
+            lines = [f"{a.starts_at:%H:%M} {v.e(a.service.name)} — {v.e(a.client.name)} {v.e(a.client.phone)}"
+                     + ("" if u.role == Role.MASTER else f" ({v.e(a.master.full_name)})") for a in items]
         await message.answer("📋 Сьогодні:\n" + ("\n".join(lines) if lines else "записів немає"))
 
     return router

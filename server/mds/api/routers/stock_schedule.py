@@ -3,12 +3,12 @@ from __future__ import annotations
 from datetime import date
 
 from fastapi import APIRouter, Depends
-from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from ...models import Material
 from ...services import schedule, stock
 from ...services.common import Actor, get_or_404
+from ..schemas import BaseModel
 from ..deps import get_actor, get_session
 
 router = APIRouter(prefix="/api", tags=["stock", "schedule"])

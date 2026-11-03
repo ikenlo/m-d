@@ -10,9 +10,8 @@ from ...services.common import Actor
 from ..deps import get_actor, get_session
 from datetime import datetime
 
-from pydantic import BaseModel
 
-from ..schemas import AppointmentIn, AppointmentPatch, CloseOrderIn, StatusIn
+from ..schemas import AppointmentIn, AppointmentPatch, BaseModel, CloseOrderIn, StatusIn
 
 
 class ProposeIn(BaseModel):
