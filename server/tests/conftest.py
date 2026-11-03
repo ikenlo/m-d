@@ -45,3 +45,16 @@ def seed(db):
         from mds.models import User
         ids["actors"] = {k: Actor.of(s.get(User, ids[k])) for k in ("director", "admin", "m1", "m2")}
     return ids
+
+
+@pytest.fixture
+def client_api(db, seed, tmp_path):
+    from fastapi.testclient import TestClient
+
+    from mds.api.app import create_app
+    from mds.config import Config
+
+    cfg = Config(data_dir=tmp_path / "data", database_url=db.url, secret_key="test-secret-key-for-unit-tests-only-0123456789")
+    with TestClient(create_app(cfg, db)) as c:
+        r = c.post("/api/auth/login", json={"username": "director", "password": "Director123"})
+        yield c, seed, {"Authorization": f"Bearer {r.json()['token']}"}

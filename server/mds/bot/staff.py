@@ -116,6 +116,20 @@ def _parse_amount(text: str) -> int | None:
     return round(val * 100)
 
 
+def _cash_text(r: dict) -> str:
+    """Скільки майстер бере з каси, скільки лишає, скільки доплатить директор."""
+    c = r.get("cash")
+    if not c:
+        return f"До виплати: <b>{fmt(r['payout_due'])}</b>"
+    if c["mode"] != "take_from_till":
+        return f"Готівку {fmt(c['from_clients'])} лишіть у касі.\nЗарплату {fmt(r['payout_due'])} виплатить директор."
+    out = (f"Готівка від клієнтів: {fmt(c['from_clients'])}, картка/переказ: {fmt(c['noncash'])}\n"
+           f"💵 Візьміть з каси: <b>{fmt(c['master_takes'])}</b>\n🏦 Залиште в касі: <b>{fmt(c['leave_in_till'])}</b>")
+    if c["director_pays"] > 0:
+        out += f"\n💳 Директор доплатить на карту: <b>{fmt(c['director_pays'])}</b>"
+    return out
+
+
 def build_staff_router() -> Router:
     router = Router(name="mds-staff")
 
@@ -366,14 +380,39 @@ def build_staff_router() -> Router:
                 if not u:
                     await cb.answer(EXPIRED, show_alert=True)
                     return
-                a = bookings.reschedule(s, Actor.of(u), int(appt_id), starts_at=v.parse_dt(dt))
+                cur = bookings.get_appointment(s, Actor.of(u), int(appt_id))
+                if cur.status == ApptStatus.PENDING:
+                    # непідтверджений запис — це пропозиція клієнту, він підтвердить у боті
+                    a, notified = bookings.propose_time(s, Actor.of(u), int(appt_id), v.parse_dt(dt))
+                    head = "🕐 Клієнту запропоновано новий час" if notified else "🕐 Час змінено. Клієнт не в Telegram — зателефонуйте йому"
+                else:
+                    a = bookings.reschedule(s, Actor.of(u), int(appt_id), starts_at=v.parse_dt(dt))
+                    head = "🔁 Перенесено"
                 text = v.staff_appt_text(a, show_master=u.role == Role.DIRECTOR)
                 markup = v.staff_appt_kb(a, u.role == Role.DIRECTOR)
         except DomainError as e:
             await cb.answer(e.message, show_alert=True)
             return
-        await cb.message.edit_text("🔁 Перенесено\n" + text, reply_markup=markup)
-        await cb.answer("Перенесено")
+        await cb.message.edit_text(head + "\n" + text, reply_markup=markup)
+        await cb.answer("Готово")
+
+    @router.callback_query(F.data.startswith("s:busy:"))
+    async def busy(cb: CallbackQuery, db: Database, staff: StaffSessions):
+        appt_id = int(cb.data.split(":")[2])
+        try:
+            with db.session() as s:
+                u = current(s, staff, cb.message.chat.id)
+                if not u:
+                    await cb.answer(EXPIRED, show_alert=True)
+                    return
+                r = bookings.decline_busy(s, Actor.of(u), appt_id)
+        except DomainError as e:
+            await cb.answer(e.message, show_alert=True)
+            return
+        msg = ("⛔ Клієнту відповіли, що час зайнятий, і запропонували вільні години."
+               if r["notified"] else "⛔ Запис знято. Клієнт не в Telegram — зателефонуйте йому.")
+        await cb.message.edit_text(msg, reply_markup=v.kb([[("☰ Меню", "s:menu")]]))
+        await cb.answer()
 
     # -------------------------------------------------- закриття замовлення
 
@@ -597,7 +636,7 @@ def build_staff_router() -> Router:
                 return
             r = orders.shift_report(s, sh)
         await cb.message.edit_text(
-            f"🔒 Закрити зміну?\nПослуг: {r['services_count']}, виручка {fmt(r['revenue'])}, до виплати {fmt(r['payout_due'])}",
+            f"🔒 Закрити зміну?\nПослуг: {r['services_count']}, виручка {fmt(r['revenue'])}\n" + _cash_text(r),
             reply_markup=v.kb([[("Так, закрити зміну", "s:shiftok"), ("« Меню", "s:menu")]]),
         )
         await cb.answer()
@@ -619,7 +658,7 @@ def build_staff_router() -> Router:
             "📋 <b>Звіт зміни</b>\n"
             f"Клієнтів: {r['clients_count']} · послуг: {r['services_count']} · скасувань: {r['cancellations']}\n"
             f"{lines}\n\nВиручка: <b>{fmt(r['revenue'])}</b>\nВаш заробіток: <b>{fmt(r['master_earning'])}</b>\n"
-            f"До виплати: <b>{fmt(r['payout_due'])}</b>\n\nЗвіт надіслано директору.",
+            + _cash_text(r) + "\n\nЗвіт надіслано директору.",
             reply_markup=v.kb([[("☰ Меню", "s:menu")]]),
         )
         await cb.answer()

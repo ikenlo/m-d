@@ -526,3 +526,178 @@ def test_masters_show_first_name_and_nearest_free_time(h, db, seed):
     labels = [b.text for b in h.session.buttons()]
     assert labels[0] == "🌅 Ранок" and "☀️ День" in labels and "🌙 Вечір" in labels
     h.click("nop")  # заголовок групи нічого не робить
+
+
+# ---------------------------------------------- непідтверджені записи
+
+def _pending_from_bot(db, seed, h, when=datetime(2026, 11, 2, 10)):
+    from mds.services import bookings
+    from mds.services.common import Actor as A
+    with db.session() as s:
+        a = bookings.create_appointment(s, A.telegram(TG_ID), master_id=seed["m1"], service_id=seed["haircut"],
+                                        starts_at=when, client_name="Катя", client_phone="0931234567")
+        return a.id
+
+
+def test_busy_reply_offers_free_slots_and_client_rebooks(h, db, seed):
+    from mds.models import Notification
+    from mds.services import bookings
+    appt_id = _pending_from_bot(db, seed, h)
+    with db.session() as s:
+        assert [a.id for a in bookings.pending_list(s, seed["actors"]["m1"])] == [appt_id]
+        assert bookings.pending_list(s, seed["actors"]["m2"]) == []
+        r = bookings.decline_busy(s, seed["actors"]["m1"], appt_id)
+        assert r["notified"] and len(r["slots"]) == 6
+        assert "2026-11-02T10:00:00" not in r["slots"]  # зайнятий час не пропонуємо
+        assert r["slots"][:2] == ["2026-11-02T09:00:00", "2026-11-02T12:00:00"]  # рознесено в часі
+    with db.session() as s:
+        assert s.get(Appointment, appt_id).status == ApptStatus.CANCELLED
+        n = s.query(Notification).filter_by(chat_id=TG_ID).one()  # одне повідомлення, без дубля «скасовано салоном»
+        assert "уже зайнятий" in n.text
+        first_cb = n.buttons[0][0][1]
+        assert first_cb.startswith(f"rb:{appt_id}:") and n.buttons[-1][0][1] == "book"
+    # бот доставляє повідомлення з кнопками
+    asyncio.run(deliver_outbox(h.bot, db))
+    sent = [c for c in h.session.calls if isinstance(c, SendMessage) and c.chat_id == TG_ID][-1]
+    assert sent.reply_markup.inline_keyboard[0][0].callback_data == first_cb
+    # клієнт обирає запропонований час
+    h.click(first_cb)
+    assert "Вас записано" in h.session.texts()[-1]
+    with db.session() as s:
+        new = s.query(Appointment).order_by(Appointment.id.desc()).first()
+        assert new.id != appt_id and new.master_id == seed["m1"] and new.client.telegram_user_id == TG_ID
+    # чужий клієнт не може скористатися кнопкою
+    other = BotHarness(db, user_id=42)
+    other.click(first_cb)
+    assert any("не знайдено" in a for a in other.session.alerts())
+
+
+def test_master_proposes_other_time_and_client_accepts(h, db, seed):
+    from mds.models import Notification
+    from mds.services import bookings
+    appt_id = _pending_from_bot(db, seed, h)
+    with db.session() as s:
+        a, notified = bookings.propose_time(s, seed["actors"]["m1"], appt_id, datetime(2026, 11, 2, 15))
+        assert notified and a.awaiting_client and a.status == ApptStatus.PENDING
+        n = s.query(Notification).filter_by(chat_id=TG_ID).one()
+        assert "пропонує інший час" in n.text and "Пн 02.11 о 15:00" in n.text
+        assert [row[0][1] for row in n.buttons] == [f"acc:{appt_id}", f"mv:{appt_id}", f"cnl:{appt_id}"]
+    # час тримається за клієнтом — інший не може його зайняти
+    from mds.errors import Conflict
+    with db.session() as s, pytest.raises(Conflict):
+        bookings.create_appointment(s, seed["actors"]["admin"], master_id=seed["m1"], service_id=seed["haircut"],
+                                    starts_at=datetime(2026, 11, 2, 15), client_name="X", client_phone="0500000000")
+    h.click(f"acc:{appt_id}")
+    assert "запис підтверджено" in h.session.texts()[-1]
+    with db.session() as s:
+        a = s.get(Appointment, appt_id)
+        assert a.status == ApptStatus.CONFIRMED and not a.awaiting_client
+    h.click(f"acc:{appt_id}")  # повторно — пропозиція вже неактуальна
+    assert any("неактуальна" in x for x in h.session.alerts())
+
+
+def test_client_picks_own_time_after_proposal(h, db, seed):
+    from mds.services import bookings
+    appt_id = _pending_from_bot(db, seed, h)
+    with db.session() as s:
+        bookings.propose_time(s, seed["actors"]["m1"], appt_id, datetime(2026, 11, 2, 15))
+    h.click(f"mv:{appt_id}")
+    h.click_text("Завтра")
+    h.click_text("12:00")
+    with db.session() as s:
+        a = s.get(Appointment, appt_id)
+        assert a.starts_at == datetime(2026, 11, 3, 12) and not a.awaiting_client and a.status == ApptStatus.PENDING
+
+
+def test_staff_bot_busy_and_propose(h, db, pins):
+    appt_id = _pending_from_bot(db, pins, h)
+    staff_login(h, pins["m1"], "1111")
+    h.click("s:list")
+    h.click("s:ld:20261102")
+    labels = [b.text for b in h.session.buttons()]
+    assert "⛔ Зайнято" in labels and "🕐 Інший час" in labels
+    h.click(f"s:mv:{appt_id}")
+    h.click_text("Сьогодні")
+    h.click_text("16:00")
+    assert "запропоновано новий час" in h.session.texts()[-1]
+    with db.session() as s:
+        assert s.get(Appointment, appt_id).awaiting_client
+    h.click(f"s:busy:{appt_id}")
+    assert "час зайнятий" in h.session.texts()[-1]
+
+
+def test_bug_report_goes_to_director_with_screenshot(h, db, seed, tmp_path):
+    import base64
+    from aiogram.methods import SendPhoto
+    from mds.models import AuditLog, Notification
+    from mds.services import bugreport
+    png = base64.b64encode(b"\x89PNG\r\n\x1a\n" + b"0" * 100).decode()
+    with db.session() as s:
+        s.get(User, seed["director"]).telegram_chat_id = 9001
+    from mds.errors import ValidationError
+    with db.session() as s, pytest.raises(ValidationError):
+        bugreport.create(s, seed["actors"]["m1"], tmp_path, text="x")
+    with db.session() as s:
+        r = bugreport.create(s, seed["actors"]["m1"], tmp_path, text="Не закривається замовлення", page="today",
+                             context={"device": "iPhone", "screen": "390×844", "errors": ["POST /api → 500: збій"]},
+                             image_b64="data:image/png;base64," + png)
+        assert r == {"ok": True, "delivered": 1}
+    with db.session() as s:
+        n = s.query(Notification).one()
+        assert n.chat_id == 9001 and n.photo_path.endswith(".png")
+        assert "Не закривається замовлення" in n.text and "Сторінка: today" in n.text and "500: збій" in n.text
+        assert s.query(AuditLog).filter_by(entity="bug_report").count() == 1
+    asyncio.run(deliver_outbox(h.bot, db))
+    assert any(isinstance(c, SendPhoto) and c.chat_id == 9001 for c in h.session.calls)
+
+
+def test_bug_report_rejects_non_image(db, seed, tmp_path):
+    import base64
+    from mds.errors import ValidationError
+    from mds.services import bugreport
+    with db.session() as s, pytest.raises(ValidationError):
+        bugreport.create(s, seed["actors"]["m1"], tmp_path, text="Щось не так",
+                         image_b64=base64.b64encode(b"<script>alert(1)</script>").decode())
+
+
+def _visits(db, seed, master_key, n, tg=TG_ID, start_h=9):
+    from mds.services import bookings, orders
+    from mds.services.common import Actor as A
+    with db.session() as s:
+        for i in range(n):
+            a = bookings.create_appointment(s, A.telegram(tg), master_id=seed[master_key], service_id=seed["haircut"],
+                                            starts_at=datetime(2026, 11, 2, start_h + i), client_name="Катя", client_phone="0931234567")
+            orders.close_order(s, seed["actors"]["admin"], a.id, amount=50000, payment_method="cash")
+
+
+def test_favorite_master_after_three_visits(h, db, seed):
+    from mds.models import Client
+    from mds.services import bookings
+    _visits(db, seed, "m2", 2)
+    with db.session() as s:
+        cid = s.query(Client).one().id
+        assert bookings.favorite_master(s, cid) is None  # 2 візити — ще не улюблений
+    _visits(db, seed, "m2", 1, start_h=12)
+    with db.session() as s:
+        m, n = bookings.favorite_master(s, cid)
+        assert m.id == seed["m2"] and n == 3
+    h.send("📅 Записатися")
+    h.click_text("Стрижка")
+    labels = [b.text for b in h.session.buttons()]
+    assert labels[0].startswith("⭐ Ваш майстер Ірина")
+    assert "3 рази були в майстра Ірина" in h.session.texts()[-1]
+
+
+def test_favorite_master_respects_service_and_threshold_setting(db, seed):
+    from mds.models import Client
+    from mds.services import bookings, users as us
+    from mds.services.common import Actor as A, update_settings
+    _visits(db, seed, "m1", 2)
+    with db.session() as s:
+        cid = s.query(Client).one().id
+        update_settings(s, A.system(), {"favorite_master_visits": 2})
+        assert bookings.favorite_master(s, cid)[0].id == seed["m1"]
+        # Олена більше не робить манікюр → для манікюру не пропонуємо
+        us.update_user(s, seed["actors"]["director"], seed["m1"], {"service_ids": [seed["haircut"]]})
+        assert bookings.favorite_master(s, cid, seed["manicure"]) is None
+        assert bookings.favorite_master(s, cid, seed["haircut"])[0].id == seed["m1"]

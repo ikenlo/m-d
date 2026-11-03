@@ -72,14 +72,25 @@ class ServicePatch(BaseModel):
 
 class MaterialIn(BaseModel):
     name: str
-    unit_cost: int
-    unit: str = "шт"
+    unit_cost: int  # копійки за упаковку
+    unit: str = "шт"  # базова одиниця обліку: г / мл / шт
+    tone: str | None = None
+    category: str | None = None
+    pack_name: str | None = None  # «туба», «банка»
+    pack_size: int = 1  # базових одиниць в упаковці
+    min_stock: float | None = None
+    stock: float | None = None  # початковий залишок (у базових одиницях)
 
 
 class MaterialPatch(BaseModel):
     name: str | None = None
     unit_cost: int | None = None
     unit: str | None = None
+    tone: str | None = None
+    category: str | None = None
+    pack_name: str | None = None
+    pack_size: int | None = None
+    min_stock: float | None = None
     is_active: bool | None = None
 
 

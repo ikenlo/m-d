@@ -20,6 +20,7 @@ from sqlalchemy import (
     Column,
     Text,
     BigInteger,
+    UniqueConstraint,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -143,15 +144,58 @@ class Service(Base):
 
 
 class Material(Base):
-    """Довідник матеріалів/розхідників для швидкого вибору при закритті замовлення."""
+    """Матеріал на складі. Окремий тон фарби — окремий рядок (name="Igora Royal", tone="7-1").
+
+    Облік ведеться в базових одиницях (unit: г / мл / шт), залишок — у тисячних (stock_milli).
+    Упаковка: pack_name («туба») містить pack_size базових одиниць (напр. 60 г);
+    unit_cost — ціна однієї упаковки в копійках. Для штучного товару pack_size = 1.
+    """
 
     __tablename__ = "materials"
 
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(128))
+    tone: Mapped[str | None] = mapped_column(String(32))
+    category: Mapped[str | None] = mapped_column(String(64))  # «Фарби», «Окисники», «Догляд»…
     unit: Mapped[str] = mapped_column(String(16), default="шт")
-    unit_cost: Mapped[int] = mapped_column(Integer)  # копійки за одиницю
+    pack_name: Mapped[str] = mapped_column(String(16), default="шт", server_default="шт")
+    pack_size: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
+    unit_cost: Mapped[int] = mapped_column(Integer)  # копійки за упаковку
+    stock_milli: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    min_stock_milli: Mapped[int | None] = mapped_column(Integer)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+
+
+class StockMove(Base):
+    """Рух складу: прихід (+), списання на замовлення (−), інвентаризація (±). Лише додавання."""
+
+    __tablename__ = "stock_moves"
+    __table_args__ = (Index("ix_stock_material", "material_id", "ts"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    material_id: Mapped[int] = mapped_column(ForeignKey("materials.id"))
+    ts: Mapped[datetime] = mapped_column(DateTime, default=_now)
+    kind: Mapped[str] = mapped_column(String(16))  # receipt | order | order_return | adjust | writeoff
+    qty_milli: Mapped[int] = mapped_column(Integer)  # зі знаком, у тисячних базової одиниці
+    cost: Mapped[int] = mapped_column(Integer, default=0)  # копійки (для приходу — сума закупівлі)
+    order_id: Mapped[int | None] = mapped_column(ForeignKey("orders.id"))
+    user_id: Mapped[int | None] = mapped_column(Integer)
+    note: Mapped[str | None] = mapped_column(Text)
+
+
+class ScheduleDay(Base):
+    """Графік майстра на конкретну дату — перекриває тижневий шаблон.
+    is_off=True — вихідний; інакше робочі години start–end («09:00»)."""
+
+    __tablename__ = "schedule_days"
+    __table_args__ = (UniqueConstraint("master_id", "day"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    master_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    day: Mapped[date] = mapped_column(Date)
+    is_off: Mapped[bool] = mapped_column(Boolean, default=False)
+    start: Mapped[str | None] = mapped_column(String(5))
+    end: Mapped[str | None] = mapped_column(String(5))
 
 
 class Client(Base):
@@ -180,6 +224,8 @@ class Appointment(Base):
     source: Mapped[str] = mapped_column(String(16), default="staff")  # staff | telegram
     comment: Mapped[str | None] = mapped_column(Text)
     cancel_reason: Mapped[str | None] = mapped_column(Text)
+    # майстер запропонував клієнту інший час — чекаємо відповіді в боті
+    awaiting_client: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
     created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=_now, onupdate=_now)
@@ -259,6 +305,8 @@ class Payout(Base):
     master_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
     # unique: одна виплата на зміну (захист від подвійної виплати)
     shift_id: Mapped[int | None] = mapped_column(ForeignKey("shifts.id"), unique=True)
+    # майстер узяв свій заробіток із готівки в касі при закритті цієї зміни
+    cash_shift_id: Mapped[int | None] = mapped_column(ForeignKey("shifts.id"))
     amount: Mapped[int] = mapped_column(Integer)
     method: Mapped[str] = mapped_column(String(16), default=PaymentMethod.CASH)
     note: Mapped[str | None] = mapped_column(Text)
@@ -349,6 +397,10 @@ class Notification(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     chat_id: Mapped[int] = mapped_column(BigInteger)
     text: Mapped[str] = mapped_column(Text)
+    # кнопки під повідомленням: [[["Текст", "callback_data"], ...], ...]
+    buttons: Mapped[list | None] = mapped_column(JSON)
+    # фото до повідомлення (файл у data_dir), напр. знімок екрана в баг-репорті
+    photo_path: Mapped[str | None] = mapped_column(String(255))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
     sent_at: Mapped[datetime | None] = mapped_column(DateTime)
     attempts: Mapped[int] = mapped_column(Integer, default=0)
@@ -365,6 +417,8 @@ __all__ = [
     "ExpenseCategory",
     "LedgerEntry",
     "Material",
+    "ScheduleDay",
+    "StockMove",
     "MaterialsMode",
     "Notification",
     "Order",

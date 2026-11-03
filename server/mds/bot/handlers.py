@@ -175,10 +175,19 @@ def build_router() -> Router:
                     if (t := _nearest(s, service_id, m.id))]
             any_first = min((t for _, t in free), default=None)
             title = svc.name
+            # улюблений майстер клієнта (3+ візити) — першим у списку
+            fav_id, hint = None, ""
+            client = _client_by_tg(s, cb.from_user.id)
+            fav = bookings.favorite_master(s, client.id, service_id) if client else None
+            if fav and any(m.id == fav[0].id for m, _ in free):
+                fav_id = fav[0].id
+                free.sort(key=lambda x: x[0].id != fav_id)
+                hint = f"\n⭐ Ви вже {fav[1]} рази були в майстра {v.e(v.short_name(fav[0].full_name))} — записати знову?"
         if not free:
             await cb.answer("Найближчими днями вільного часу на цю послугу немає 😔", show_alert=True)
             return
-        await cb.message.edit_text(f"<b>{v.e(title)}</b>\nОберіть майстра:", reply_markup=v.masters_kb(service_id, free, any_first))
+        await cb.message.edit_text(f"<b>{v.e(title)}</b>{hint}\nОберіть майстра:",
+                                   reply_markup=v.masters_kb(service_id, free, any_first, favorite_id=fav_id))
         await cb.answer()
 
     def _horizon(s) -> list:
@@ -341,6 +350,35 @@ def build_router() -> Router:
         for text, kb in items:
             await message.answer(text, reply_markup=kb)
 
+
+    @router.callback_query(F.data.startswith("acc:"))
+    async def accept_proposal(cb: CallbackQuery, db: Database):
+        """Клієнт погодився на час, запропонований майстром."""
+        try:
+            with db.session() as s:
+                a = bookings.client_accept(s, Actor.telegram(cb.from_user.id), int(cb.data.split(":")[1]))
+                text = v.appt_text(a)
+        except DomainError as e:
+            await cb.answer(e.message, show_alert=True)
+            return
+        await cb.message.edit_text(f"✅ Чудово, запис підтверджено!\n\n{text}")
+        await cb.answer()
+
+    @router.callback_query(F.data.startswith("rb:"))
+    async def rebook(cb: CallbackQuery, db: Database):
+        """Клієнт обрав запропонований вільний час після відповіді «зайнято»."""
+        _, old_id, dt = cb.data.split(":")
+        try:
+            with db.session() as s:
+                a = bookings.client_rebook(s, Actor.telegram(cb.from_user.id), int(old_id), v.parse_dt(dt))
+                text = v.appt_text(a)
+                pending = a.status == ApptStatus.PENDING
+        except DomainError as e:
+            await cb.answer(e.message, show_alert=True)
+            return
+        tail = "\n\nМайстер підтвердить запис найближчим часом." if pending else ""
+        await cb.message.edit_text(f"🎉 Вас записано!\n\n{text}{tail}")
+        await cb.answer()
 
     @router.callback_query(F.data.startswith("cnl:"))
     async def cancel_ask(cb: CallbackQuery):

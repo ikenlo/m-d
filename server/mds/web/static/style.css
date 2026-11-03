@@ -66,6 +66,7 @@
 
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; }
+html { touch-action: manipulation; -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
 body {
   background: var(--bg);
   color: var(--ink);
@@ -153,7 +154,7 @@ svg.i.lg { width: 22px; height: 22px; }
 .card + .card { margin-top: 12px; }
 .grid > .card + .card, .grid > .stack > .card + .card { margin-top: 0; }
 .grid > .stack > * + * { margin-top: 12px; }
-.card-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
+.card-head { display: flex; align-items: center; justify-content: space-between; gap: 4px 10px; margin-bottom: 10px; flex-wrap: wrap; }
 .card-head h3 { margin: 0; }
 .section { margin-top: 22px; }
 .grid { display: grid; gap: 12px; }
@@ -406,4 +407,35 @@ details[open] > summary svg:last-child { transform: rotate(90deg); }
   .kpi-value { font-size: 19px; }
   .kpi-tile { padding: 12px; }
   .appt { flex-wrap: wrap; }
+}
+
+/* iOS збільшує сторінку при фокусі на полі з шрифтом < 16px — тримаємо 16px на телефонах */
+@media (max-width: 900px) { input, select, textarea { font-size: 16px; } }
+
+/* ---------- телефон: безпечна зона iPhone, компактний верх, таблиці картками ---------- */
+body::before {
+  content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 30; background: var(--bg);
+}
+@media (max-width: 900px) {
+  .main { padding-top: calc(14px + env(safe-area-inset-top, 0px)); }
+  .topbar { margin-bottom: 12px; }
+  .topbar .sub { font-size: 12.5px; }
+  .topbar > .row { width: 100%; }
+  .topbar > .row .btn { flex: 1; }
+  .seg { flex-wrap: nowrap; overflow-x: auto; max-width: 100%; scrollbar-width: none; }
+  .seg::-webkit-scrollbar { display: none; }
+  .seg button { flex: 1 0 auto; }
+}
+@media (max-width: 640px) {
+  table.resp, table.resp tbody { display: block; }
+  table.resp tr:has(th) { display: none; }
+  table.resp tr { display: block; padding: 10px 14px; border-bottom: 1px solid var(--line); }
+  table.resp tr:last-child { border-bottom: 0; }
+  table.resp td { display: flex; justify-content: space-between; gap: 12px; padding: 3px 0; border: 0; text-align: right; }
+  table.resp td::before { content: attr(data-label); color: var(--ink-3); font-size: 12px; font-weight: 600; text-align: left; flex-shrink: 0; }
+  table.resp td:not([data-label])::before, table.resp td[data-label=""]::before { content: none; }
+  table.resp td:first-child { font-weight: 700; }
+  table.resp td.right { justify-content: flex-end; flex-wrap: wrap; }
+  table.resp .m-hide { display: none; }
+  .card.table-wrap { padding: 0; }
 }

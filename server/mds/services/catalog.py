@@ -114,38 +114,69 @@ def list_services(s: Session, active_only: bool = True) -> list[Service]:
 # ---------------------------------------------------------------- матеріали
 
 def material_public(m: Material) -> dict:
-    return {"id": m.id, "name": m.name, "unit": m.unit, "unit_cost": m.unit_cost, "is_active": m.is_active}
+    from .stock import material_public as mp
+
+    return mp(m)
+
+
+MATERIAL_FIELDS = ("name", "tone", "category", "unit", "pack_name", "pack_size", "unit_cost", "is_active")
+
+
+def _check_material(data: dict, creating: bool) -> dict:
+    out = {k: data[k] for k in MATERIAL_FIELDS if k in data}
+    for k in ("name", "tone", "category", "unit", "pack_name"):
+        if k in out and isinstance(out[k], str):
+            out[k] = out[k].strip() or None
+    if creating and not out.get("name"):
+        raise ValidationError("Вкажіть назву матеріалу")
+    if "unit_cost" in out and (out["unit_cost"] is None or int(out["unit_cost"]) < 0):
+        raise ValidationError("Вкажіть ціну упаковки")
+    if "pack_size" in out:
+        out["pack_size"] = int(out["pack_size"] or 1)
+        if out["pack_size"] <= 0:
+            raise ValidationError("Розмір упаковки має бути більшим за 0")
+    if creating:
+        out.setdefault("unit", "шт")
+        out.setdefault("pack_name", out["unit"] if out.get("pack_size", 1) == 1 else "уп.")
+        out["unit"] = out["unit"] or "шт"
+        out["pack_name"] = out["pack_name"] or "шт"
+    if "min_stock" in data:
+        v = data["min_stock"]
+        out["min_stock_milli"] = None if v in (None, "") else round(float(v) * 1000)
+    return out
 
 
 def create_material(s: Session, actor: Actor, data: dict) -> Material:
-    actor.require(Role.DIRECTOR)
-    if int(data.get("unit_cost", -1)) < 0 or not str(data.get("name", "")).strip():
-        raise ValidationError("Вкажіть назву і собівартість")
-    m = Material(name=data["name"].strip(), unit=data.get("unit") or "шт", unit_cost=int(data["unit_cost"]))
+    actor.require(Role.DIRECTOR, Role.ADMIN)
+    vals = _check_material(data, creating=True)
+    if "unit_cost" not in vals:
+        raise ValidationError("Вкажіть ціну упаковки")
+    m = Material(**vals)
     s.add(m)
     s.flush()
+    if data.get("stock"):
+        from .stock import receive
+
+        receive(s, actor, m.id, data["stock"], note="Початковий залишок")
     audit(s, actor, "material", m.id, "create", None, material_public(m))
     return m
 
 
 def update_material(s: Session, actor: Actor, material_id: int, data: dict) -> Material:
-    actor.require(Role.DIRECTOR)
+    actor.require(Role.DIRECTOR, Role.ADMIN)
     m: Material = get_or_404(s, Material, material_id, "Матеріал")
     before = material_public(m)
-    if "unit_cost" in data and int(data["unit_cost"]) < 0:
-        raise ValidationError("Собівартість не може бути від'ємною")
-    for k in ("name", "unit", "unit_cost", "is_active"):
-        if k in data:
-            setattr(m, k, data[k])
+    for k, v in _check_material(data, creating=False).items():
+        setattr(m, k, v)
+    s.flush()
     audit(s, actor, "material", m.id, "update", before, material_public(m))
     return m
 
 
 def list_materials(s: Session, active_only: bool = True) -> list[Material]:
-    q = select(Material)
-    if active_only:
-        q = q.where(Material.is_active.is_(True))
-    return list(s.scalars(q.order_by(Material.name)))
+    from .stock import list_materials as lm
+
+    return lm(s, active_only)
 
 
 # ----------------------------------------------------------------- клієнти

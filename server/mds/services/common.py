@@ -132,7 +132,11 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "booking_horizon_days": 30,
     "booking_min_lead_min": 60,  # мінімум хвилин до запису через бот
     "telegram_auto_confirm": False,  # записи з бота одразу підтверджені?
-    "bot_staff_code": "0000",  # спільний код входу в розділ «Для майстрів» у боті
+    "bot_staff_code": "0000",
+    # при закритті зміни майстер забирає свій заробіток із готівки в касі; решту доплачує директор
+    "master_takes_cash": True,
+    # скільки візитів до одного майстра — і він стає «улюбленим» для клієнта
+    "favorite_master_visits": 3,  # спільний код входу в розділ «Для майстрів» у боті
     "salon_address": "",
     "salon_phone": "",
     "salon_instagram": "",
@@ -190,6 +194,10 @@ def update_settings(s: Session, actor: Actor, data: dict[str, Any]) -> dict[str,
             isinstance(value, int) and 0 <= value <= 365 * 24 * 60
         ):
             raise ValidationError(f"{key}: очікується ціле невід'ємне число")
+        if key in ("master_takes_cash", "telegram_auto_confirm") and not isinstance(value, bool):
+            raise ValidationError(f"{key}: так або ні")
+        if key == "favorite_master_visits" and not (isinstance(value, int) and 1 <= value <= 50):
+            raise ValidationError("Улюблений майстер: від 1 до 50 візитів")
         if key == "bot_staff_code" and not (isinstance(value, str) and value.isdigit() and 4 <= len(value) <= 8):
             raise ValidationError("Код персоналу: від 4 до 8 цифр")
         if key in ("salon_address", "salon_phone", "salon_instagram", "salon_name") and not isinstance(value, str):

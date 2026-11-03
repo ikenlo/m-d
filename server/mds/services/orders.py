@@ -25,7 +25,7 @@ from ..models import (
 )
 from ..money import fmt
 from . import notifications
-from .common import Actor, audit, get_or_404, ledger
+from .common import Actor, audit, get_or_404, get_setting, ledger
 from .finance import compute_split
 from .users import effective_terms
 
@@ -71,7 +71,11 @@ def _order_snapshot(o: Order) -> dict:
 
 
 def _build_materials(s: Session, items: list[dict]) -> list[OrderMaterial]:
-    """items: [{material_id?, name?, qty (може бути дробовим), unit_cost?}]"""
+    """items: [{material_id?, name?, qty, unit_cost?}]
+
+    Матеріал зі складу (material_id): qty — у базових одиницях матеріалу (г / мл / шт),
+    собівартість рахується від ціни упаковки. Довільний матеріал (без material_id):
+    qty — штуки, unit_cost — ціна за штуку; на склад не впливає."""
     out = []
     for it in items or []:
         qty_milli = round(float(it.get("qty", 1)) * 1000)
@@ -89,7 +93,13 @@ def _build_materials(s: Session, items: list[dict]) -> list[OrderMaterial]:
         unit_cost = int(unit_cost)
         if unit_cost < 0 or not name:
             raise ValidationError("Невірні дані матеріалу")
-        total = (unit_cost * qty_milli + 500) // 1000
+        if mat is not None and it.get("unit_cost") is None:
+            from .stock import display_name, line_cost
+
+            name = display_name(mat) if not it.get("name") else name
+            total = line_cost(mat, qty_milli)
+        else:
+            total = (unit_cost * qty_milli + 500) // 1000
         out.append(OrderMaterial(material_id=mat.id if mat else None, name=name, qty=qty_milli, unit_cost=unit_cost, total=total))
     return out
 
@@ -192,6 +202,9 @@ def close_order(
         s.flush()
     except IntegrityError:
         raise Conflict("Замовлення вже проведено", code="already_closed") from None
+    from .stock import apply_order
+
+    apply_order(s, actor, o)
     ledger(
         s, actor, "order_closed", "order", o.id,
         master_id=master.id, amount=amount, master_amount=split.master,
@@ -221,8 +234,12 @@ def correct_order(s: Session, actor: Actor, order_id: int, data: dict, reason: s
     share_bp = int(data.get("share_bp", o.share_bp))
     mode = data.get("materials_mode", o.materials_mode)
     if "materials" in data:
+        from .stock import apply_order, reverse_order
+
+        reverse_order(s, actor, o)
         o.materials = _build_materials(s, data["materials"])
         s.flush()
+        apply_order(s, actor, o)
     mat_total = sum(m.total for m in o.materials)
     split = compute_split(amount, mat_total, share_bp, mode)
 
@@ -290,6 +307,13 @@ def shift_report(s: Session, sh: Shift) -> dict:
         row["revenue"] += o.amount
         by_payment[o.payment_method] = by_payment.get(o.payment_method, 0) + o.amount
     master_earning = sum(o.master_earning for o in orders)
+    revenue = sum(o.amount for o in orders)
+    # Розрахунок готівки: майстер бере заробіток із готівки клієнтів, решту готівки лишає в касі;
+    # якщо готівки не вистачило (клієнти платили карткою) — різницю доплачує директор.
+    cash = by_payment.get("cash", 0)
+    takes_cash = bool(get_setting(s, "master_takes_cash"))
+    take = min(max(master_earning, 0), cash) if takes_cash else 0
+    director_pays = master_earning - take
     return {
         "shift_id": sh.id,
         "master_id": sh.master_id,
@@ -299,19 +323,28 @@ def shift_report(s: Session, sh: Shift) -> dict:
         "clients_count": len({o.client_id for o in orders}),
         "services_count": len(orders),
         "services": sorted(by_service.values(), key=lambda r: -r["count"]),
-        "revenue": sum(o.amount for o in orders),
+        "revenue": revenue,
         "materials_cost": sum(o.materials_cost for o in orders),
         "master_earning": master_earning,
         "salon_earning": sum(o.salon_earning for o in orders),
         "by_payment": by_payment,
         "cancellations": cancellations,
-        "payout_due": master_earning,
+        "cash": {
+            "from_clients": cash,
+            "noncash": revenue - cash,
+            "master_takes": take,
+            "leave_in_till": cash - take,
+            "director_pays": director_pays,
+            "mode": "take_from_till" if takes_cash else "director_pays_all",
+        },
+        "payout_due": director_pays,
         "orders": [order_public(o) for o in orders],
     }
 
 
 def shift_public(s: Session, sh: Shift) -> dict:
     payout = s.scalar(select(Payout).where(Payout.shift_id == sh.id))
+    cash_payout = s.scalar(select(Payout).where(Payout.cash_shift_id == sh.id))
     report = sh.report if sh.status != ShiftStatus.OPEN and sh.report else shift_report(s, sh)
     return {
         "id": sh.id,
@@ -323,6 +356,7 @@ def shift_public(s: Session, sh: Shift) -> dict:
         "payout_due": sh.payout_due if sh.payout_due is not None else report["payout_due"],
         "report": report,
         "payout": payout_public(payout) if payout else None,
+        "cash_payout": payout_public(cash_payout) if cash_payout else None,
     }
 
 
@@ -339,6 +373,17 @@ def close_shift(s: Session, actor: Actor, master_id: int) -> Shift:
     report = shift_report(s, sh)
     sh.report = {k: v for k, v in report.items() if k != "orders"} | {"order_ids": [o["id"] for o in report["orders"]]}
     sh.payout_due = report["payout_due"]
+    take = report["cash"]["master_takes"]
+    if take > 0:
+        # майстер забрав свій заробіток із каси — це фактична виплата
+        p = Payout(master_id=master_id, cash_shift_id=sh.id, amount=take, method=PaymentMethod.CASH,
+                   note=f"Взято з каси при закритті зміни #{sh.id}", paid_at=sh.closed_at, confirmed_by=actor.user_id or master_id)
+        s.add(p)
+        s.flush()
+        ledger(s, actor, "payout", "payout", p.id, master_id=master_id, amount=take, master_amount=-take,
+               details={"shift_id": sh.id, "method": "cash", "from_till": True})
+    if sh.payout_due <= 0:
+        sh.status = ShiftStatus.PAID  # усе вже отримано з каси — директору доплачувати нічого
     audit(s, actor, "shift", sh.id, "close", None, sh.report)
     ledger(
         s, actor, "shift_closed", "shift", sh.id, master_id=master_id,
@@ -349,7 +394,11 @@ def close_shift(s: Session, actor: Actor, master_id: int) -> Shift:
         s,
         f"📋 Зміну закрито: {sh.master.full_name}\n"
         f"Клієнтів: {report['clients_count']}, послуг: {report['services_count']}, скасувань: {report['cancellations']}\n"
-        f"Виручка: {fmt(report['revenue'])}\nДо виплати майстру: {fmt(report['payout_due'])}",
+        f"Виручка: {fmt(report['revenue'])} (готівка {fmt(report['cash']['from_clients'])}, картка/переказ {fmt(report['cash']['noncash'])})\n"
+        f"Заробіток майстра: {fmt(report['master_earning'])}\n"
+        f"Майстер узяв з каси: {fmt(report['cash']['master_takes'])}\n"
+        f"Лишилось у касі: {fmt(report['cash']['leave_in_till'])}\n"
+        f"Доплатити майстру: {fmt(report['payout_due'])}",
         exclude_user_id=actor.user_id,
     )
     return sh
@@ -386,6 +435,7 @@ def payout_public(p: Payout) -> dict:
         "amount": p.amount,
         "method": p.method,
         "note": p.note,
+        "from_till": p.cash_shift_id is not None,
         "paid_at": p.paid_at.isoformat(),
     }
 

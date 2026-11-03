@@ -198,12 +198,17 @@ def when_label(t: datetime) -> str:
     return f"{lbl[0].lower() + lbl[1:]} о {t:%H:%M}"
 
 
-def masters_kb(service_id: int, masters: list[tuple[User, datetime]], any_first: datetime | None) -> InlineKeyboardMarkup:
-    """masters: [(майстер, найближчий вільний час)] — показуємо лише вільних."""
+def masters_kb(service_id: int, masters: list[tuple[User, datetime]], any_first: datetime | None,
+               favorite_id: int | None = None) -> InlineKeyboardMarkup:
+    """masters: [(майстер, найближчий вільний час)] — показуємо лише вільних.
+    Улюблений майстер клієнта — першою кнопкою з ⭐."""
     rows = []
+    fav = [(m, t) for m, t in masters if m.id == favorite_id]
+    rest = [(m, t) for m, t in masters if m.id != favorite_id]
+    rows += [[(f"⭐ Ваш майстер {short_name(m.full_name)} · {when_label(t)}", f"mst:{service_id}:{m.id}")] for m, t in fav]
     if any_first and len(masters) > 1:
         rows.append([(f"👥 Будь-хто · {when_label(any_first)}", f"mst:{service_id}:0")])
-    rows += [[(f"{short_name(m.full_name)} · {when_label(t)}", f"mst:{service_id}:{m.id}")] for m, t in masters]
+    rows += [[(f"{short_name(m.full_name)} · {when_label(t)}", f"mst:{service_id}:{m.id}")] for m, t in rest]
     rows.append([("« Назад", "book")])
     return kb(rows)
 
@@ -360,9 +365,9 @@ def staff_appt_kb(a: Appointment, is_director: bool) -> InlineKeyboardMarkup | N
         return None
     rows = []
     if a.status == ApptStatus.PENDING:
-        rows.append([("✅ Підтвердити", f"s:cf:{a.id}")])
+        rows.append([("✅ Підтвердити", f"s:cf:{a.id}"), ("⛔ Зайнято", f"s:busy:{a.id}")])
     rows.append([("💳 Закрити замовлення", f"s:cl:{a.id}")])
-    row = [("🔁 Перенести", f"s:mv:{a.id}")]
+    row = [("🕐 Інший час" if a.status == ApptStatus.PENDING else "🔁 Перенести", f"s:mv:{a.id}")]
     row.append(("🗑 Видалити", f"s:del:{a.id}") if is_director else ("❌ Скасувати", f"s:del:{a.id}"))
     rows.append(row)
     if a.status != ApptStatus.IN_PROGRESS:

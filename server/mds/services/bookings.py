@@ -38,6 +38,7 @@ def appt_public(a: Appointment) -> dict:
         "source": a.source,
         "comment": a.comment,
         "cancel_reason": a.cancel_reason,
+        "awaiting_client": bool(a.awaiting_client),
         "order_id": a.order.id if a.order else None,
     }
 
@@ -62,11 +63,13 @@ def _parse_hm(v: str) -> time:
 
 
 def working_hours(s: Session, master: User, day: date) -> tuple[datetime, datetime] | None:
-    sched = master.schedule if master.schedule is not None else get_setting(s, "schedule")
-    span = (sched or {}).get(str(day.weekday()))
-    if not span:
+    """Робочі години майстра на дату: зміна на дату → шаблон майстра → графік салону."""
+    from .schedule import day_span
+
+    start, end, _ = day_span(s, master, day)
+    if not start:
         return None
-    return datetime.combine(day, _parse_hm(span[0])), datetime.combine(day, _parse_hm(span[1]))
+    return datetime.combine(day, _parse_hm(start)), datetime.combine(day, _parse_hm(end))
 
 
 def _overlapping(
@@ -279,6 +282,8 @@ def reschedule(
         a.price = price
     if comment is not None:
         a.comment = comment
+    if from_bot:
+        a.awaiting_client = False  # клієнт сам обрав час
     if from_bot and a.status == ApptStatus.CONFIRMED and time_changed:
         a.status = ApptStatus.CONFIRMED if get_setting(s, "telegram_auto_confirm") else ApptStatus.PENDING
     s.flush()
@@ -295,7 +300,9 @@ def reschedule(
     return a
 
 
-def set_status(s: Session, actor: Actor, appt_id: int, status: str, reason: str | None = None) -> Appointment:
+def set_status(
+    s: Session, actor: Actor, appt_id: int, status: str, reason: str | None = None, *, notify_client: bool = True
+) -> Appointment:
     """Підтвердити / прийняти клієнта / скасувати / не прийшов."""
     a = get_appointment(s, actor, appt_id)
     allowed = {
@@ -312,13 +319,14 @@ def set_status(s: Session, actor: Actor, appt_id: int, status: str, reason: str 
         raise Conflict(f"Неможливо змінити статус з '{a.status}' на '{status}'")
     before = _snapshot(a)
     a.status = status
+    a.awaiting_client = False
     if status == ApptStatus.CANCELLED:
         a.cancel_reason = reason or ("Скасовано клієнтом" if actor.role == "client" else None)
     s.flush()
     audit(s, actor, "appointment", a.id, status, before, _snapshot(a), reason)
     if status == ApptStatus.CANCELLED:
         notifications.notify_appointment(s, a, "❌ Запис скасовано", actor.user_id)
-        if actor.role != "client":
+        if actor.role != "client" and notify_client:
             notifications.enqueue(
                 s, a.client.telegram_user_id,
                 f"❌ Ваш запис {a.starts_at:%d.%m о %H:%M} ({a.service.name}) скасовано салоном.",
@@ -436,3 +444,131 @@ def _ceil_to_step(t: datetime, step_min: int) -> datetime:
         mins += 1
     mins = -(-mins // step_min) * step_min
     return base + timedelta(minutes=mins)
+
+
+
+# ------------------------------------------------- непідтверджені записи
+
+def pending_list(s: Session, actor: Actor) -> list[Appointment]:
+    """Майбутні записи, що чекають підтвердження (майстер — лише свої)."""
+    q = select(Appointment).where(
+        Appointment.status == ApptStatus.PENDING,
+        Appointment.starts_at >= datetime.combine(clock.now().date(), time.min),
+    )
+    if actor.is_master:
+        q = q.where(Appointment.master_id == actor.user_id)
+    elif not actor.is_staff_manager:
+        raise Forbidden("Недостатньо прав")
+    return list(s.scalars(q.order_by(Appointment.starts_at)))
+
+
+def suggest_slots(
+    s: Session, master_id: int, service_id: int, limit: int = 6, exclude: tuple[datetime, datetime] | None = None
+) -> list[datetime]:
+    """Найближчі вільні часи для клієнта (для відповіді «цей час зайнятий»).
+    На день — до 2 варіантів, рознесених щонайменше на 3 години; exclude — проміжок,
+    який майстер позначив зайнятим (його не пропонуємо)."""
+    out: list[datetime] = []
+    today = clock.now().date()
+    for i in range(int(get_setting(s, "booking_horizon_days"))):
+        day_picks: list[datetime] = []
+        for t in free_slots(s, master_id, service_id, today + timedelta(days=i), for_client=True):
+            if exclude and exclude[0] <= t < exclude[1]:
+                continue
+            if not day_picks or (len(day_picks) < 2 and t - day_picks[-1] >= timedelta(hours=3)):
+                day_picks.append(t)
+        for t in day_picks:
+            out.append(t)
+            if len(out) >= limit:
+                return out
+    return out
+
+
+def _when(t: datetime) -> str:
+    days = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Нд"]
+    return f"{days[t.weekday()]} {t:%d.%m} о {t:%H:%M}"
+
+
+def decline_busy(s: Session, actor: Actor, appt_id: int) -> dict:
+    """«Цей час зайнятий»: скасувати непідтверджений запис і запропонувати клієнту
+    найближчі вільні години кнопками в боті."""
+    actor.require(Role.DIRECTOR, Role.ADMIN, Role.MASTER)
+    a = get_appointment(s, actor, appt_id)
+    if a.status != ApptStatus.PENDING:
+        raise Conflict("Запис уже не очікує підтвердження")
+    set_status(s, actor, appt_id, ApptStatus.CANCELLED, "Час зайнятий", notify_client=False)
+    slots = suggest_slots(s, a.master_id, a.service_id, exclude=(a.starts_at, a.ends_at))
+    buttons = [[[_when(t), f"rb:{a.id}:{t:%Y%m%d%H%M}"]] for t in slots]
+    buttons.append([["📅 Обрати інший день або майстра", "book"]])
+    text = (f"😔 На жаль, час {_when(a.starts_at)} ({a.service.name}) уже зайнятий.\n"
+            + ("Оберіть, будь ласка, інший вільний час:" if slots else "Оберіть інший день або майстра:"))
+    notified = notifications.enqueue(s, a.client.telegram_user_id, text, buttons)
+    return {"notified": notified, "slots": [t.isoformat() for t in slots]}
+
+
+def propose_time(s: Session, actor: Actor, appt_id: int, starts_at: datetime) -> tuple[Appointment, bool]:
+    """Майстер пропонує інший час: запис переноситься (час тримається за клієнтом),
+    клієнт отримує в боті кнопки «Підходить / Інший час / Скасувати»."""
+    actor.require(Role.DIRECTOR, Role.ADMIN, Role.MASTER)
+    a = get_appointment(s, actor, appt_id)
+    if a.status != ApptStatus.PENDING:
+        raise Conflict("Запис уже не очікує підтвердження")
+    old = a.starts_at
+    a = reschedule(s, actor, appt_id, starts_at=starts_at)
+    a.awaiting_client = True
+    audit(s, actor, "appointment", a.id, "propose_time", {"starts_at": old}, {"starts_at": a.starts_at})
+    text = (f"🕐 Майстер {a.master.full_name.split()[0]} пропонує інший час для запису «{a.service.name}»:\n"
+            f"{_when(a.starts_at)} (замість {_when(old)}).\nПідходить?")
+    buttons = [[["✅ Підходить", f"acc:{a.id}"]], [["🕐 Інший час", f"mv:{a.id}"]], [["❌ Скасувати запис", f"cnl:{a.id}"]]]
+    notified = notifications.enqueue(s, a.client.telegram_user_id, text, buttons)
+    return a, notified
+
+
+def client_accept(s: Session, actor: Actor, appt_id: int) -> Appointment:
+    """Клієнт у боті погодився на запропонований майстром час."""
+    if actor.role != "client":
+        raise Forbidden("Лише для клієнта")
+    a = get_appointment(s, actor, appt_id)
+    if a.status != ApptStatus.PENDING or not a.awaiting_client:
+        raise Conflict("Ця пропозиція вже неактуальна")
+    before = _snapshot(a)
+    a.status, a.awaiting_client = ApptStatus.CONFIRMED, False
+    s.flush()
+    audit(s, actor, "appointment", a.id, "client_accept", before, _snapshot(a))
+    notifications.notify_appointment(s, a, "✅ Клієнт погодився на запропонований час", None)
+    return a
+
+
+def client_rebook(s: Session, actor: Actor, old_appt_id: int, starts_at: datetime) -> Appointment:
+    """Клієнт обрав один із запропонованих часів після відповіді «зайнято»."""
+    if actor.role != "client":
+        raise Forbidden("Лише для клієнта")
+    old = get_appointment(s, actor, old_appt_id)  # перевіряє, що запис цього клієнта
+    return create_appointment(s, actor, master_id=old.master_id, service_id=old.service_id,
+                              starts_at=starts_at, client_id=old.client_id)
+
+
+# ------------------------------------------------------ улюблений майстер
+
+def favorite_master(s: Session, client_id: int, service_id: int | None = None) -> tuple[User, int] | None:
+    """Майстер, до якого клієнт приходив найчастіше (щонайменше N разів — налаштування
+    «favorite_master_visits», за замовч. 3). Якщо задано послугу — лише майстер, що її виконує."""
+    from sqlalchemy import func
+
+    from .users import masters_for_service
+
+    need = int(get_setting(s, "favorite_master_visits"))
+    rows = s.execute(
+        select(Appointment.master_id, func.count(Appointment.id).label("n"))
+        .where(Appointment.client_id == client_id, Appointment.status == ApptStatus.COMPLETED)
+        .group_by(Appointment.master_id)
+        .order_by(func.count(Appointment.id).desc())
+    ).all()
+    allowed = {m.id for m in masters_for_service(s, service_id)} if service_id else None
+    for master_id, n in rows:
+        if n < need:
+            break
+        m = s.get(User, master_id)
+        if m and m.is_active and m.role == Role.MASTER and (allowed is None or m.id in allowed):
+            return m, int(n)
+    return None
