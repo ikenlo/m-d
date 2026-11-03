@@ -139,8 +139,12 @@ def close_order(
     payment_method: str,
     materials: list[dict] | None = None,
     idempotency_key: str | None = None,
+    client_name: str | None = None,
 ) -> Order:
     """Закрити замовлення: фіксує виручку, рахує частки, пише журнал.
+
+    client_name — ім'я та прізвище клієнта, уточнені майстром (напр. замість нікнейму
+    з Telegram); оновлюється в картці клієнта.
 
     Повторний виклик з тим самим idempotency_key повертає вже створене
     замовлення (захист від подвійного натискання / повтору запиту).
@@ -160,6 +164,12 @@ def close_order(
         raise ValidationError("Оберіть спосіб оплати")
     if amount is None or amount < 0:
         raise ValidationError("Вкажіть фактичну вартість")
+    if client_name is not None:
+        client_name = " ".join(client_name.split())
+        if len(client_name) < 2:
+            raise ValidationError("Вкажіть ім'я клієнта")
+        if len(client_name) > 128:
+            raise ValidationError("Ім'я клієнта задовге")
 
     # Атомарний перехід статусу: лише один запит зможе перевести запис у COMPLETED.
     res = s.execute(
@@ -171,6 +181,11 @@ def close_order(
     if res.rowcount != 1:
         raise Conflict("Замовлення вже закрито або запис скасовано", code="already_closed")
     s.refresh(a)
+    if client_name and client_name != a.client.name:
+        before_name = a.client.name
+        a.client.name = client_name
+        audit(s, actor, "client", a.client_id, "rename", {"name": before_name}, {"name": client_name},
+              "Уточнено при закритті замовлення")
 
     master: User = a.master
     share_bp, mode = effective_terms(s, master)
@@ -396,9 +411,9 @@ def close_shift(s: Session, actor: Actor, master_id: int) -> Shift:
         f"Клієнтів: {report['clients_count']}, послуг: {report['services_count']}, скасувань: {report['cancellations']}\n"
         f"Виручка: {fmt(report['revenue'])} (готівка {fmt(report['cash']['from_clients'])}, картка/переказ {fmt(report['cash']['noncash'])})\n"
         f"Заробіток майстра: {fmt(report['master_earning'])}\n"
-        f"Майстер узяв з каси: {fmt(report['cash']['master_takes'])}\n"
-        f"Лишилось у касі: {fmt(report['cash']['leave_in_till'])}\n"
-        f"Доплатити майстру: {fmt(report['payout_due'])}",
+        f"  • взяв готівкою з каси: {fmt(report['cash']['master_takes'])}\n"
+        f"  • переказати на карту: {fmt(report['payout_due'])}\n"
+        f"Лишилось у касі: {fmt(report['cash']['leave_in_till'])}",
         exclude_user_id=actor.user_id,
     )
     return sh

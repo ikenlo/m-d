@@ -378,6 +378,5 @@ def staff_appt_kb(a: Appointment, is_director: bool) -> InlineKeyboardMarkup | N
 def pay_method_kb(appt_id: int, amount: int) -> InlineKeyboardMarkup:
     return kb([
         [("💵 Готівка", f"s:pm:{appt_id}:{amount}:cash"), ("💳 Картка", f"s:pm:{appt_id}:{amount}:card")],
-        [("🏦 Переказ", f"s:pm:{appt_id}:{amount}:transfer")],
         [("« Назад", "s:list")],
     ])

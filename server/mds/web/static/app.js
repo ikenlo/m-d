@@ -91,7 +91,8 @@ const STATUS = {
   completed: "Завершено", cancelled: "Скасовано", no_show: "Не прийшов",
 };
 const SHIFT_STATUS = { open: "Відкрита", closed: "Очікує виплати", paid: "Виплачено" };
-const PAY = { cash: "Готівка", card: "Картка", transfer: "Переказ" };
+const PAY = { cash: "Готівка", card: "Картка", transfer: "Переказ" }; // «Переказ» — лише для старих записів
+const PAY_CHOICES = { cash: "Готівка", card: "Картка" };
 const ROLES = { director: "Директор", admin: "Адміністратор", master: "Майстер" };
 const MAT_MODES = {
   salon: "Матеріали за рахунок салону",
@@ -311,10 +312,38 @@ function bugReportForm() {
     field("Опис", text),
     h("button", { type: "button", class: "btn", onclick: () => file.click() }, icon("image", "sm"), "Додати знімок екрана"), file, preview,
     send));
-  text.focus();
+  autoFocus(text);
 }
 
 // ============================================================ бічна панель
+// На телефонах (сенсорний екран) не відкриваємо клавіатуру автоматично — вона закриває вікно
+const isTouch = () => window.matchMedia && window.matchMedia("(pointer: coarse)").matches;
+function autoFocus(el, select = false) {
+  if (isTouch()) return;
+  select ? el.select() : el.focus();
+}
+
+// Вікно над клавіатурою: на iPhone клавіатура зменшує видиму область (visualViewport),
+// тож підганяємо підкладку під видиму частину екрана, а поле в фокусі прокручуємо в поле зору
+function fitToKeyboard(ov) {
+  const vv = window.visualViewport;
+  if (!vv) return () => {};
+  const fit = () => {
+    ov.style.top = vv.offsetTop + "px";
+    ov.style.height = vv.height + "px";
+    ov.style.bottom = "auto";
+  };
+  const onFocus = (e) => {
+    if (e.target.matches("input, textarea, select")) setTimeout(() => e.target.scrollIntoView({ block: "center", behavior: "smooth" }), 250);
+  };
+  vv.addEventListener("resize", fit);
+  vv.addEventListener("scroll", fit);
+  ov.addEventListener("focusin", onFocus);
+  fit();
+  return () => { vv.removeEventListener("resize", fit); vv.removeEventListener("scroll", fit); };
+}
+let unfitSheet = () => {};
+
 function openSheet(title, ...content) {
   closeSheet();
   const ov = h("div", { class: "overlay", id: "overlay", onclick: (e) => { if (e.target === ov) closeSheet(); } },
@@ -322,9 +351,10 @@ function openSheet(title, ...content) {
       h("div", { class: "sheet-head" }, h("h2", {}, title), h("button", { class: "x", onclick: closeSheet, "aria-label": "Закрити" }, icon("x"))),
       ...content));
   document.body.append(ov);
+  unfitSheet = fitToKeyboard(ov);
   return ov;
 }
-function closeSheet() { const o = document.getElementById("overlay"); if (o) o.remove(); }
+function closeSheet() { unfitSheet(); unfitSheet = () => {}; const o = document.getElementById("overlay"); if (o) o.remove(); }
 document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeSheet(); });
 // Масштабування сторінки вимкнено: програма має виглядати як застосунок
 ["gesturestart", "gesturechange", "gestureend"].forEach((ev) => document.addEventListener(ev, (e) => e.preventDefault(), { passive: false }));
@@ -401,11 +431,17 @@ async function loadRefs() {
   state.settings = settings;
 }
 
+function setThemeColor(c) {
+  const m = document.querySelector('meta[name="theme-color"]');
+  if (m) m.setAttribute("content", c);
+}
+
 function renderLogin() {
   window.onhashchange = null;
+  setThemeColor("#0b1f19"); // темна смужка статусу над темним екраном входу
   const user = h("input", { autocomplete: "username", autocapitalize: "none", placeholder: "Логін", id: "login-user" });
   const pass = h("input", { type: "password", autocomplete: "current-password", placeholder: "Пароль", id: "login-pass" });
-  const btn = h("button", { class: "btn primary big", type: "submit" }, "Увійти");
+  const btn = h("button", { class: "btn login-btn big", type: "submit" }, "Увійти");
   const form = h("form", { class: "stack", onsubmit: async (e) => {
     e.preventDefault();
     btn.disabled = true;
@@ -422,24 +458,17 @@ function renderLogin() {
   } }, field("Логін", user), field("Пароль", pass), btn);
   document.getElementById("root").replaceChildren(
     h("div", { class: "login" },
-      h("div", { class: "login-brand" },
-        h("div", {},
-          h("div", { class: "brand", style: { padding: 0 } }, h("div", { class: "brand-mark" }, "M&D"),
-            h("div", {}, h("div", { class: "brand-name" }, "MDS Connect"), h("div", { class: "brand-sub" }, "Салон краси M&D"))),
-          h("h1", {}, "Записи, майстри й фінанси салону в одному місці"),
-          h("p", {}, "Календар записів, закриття замовлень, зарплати майстрів і прибуток салону — автоматично."),
-          h("ul", {},
-            h("li", {}, icon("calendar"), "Календар усіх майстрів і записи з Telegram"),
-            h("li", {}, icon("percent"), "Автоматичний розрахунок 50/50 і виплати"),
-            h("li", {}, icon("chart"), "Виручка, витрати й чистий прибуток"))),
-        h("div", { class: "small foot", style: { color: "rgba(245,241,230,.5)" } }, "Внутрішня система салону. Доступ лише для персоналу.")),
-      h("div", { class: "login-form" }, h("div", { class: "card" },
-        h("h2", {}, "Вхід"), h("p", { class: "muted", style: { marginTop: 0 } }, "Увійдіть логіном і паролем, які видав директор."),
-        form))));
-  user.focus();
+      h("div", { class: "login-card" },
+        h("div", { class: "login-mark" }, "M&D"),
+        h("div", { class: "login-name" }, "MDS Connect"),
+        h("div", { class: "login-sub" }, "Beauty salon M&D"),
+        form),
+      h("div", { class: "login-foot" }, "Внутрішня система салону · доступ лише для персоналу")));
+  autoFocus(user);
 }
 
 function renderApp() {
+  setThemeColor(document.documentElement.getAttribute("data-theme") === "dark" ? "#0b1a15" : "#f4f3ee");
   const role = state.user.role;
   const items = NAV[role];
   let route = currentRoute();
@@ -471,6 +500,11 @@ function renderApp() {
     return h("a", { href: "#/" + id, class: active ? "active" : "" }, icon(it[1]), it[2]);
   }));
   const main = h("main", { class: "main" });
+  // телефон: закріплена шапка з суцільним фоном — вміст прокручується під нею, а не під годинником iPhone
+  const title = route === "more" ? "Меню" : (items.find((i) => i[0] === route) || [])[2] || "";
+  const mbar = h("header", { class: "mbar" }, h("div", { class: "brand-mark" }, "M&D"), h("b", { class: "grow" }, title),
+    h("button", { class: "icon-btn", "aria-label": "Повідомити про помилку", onclick: bugReportForm }, icon("bug")));
+  main.append(mbar);
   document.getElementById("root").replaceChildren(h("div", { class: "app" }, sidebar, main), tabbar);
   closeSheet();
   const view = route === "more" ? viewMore : VIEWS[route];
@@ -615,8 +649,18 @@ function closeOrderSheet(a, onChange) {
   const custom = [];
   const amount = h("input", { class: "huge", inputmode: "decimal", value: kopToInput(a.price) });
   const PAY_ICON = { cash: "banknote", card: "card", transfer: "transfer" };
-  const methods = h("div", { class: "choice" }, Object.entries(PAY).map(([k, t]) =>
+  const methods = h("div", { class: "choice", style: { gridTemplateColumns: "1fr 1fr" } }, Object.entries(PAY_CHOICES).map(([k, t]) =>
     h("button", { type: "button", onclick: (e) => { method = k; [...methods.children].forEach((b) => b.classList.remove("on")); e.currentTarget.classList.add("on"); } }, icon(PAY_ICON[k]), t)));
+  // ім'я та прізвище клієнта — для нормальної бази (з Telegram часто приходить нікнейм)
+  const [first0, ...rest0] = (a.client.name || "").split(/\s+/).filter(Boolean);
+  const firstName = h("input", { value: first0 || "", placeholder: "Ім'я", autocomplete: "off", autocapitalize: "words", id: "close-first" });
+  const lastName = h("input", { value: rest0.join(" "), placeholder: "Прізвище", autocomplete: "off", autocapitalize: "words", id: "close-last" });
+  const looksLikeNick = /[_@\d]|^[A-Za-z]+$/.test(a.client.name || "") || a.source === "telegram";
+  const clientBox = h("div", { class: "card", style: { padding: "12px", background: looksLikeNick ? "var(--warn-bg)" : null } },
+    h("div", { class: "row small", style: { marginBottom: "8px" } }, icon("user", "sm"), h("b", {}, "Клієнт"),
+      h("span", { class: "muted" }, a.client.phone),
+      looksLikeNick ? h("span", { class: "muted grow right" }, "перевірте ім'я — могло прийти з Telegram") : null),
+    h("div", { class: "form-grid", style: { gridTemplateColumns: "1fr 1fr" } }, firstName, lastName));
   const svc = state.services.find((s) => s.id === a.service_id) || {};
   const isColoring = /фарб|мелір|blonde|чорн|тон/i.test([svc.category, svc.subcategory, svc.name].join(" "));
   const matsBox = materialsPicker(mats, custom, { open: isColoring });
@@ -625,10 +669,12 @@ function closeOrderSheet(a, onChange) {
     const kop = toKop(amount.value);
     if (!(kop >= 0)) return toast("Вкажіть фактичну вартість", true);
     if (!method) return toast("Оберіть спосіб оплати", true);
+    const clientName = [firstName.value, lastName.value].map((x) => x.trim()).filter(Boolean).join(" ");
+    if (firstName.value.trim().length < 2) { firstName.focus(); return toast("Вкажіть ім'я клієнта", true); }
     const materials = [...mats.entries()].filter(([, q]) => q > 0).map(([id, q]) => ({ material_id: id, qty: q })).concat(custom);
     btn.disabled = true;
     try {
-      const o = await run(() => api.post(`/api/appointments/${a.id}/close`, { amount: kop, payment_method: method, materials, idempotency_key: key }));
+      const o = await run(() => api.post(`/api/appointments/${a.id}/close`, { amount: kop, payment_method: method, materials, idempotency_key: key, client_name: clientName }));
       closeSheet();
       toast(`Замовлення закрито. Заробіток майстра: ${money(o.master_earning)}`);
       state.materials = await api.get("/api/materials").catch(() => state.materials);
@@ -637,9 +683,11 @@ function closeOrderSheet(a, onChange) {
   } }, icon("ok"), "Закрити замовлення");
 
   openSheet("Закрити замовлення",
-    h("div", { class: "muted", style: { marginBottom: "10px" } }, `${a.service_name} · ${a.client.name}`),
-    h("div", { class: "stack" }, field("Фактична вартість, ₴", amount), field("Спосіб оплати", methods), matsBox, btn));
-  amount.select();
+    h("div", { class: "muted", style: { marginBottom: "10px" } }, `${a.service_name} · ${hm(a.starts_at)}`),
+    h("div", { class: "stack" }, clientBox, field("Фактична вартість, ₴", amount), field("Спосіб оплати", methods), matsBox, btn));
+  autoFocus(amount, true);
+  // на телефоні: торкнулися суми — одразу виділяємо її, щоб ввести нову
+  amount.addEventListener("focus", () => setTimeout(() => amount.select(), 0));
 }
 
 function apptForm({ appt = null, master_id = null, date = today(), time = "10:00" } = {}, onChange) {
@@ -813,9 +861,11 @@ async function pendingBlock(onChange) {
       h("div", { class: "grow", style: { minWidth: "180px" } },
         h("div", {}, h("b", {}, a.client.name), " · ", h("a", { href: "tel:" + a.client.phone }, a.client.phone)),
         h("div", { class: "muted small" }, a.service_name, isMgr ? ` · ${a.master_name}` : "", a.source === "telegram" ? " · з Telegram" : ""),
-        a.awaiting_client ? h("span", { class: "chip st-in_progress", style: { marginTop: "4px" } }, "запропоновано інший час — чекаємо відповіді клієнта") : null),
+        a.awaiting_client ? h("div", { class: "chip st-in_progress", style: { marginTop: "6px", whiteSpace: "normal", borderRadius: "8px" } }, `Запропоновано ${hm(a.starts_at)} — чекаємо відповіді клієнта в боті`) : null),
       h("div", { class: "row" },
-        h("button", { class: "btn sm primary", onclick: async () => { await run(() => api.post(`/api/appointments/${a.id}/status`, { status: "confirmed" }), "Запис підтверджено"); onChange(); } }, icon("ok", "sm"), "Підтвердити"),
+        h("button", { class: "btn sm primary", title: a.awaiting_client ? "Якщо клієнт погодився телефоном, а не в боті" : null,
+          onclick: async () => { await run(() => api.post(`/api/appointments/${a.id}/status`, { status: "confirmed" }), "Запис підтверджено"); onChange(); } },
+          icon("ok", "sm"), a.awaiting_client ? "Клієнт погодився" : "Підтвердити"),
         h("button", { class: "btn sm", onclick: () => proposeForm(a, onChange) }, icon("clock", "sm"), "Інший час"),
         h("button", { class: "btn sm danger", onclick: () => declineBusy(a, onChange) }, "Зайнято")))));
 }
@@ -839,7 +889,7 @@ VIEWS.today = async (main) => {
       h("div", { class: "kpi-value", style: { fontSize: "18px" } }, shift ? "Відкрита з " + hm(shift.opened_at) : "Не відкрита"),
       h("a", { href: "#/shift", class: "small" }, shift ? "Закрити зміну →" : "Деталі →"))));
   const pend = await pendingBlock(reload);
-  if (pend) main.insertBefore(pend, main.children[1]);
+  if (pend) main.querySelector(".topbar").after(pend);
   if (!active.length) { main.append(h("div", { class: "card" }, emptyState("На сьогодні записів немає", "calendar"))); return; }
   for (const a of active) {
     const done = a.status === "completed";
@@ -1011,28 +1061,31 @@ function shiftReport(r) {
       h("div", { class: "divider" }),
       h("div", { class: "sum-line" }, h("span", {}, "Загальна виручка"), h("b", {}, money(r.revenue))),
       Object.entries(r.by_payment || {}).map(([k, v]) => h("div", { class: "sum-line muted small" }, h("span", {}, PAY[k] || k), h("span", {}, money(v)))),
-      h("div", { class: "sum-line" }, h("span", {}, "Заробіток майстра"), h("b", {}, money(r.master_earning))),
+      r.cash ? null : h("div", { class: "sum-line" }, h("span", {}, "Заробіток майстра"), h("b", {}, money(r.master_earning))),
       r.cash ? cashBlock(r) : h("div", { class: "sum-line total" }, h("span", {}, "Сума до виплати"), h("span", {}, money(r.payout_due)))));
 }
 
-// Розрахунок готівки після зміни: скільки майстер бере з каси, скільки лишає, скільки доплачує директор
+// Розрахунок після зміни: спершу — скільки заробив майстер і як отримає гроші, потім — каса
 function cashBlock(r) {
   const c = r.cash;
   const line = (label, v, cls = "") => h("div", { class: "sum-line " + cls }, h("span", {}, label), h("b", {}, money(v)));
-  if (c.mode !== "take_from_till") {
-    return h("div", {}, h("div", { class: "divider" }),
-      line("Готівка від клієнтів — лишити в касі", c.from_clients),
-      h("div", { class: "sum-line total" }, h("span", {}, "Зарплату виплачує директор"), h("span", {}, money(r.payout_due))));
-  }
-  return h("div", {}, h("div", { class: "divider" }),
+  const takeFromTill = c.mode === "take_from_till";
+  const fromTill = takeFromTill ? c.master_takes : 0;
+  const toCard = takeFromTill ? c.director_pays : r.payout_due;
+  return h("div", {},
+    h("div", { class: "divider" }),
+    // заробіток майстра і з чого він складається
+    h("div", { style: { background: "var(--ok-bg)", borderRadius: "10px", padding: "10px 12px", margin: "4px 0 10px" } },
+      h("div", { class: "sum-line", style: { fontSize: "16px" } }, h("b", {}, "Заробіток майстра"), h("b", { style: { color: "var(--ok)" } }, money(r.master_earning))),
+      line("💵 Готівкою з каси (одразу)", fromTill, "small"),
+      line(takeFromTill ? "💳 На карту від директора" : "💳 Виплатить директор", toCard, "small"),
+      takeFromTill && toCard <= 0 ? h("div", { class: "small muted" }, "Увесь заробіток отримано готівкою з каси") : null,
+      takeFromTill && toCard > 0 && fromTill === 0 ? h("div", { class: "small muted" }, "Клієнти платили карткою, тож готівки в касі немає — увесь заробіток директор переказує на карту") : null),
+    // каса салону
     h("div", { class: "kpi-label", style: { margin: "4px 0 6px" } }, "Каса"),
     line("Готівка від клієнтів", c.from_clients),
-    line("Картка / переказ (на рахунок салону)", c.noncash, "muted"),
-    line("💵 Майстер бере з каси (свій заробіток)", c.master_takes),
-    h("div", { class: "sum-line total" }, h("span", {}, "🏦 Залишити в касі"), h("span", {}, money(c.leave_in_till))),
-    c.director_pays > 0
-      ? h("div", { class: "sum-line total" }, h("span", {}, "💳 Директор доплачує на карту"), h("span", {}, money(c.director_pays)))
-      : h("div", { class: "sum-line muted small" }, h("span", {}, "Директору доплачувати нічого — заробіток отримано з каси"), h("span", {}, "")));
+    line("Карткою — на рахунок салону", c.noncash, "muted"),
+    h("div", { class: "sum-line total" }, h("span", {}, "🏦 Залишити в касі"), h("span", {}, money(c.leave_in_till))));
 }
 
 // ---------- Зміна (майстер)
@@ -1192,7 +1245,7 @@ VIEWS.dashboard = async (main) => {
             h("div", { class: "sum-line total" }, h("span", {}, "Борг по зарплаті зараз"), h("span", {}, money(s.salary_debt_total))),
             s.salary_debt_total > 0 ? h("a", { href: "#/shifts", class: "small" }, "Підтвердити виплати →") : null),
           h("div", { class: "card" }, h("div", { class: "card-head" }, h("h3", {}, "Оплати клієнтів")),
-            [["cash", "banknote"], ["card", "card"], ["transfer", "transfer"]].map(([k, ic]) => {
+            [["cash", "banknote"], ["card", "card"], ["transfer", "transfer"]].filter(([k]) => k !== "transfer" || s.by_payment.transfer).map(([k, ic]) => {
               const v = s.by_payment[k] || 0;
               return h("div", { class: "stack", style: { marginBottom: "8px" } },
                 h("div", { class: "sum-line", style: { padding: 0 } }, h("span", { class: "row" }, icon(ic, "sm"), PAY[k]), h("b", {}, money(v))),
@@ -1262,7 +1315,7 @@ VIEWS.shifts = async (main) => {
     const mst = select(state.masters.map((m) => [m.id, m.full_name]), shift?.master_id);
     if (shift) mst.disabled = true;
     const amount = h("input", { inputmode: "decimal", value: shift ? kopToInput(shift.payout_due) : "" });
-    const method = select(Object.entries(PAY), shift?.report?.cash?.mode === "take_from_till" ? "card" : "cash");
+    const method = select(Object.entries(PAY_CHOICES), shift?.report?.cash?.mode === "take_from_till" ? "card" : "cash");
     const note = h("input", { placeholder: shift ? "" : "Аванс, премія…" });
     const btn = h("button", { class: "btn gold big", onclick: async () => {
       btn.disabled = true;
@@ -1300,7 +1353,7 @@ VIEWS.orders = async (main) => {
 async function orderSheet(id, onChange) {
   const o = await run(() => api.get("/api/orders/" + id));
   const amount = h("input", { inputmode: "decimal", value: kopToInput(o.amount) });
-  const method = select(Object.entries(PAY), o.payment_method);
+  const method = select(Object.entries(o.payment_method === "transfer" ? PAY : PAY_CHOICES), o.payment_method);
   const share = h("input", { type: "number", min: 0, max: 100, step: 0.5, value: o.share_bp / 100 });
   const mode = select(Object.entries(MAT_MODES), o.materials_mode);
   const reason = h("input", { placeholder: "Обов'язково: чому виправляємо" });

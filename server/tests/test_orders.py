@@ -265,3 +265,20 @@ def test_not_enough_cash_director_pays_difference(db, seed):
         assert orders.master_balance(s, seed["m1"])["balance"] == 0
         pub = orders.shift_public(s, s.get(Shift, sh.id))
         assert pub["cash_payout"]["amount"] == 50000 and pub["payout"]["amount"] == 100000
+
+
+def test_close_order_saves_client_full_name(db, seed):
+    from mds.models import AuditLog, Client
+    m1 = seed["actors"]["m1"]
+    with db.session() as s:
+        a = mk(s, seed)
+        with pytest.raises(ValidationError):
+            orders.close_order(s, m1, a.id, amount=50000, payment_method="cash", client_name=" А ")
+    with db.session() as s:
+        orders.close_order(s, m1, a.id, amount=50000, payment_method="cash",
+                           client_name="  Анна   Коваленко ")
+    with db.session() as s:
+        c = s.get(Client, s.get(Appointment, a.id).client_id)
+        assert c.name == "Анна Коваленко"
+        log = s.query(AuditLog).filter_by(entity="client", action="rename").one()
+        assert log.before == {"name": "Клієнт"} and log.after == {"name": "Анна Коваленко"}

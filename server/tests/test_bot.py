@@ -320,13 +320,17 @@ def test_master_flow_add_list_close_earn_shift(h, db, pins):
 
     # закрити замовлення з іншою сумою
     h.click(f"s:cl:{appt_id}")
+    h.send("Анна Коваленко")
     h.send("620")
+    assert [b.text for b in h.session.buttons()][:2] == ["💵 Готівка", "💳 Картка"]
+    assert not any("Переказ" in b.text for b in h.session.buttons())
     h.click_text("💵 Готівка")
     assert "Замовлення закрито" in h.session.texts()[-1] and "310 ₴" in h.session.texts()[-1]
     h.click(f"s:pm:{appt_id}:62000:cash")  # повторне натискання — без задвоєння
     with db.session() as s:
         from mds.models import Order
         assert s.query(Order).count() == 1
+        assert s.get(Appointment, appt_id).client.name == "Анна Коваленко"
 
     h.click("s:earn")
     assert "Сьогодні: <b>310 ₴</b>" in h.session.texts()[-1]
@@ -701,3 +705,39 @@ def test_favorite_master_respects_service_and_threshold_setting(db, seed):
         us.update_user(s, seed["actors"]["director"], seed["m1"], {"service_ids": [seed["haircut"]]})
         assert bookings.favorite_master(s, cid, seed["manicure"]) is None
         assert bookings.favorite_master(s, cid, seed["haircut"])[0].id == seed["m1"]
+
+
+class _NotModifiedSession(FakeSession):
+    """Telegram відповідає «message is not modified» на будь-яке редагування."""
+
+    async def make_request(self, bot, method, timeout=None):
+        from aiogram.exceptions import TelegramBadRequest
+        if isinstance(method, (EditMessageText, EditMessageReplyMarkup)):
+            self.calls.append(method)
+            raise TelegramBadRequest(method=method, message="Bad Request: message is not modified")
+        return await super().make_request(bot, method, timeout)
+
+
+class _BrokenSession(FakeSession):
+    async def make_request(self, bot, method, timeout=None):
+        if isinstance(method, EditMessageText):
+            self.calls.append(method)
+            raise RuntimeError("щось зламалося")
+        return await super().make_request(bot, method, timeout)
+
+
+def test_same_screen_twice_does_not_hang_button(db, seed):
+    h = BotHarness(db)
+    h.session = _NotModifiedSession()
+    h.bot = make_bot("123456:TEST-TOKEN", session=h.session)
+    h.click("book")  # не кидає виняток
+    answers = [c for c in h.session.calls if isinstance(c, AnswerCallbackQuery)]
+    assert answers, "кнопка має отримати відповідь, щоб не крутилася"
+
+
+def test_unexpected_error_answers_user(db, seed):
+    h = BotHarness(db)
+    h.session = _BrokenSession()
+    h.bot = make_bot("123456:TEST-TOKEN", session=h.session)
+    h.click("book")
+    assert any("Щось пішло не так" in (a or "") for a in h.session.alerts())
