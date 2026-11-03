@@ -1,5 +1,5 @@
 // Service worker: кешує оболонку застосунку. API завжди йде в мережу.
-const CACHE = "mds-shell-v1";
+const CACHE = "mds-shell-v2";
 const SHELL = ["/", "/static/style.css", "/static/app.js", "/static/icon.svg", "/static/manifest.webmanifest"];
 
 self.addEventListener("install", (e) => {

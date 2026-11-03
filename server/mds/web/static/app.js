@@ -98,8 +98,85 @@ const EXP_CAT = { rent: "Оренда", utilities: "Комунальні", adver
 
 const chip = (st, map = STATUS) => h("span", { class: "chip st-" + st }, map[st] || st);
 
+// ------------------------------------------------------------ іконки (статичні SVG, у стилі Lucide)
+const ICONS = {
+  calendar: '<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>',
+  clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+  chart: '<path d="M3 3v18h18"/><path d="M7 15v2M11 11v6M15 7v10M19 12v5"/>',
+  wallet: '<path d="M20 7H5a2 2 0 0 1 0-4h13v4"/><path d="M3 5v14a2 2 0 0 0 2 2h15v-5"/><path d="M21 12h-4a2 2 0 0 0 0 4h4v-4z"/>',
+  check: '<path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>',
+  user: '<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>',
+  users: '<circle cx="9" cy="8" r="4"/><path d="M2 21a7 7 0 0 1 14 0"/><path d="M16 4a4 4 0 0 1 0 8M22 21a7 7 0 0 0-4-6.3"/>',
+  list: '<path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/>',
+  receipt: '<path d="M4 2v20l3-2 3 2 3-2 3 2 3-2 1 .7V2l-3 2-3-2-3 2-3-2-3 2z"/><path d="M8 8h8M8 12h8M8 16h5"/>',
+  banknote: '<rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/><path d="M6 12h.01M18 12h.01"/>',
+  scissors: '<circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M20 4L8.1 15.9M14.5 14.5L20 20M8.1 8.1L12 12"/>',
+  settings: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>',
+  book: '<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20V3H6.5A2.5 2.5 0 0 0 4 5.5z"/><path d="M4 19.5A2.5 2.5 0 0 0 6.5 22H20v-5"/>',
+  logout: '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/>',
+  sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
+  moon: '<path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/>',
+  plus: '<path d="M12 5v14M5 12h14"/>',
+  left: '<path d="M15 18l-6-6 6-6"/>',
+  right: '<path d="M9 18l6-6-6-6"/>',
+  phone: '<path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.3 1.8.6 2.7a2 2 0 0 1-.5 2.1L8 9.8a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.5 2.7.6a2 2 0 0 1 1.7 2z"/>',
+  x: '<path d="M18 6L6 18M6 6l12 12"/>',
+  search: '<circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/>',
+  more: '<circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/>',
+  trend: '<path d="M23 6l-9.5 9.5-5-5L1 18"/><path d="M17 6h6v6"/>',
+  card: '<rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/>',
+  transfer: '<path d="M17 3l4 4-4 4M3 7h18M7 21l-4-4 4-4M21 17H3"/>',
+  send: '<path d="M22 2L11 13M22 2l-7 20-4-9-9-4z"/>',
+  inbox: '<path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.5 5.1L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.5-6.9A2 2 0 0 0 16.8 4H7.2a2 2 0 0 0-1.7 1.1z"/>',
+  box: '<path d="M21 16V8a2 2 0 0 0-1-1.7l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.7l7 4a2 2 0 0 0 2 0l7-4a2 2 0 0 0 1-1.7z"/><path d="M3.3 7L12 12l8.7-5M12 22V12"/>',
+  percent: '<path d="M19 5L5 19"/><circle cx="6.5" cy="6.5" r="2.5"/><circle cx="17.5" cy="17.5" r="2.5"/>',
+  home: '<path d="M3 21h18M5 21V7l7-4 7 4v14M9 21v-6h6v6"/>',
+  megaphone: '<path d="M3 11l18-5v12L3 14v-3z"/><path d="M11.6 16.8a3 3 0 1 1-5.8-1.6"/>',
+  zap: '<path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>',
+  alert: '<circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/>',
+  ok: '<path d="M20 6L9 17l-5-5"/>',
+  edit: '<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/>',
+  history: '<path d="M3 3v5h5"/><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"/><path d="M12 7v5l4 2"/>',
+  cancel: '<circle cx="12" cy="12" r="9"/><path d="M15 9l-6 6M9 9l6 6"/>',
+  noshow: '<circle cx="10" cy="8" r="4"/><path d="M3 21a7 7 0 0 1 12.5-4.3M17 14l5 5M22 14l-5 5"/>',
+  play: '<path d="M6 4l14 8-14 8z"/>',
+  move: '<path d="M5 9l-3 3 3 3M9 5l3-3 3 3M15 19l-3 3-3-3M19 9l3 3-3 3M2 12h20M12 2v20"/>',
+  lock: '<rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>',
+  trash: '<path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/>',
+};
+function icon(name, cls = "") {
+  const s = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  s.setAttribute("viewBox", "0 0 24 24");
+  s.setAttribute("class", "i " + cls);
+  s.setAttribute("aria-hidden", "true");
+  s.innerHTML = ICONS[name] || ""; // лише статичні рядки з ICONS — без даних користувача
+  return s;
+}
+
+const AV_COLORS = ["#1d4d3b", "#8a6a2f", "#3f5a7a", "#7a4a5c", "#4f6b3a", "#5b4a7a", "#2f6b6b", "#7a5a3a"];
+function initials(name) { return (name || "?").split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0].toUpperCase()).join(""); }
+function avatar(name, cls = "") {
+  let hsh = 0;
+  for (const c of name || "") hsh = (hsh * 31 + c.charCodeAt(0)) >>> 0;
+  return h("span", { class: "avatar " + cls, style: { background: AV_COLORS[hsh % AV_COLORS.length] } }, initials(name));
+}
+
+// ------------------------------------------------------------ тема
+function applyTheme(t) {
+  if (t === "dark") document.documentElement.setAttribute("data-theme", "dark");
+  else document.documentElement.removeAttribute("data-theme");
+}
+function toggleTheme() {
+  const next = document.documentElement.getAttribute("data-theme") === "dark" ? "light" : "dark";
+  applyTheme(next);
+  try { localStorage.setItem("mds_theme", next); } catch (_) {}
+  renderApp();
+}
+try { applyTheme(localStorage.getItem("mds_theme") || "light"); } catch (_) { applyTheme("light"); }
+
 function toast(msg, err = false) {
-  const t = h("div", { class: "toast" + (err ? " err" : "") }, msg);
+  document.querySelectorAll(".toast").forEach((t) => t.remove());
+  const t = h("div", { class: "toast" + (err ? " err" : ""), role: "status" }, icon(err ? "alert" : "ok", "sm"), msg);
   document.body.append(t);
   setTimeout(() => t.remove(), err ? 4500 : 2600);
 }
@@ -122,7 +199,7 @@ function select(options, value, attrs = {}) {
 }
 
 function seg(options, value, onChange) {
-  const wrap = h("div", { class: "seg" });
+  const wrap = h("div", { class: "seg", role: "tablist" });
   for (const [v, t] of options) {
     wrap.append(h("button", {
       class: v === value ? "on" : "", type: "button",
@@ -132,19 +209,29 @@ function seg(options, value, onChange) {
   return wrap;
 }
 
-function kpi(label, value, cls = "") {
-  return h("div", { class: "card kpi-tile " + cls }, h("div", { class: "kpi-label" }, label),
-    h("div", { class: "kpi-value" + (value < 0 ? " neg" : "") }, money(value)));
+function deltaEl(cur, prev) {
+  if (prev === undefined || prev === null) return null;
+  if (!prev) return cur ? h("span", { class: "delta up" }, "нове") : null;
+  const p = Math.round(((cur - prev) / Math.abs(prev)) * 100);
+  const cls = p > 0 ? "up" : p < 0 ? "down" : "flat";
+  return h("span", { class: "delta " + cls, title: "Порівняно з попереднім періодом: " + money(prev) }, (p > 0 ? "▲ " : p < 0 ? "▼ " : "") + Math.abs(p) + "%");
 }
 
-function emptyState(text) { return h("div", { class: "empty" }, text); }
+function kpi(label, value, cls = "", { ico = null, prev, sub = null, raw = false } = {}) {
+  return h("div", { class: "card kpi-tile " + cls },
+    h("div", { class: "kpi-top" }, ico ? h("span", { class: "kpi-ico" }, icon(ico, "sm")) : null, h("span", { class: "kpi-label" }, label)),
+    h("div", { class: "kpi-value" + (value < 0 ? " neg" : "") }, raw ? value : money(value)),
+    (sub || prev !== undefined) ? h("div", { class: "row small muted" }, deltaEl(value, prev), sub) : null);
+}
 
-// ============================================================ модальні вікна
+function emptyState(text, ico = "inbox") { return h("div", { class: "empty" }, icon(ico), h("div", {}, text)); }
+
+// ============================================================ бічна панель
 function openSheet(title, ...content) {
   closeSheet();
   const ov = h("div", { class: "overlay", id: "overlay", onclick: (e) => { if (e.target === ov) closeSheet(); } },
-    h("div", { class: "sheet" },
-      h("div", { class: "sheet-head" }, h("h2", {}, title), h("button", { class: "x", onclick: closeSheet, "aria-label": "Закрити" }, "×")),
+    h("div", { class: "sheet", role: "dialog", "aria-modal": "true" },
+      h("div", { class: "sheet-head" }, h("h2", {}, title), h("button", { class: "x", onclick: closeSheet, "aria-label": "Закрити" }, icon("x"))),
       ...content));
   document.body.append(ov);
   return ov;
@@ -158,28 +245,32 @@ function confirmSheet(title, text, okText, onOk, { danger = false, withReason = 
     h("p", {}, text),
     withReason ? field("Причина", reason) : null,
     h("div", { class: "row", style: { marginTop: "16px" } },
-      h("button", { class: "btn ghost grow", onclick: closeSheet }, "Назад"),
-      h("button", { class: "btn grow " + (danger ? "danger" : "gold"), onclick: async (e) => {
-        e.target.disabled = true;
-        try { await onOk(reason.value.trim()); closeSheet(); } catch (_) { e.target.disabled = false; }
+      h("button", { class: "btn grow", onclick: closeSheet }, "Назад"),
+      h("button", { class: "btn grow " + (danger ? "danger" : "primary"), onclick: async (e) => {
+        e.currentTarget.disabled = true;
+        const b = e.currentTarget;
+        try { await onOk(reason.value.trim()); closeSheet(); } catch (_) { b.disabled = false; }
       } }, okText)));
 }
 
 // ============================================================ каркас
+// [id, іконка, назва, група]
 const NAV = {
   master: [
-    ["today", "◷", "Сьогодні"], ["calendar", "▦", "Календар"], ["earnings", "₴", "Заробіток"],
-    ["shift", "✓", "Зміна"], ["profile", "◉", "Профіль"],
+    ["today", "clock", "Сьогодні"], ["calendar", "calendar", "Календар"], ["earnings", "wallet", "Заробіток"],
+    ["shift", "check", "Зміна"], ["profile", "user", "Профіль"],
   ],
-  admin: [["calendar", "▦", "Календар"], ["clients", "☺", "Клієнти"], ["profile", "◉", "Профіль"]],
+  admin: [["calendar", "calendar", "Календар", "Робота"], ["clients", "users", "Клієнти", "Робота"], ["profile", "user", "Профіль"]],
   director: [
-    ["dashboard", "◆", "Панель"], ["calendar", "▦", "Календар"], ["shifts", "✓", "Зміни й виплати"],
-    ["orders", "≡", "Замовлення"], ["expenses", "−", "Витрати"], ["clients", "☺", "Клієнти"],
-    ["staff", "♛", "Персонал"], ["catalog", "✦", "Послуги"], ["settings", "⚙", "Налаштування"],
-    ["journal", "☰", "Журнал"], ["profile", "◉", "Профіль"],
+    ["dashboard", "chart", "Огляд", "Огляд"],
+    ["calendar", "calendar", "Календар", "Робота"], ["clients", "users", "Клієнти", "Робота"],
+    ["orders", "receipt", "Замовлення", "Фінанси"], ["shifts", "banknote", "Зміни й виплати", "Фінанси"], ["expenses", "wallet", "Витрати", "Фінанси"],
+    ["staff", "user", "Персонал", "Салон"], ["catalog", "scissors", "Послуги", "Салон"],
+    ["settings", "settings", "Налаштування", "Салон"], ["journal", "book", "Журнал", "Салон"],
+    ["profile", "user", "Профіль"],
   ],
 };
-const MOBILE_TABS = { director: ["dashboard", "calendar", "shifts", "orders", "more"] };
+const MOBILE_TABS = { director: ["dashboard", "calendar", "orders", "shifts", "more"], admin: ["calendar", "clients", "profile"] };
 
 function currentRoute() { return (location.hash.replace(/^#\/?/, "") || "").split("?")[0]; }
 
@@ -216,9 +307,9 @@ async function loadRefs() {
 
 function renderLogin() {
   window.onhashchange = null;
-  const user = h("input", { autocomplete: "username", autocapitalize: "none", placeholder: "логін" });
-  const pass = h("input", { type: "password", autocomplete: "current-password", placeholder: "пароль" });
-  const btn = h("button", { class: "btn gold big", type: "submit" }, "Увійти");
+  const user = h("input", { autocomplete: "username", autocapitalize: "none", placeholder: "Логін", id: "login-user" });
+  const pass = h("input", { type: "password", autocomplete: "current-password", placeholder: "Пароль", id: "login-pass" });
+  const btn = h("button", { class: "btn primary big", type: "submit" }, "Увійти");
   const form = h("form", { class: "stack", onsubmit: async (e) => {
     e.preventDefault();
     btn.disabled = true;
@@ -234,10 +325,21 @@ function renderLogin() {
     }
   } }, field("Логін", user), field("Пароль", pass), btn);
   document.getElementById("root").replaceChildren(
-    h("div", { class: "login" }, h("div", { class: "card" },
-      h("div", { class: "brand" }, h("div", { class: "brand-mark" }, "M&D"),
-        h("div", {}, h("div", { class: "brand-name" }, "MDS Connect"), h("div", { class: "brand-sub" }, "Beauty salon M&D"))),
-      form)));
+    h("div", { class: "login" },
+      h("div", { class: "login-brand" },
+        h("div", {},
+          h("div", { class: "brand", style: { padding: 0 } }, h("div", { class: "brand-mark" }, "M&D"),
+            h("div", {}, h("div", { class: "brand-name" }, "MDS Connect"), h("div", { class: "brand-sub" }, "Салон краси M&D"))),
+          h("h1", {}, "Записи, майстри й фінанси салону в одному місці"),
+          h("p", {}, "Календар записів, закриття замовлень, зарплати майстрів і прибуток салону — автоматично."),
+          h("ul", {},
+            h("li", {}, icon("calendar"), "Календар усіх майстрів і записи з Telegram"),
+            h("li", {}, icon("percent"), "Автоматичний розрахунок 50/50 і виплати"),
+            h("li", {}, icon("chart"), "Виручка, витрати й чистий прибуток"))),
+        h("div", { class: "small foot", style: { color: "rgba(245,241,230,.5)" } }, "Внутрішня система салону. Доступ лише для персоналу.")),
+      h("div", { class: "login-form" }, h("div", { class: "card" },
+        h("h2", {}, "Вхід"), h("p", { class: "muted", style: { marginTop: 0 } }, "Увійдіть логіном і паролем, які видав директор."),
+        form))));
   user.focus();
 }
 
@@ -248,74 +350,95 @@ function renderApp() {
   if (route === "more") route = "more";
   else if (!items.find((i) => i[0] === route)) route = items[0][0];
 
-  const nav = h("nav", { class: "nav" }, items.map(([id, ico, label]) =>
-    h("a", { href: "#/" + id, class: id === route ? "active" : "" }, h("span", { class: "ico" }, ico), label)));
+  const navLinks = [];
+  let group = null;
+  for (const [id, ico, label, grp] of items.filter((i) => i[0] !== "profile")) {
+    if (grp && grp !== group) { navLinks.push(h("div", { class: "nav-group" }, grp)); group = grp; }
+    navLinks.push(h("a", { href: "#/" + id, class: id === route ? "active" : "" }, icon(ico), label));
+  }
+  const dark = document.documentElement.getAttribute("data-theme") === "dark";
   const sidebar = h("aside", { class: "sidebar" },
     h("div", { class: "brand" }, h("div", { class: "brand-mark" }, "M&D"),
-      h("div", {}, h("div", { class: "brand-name" }, "MDS Connect"), h("div", { class: "brand-sub" }, ROLES[role]))),
-    nav,
-    h("div", { class: "muted small", style: { padding: "18px 12px" } }, state.user.full_name));
+      h("div", {}, h("div", { class: "brand-name" }, "MDS Connect"), h("div", { class: "brand-sub" }, state.settings?.salon_name ? "Салон " + state.settings.salon_name : "Салон M&D"))),
+    h("nav", { class: "nav" }, navLinks),
+    h("div", { class: "side-foot" },
+      h("a", { href: "#/profile", style: { display: "contents" } }, avatar(state.user.full_name),
+        h("div", { class: "who" }, h("b", {}, state.user.full_name), h("span", {}, ROLES[role]))),
+      h("button", { class: "icon-btn", title: dark ? "Світла тема" : "Темна тема", "aria-label": "Змінити тему", onclick: toggleTheme }, icon(dark ? "sun" : "moon")),
+      h("button", { class: "icon-btn", title: "Вийти", "aria-label": "Вийти", onclick: logout }, icon("logout"))));
 
   const tabIds = MOBILE_TABS[role] || items.map((i) => i[0]);
   const tabbar = h("nav", { class: "tabbar" }, tabIds.map((id) => {
-    const it = items.find((i) => i[0] === id) || ["more", "⋯", "Ще"];
+    const it = items.find((i) => i[0] === id) || ["more", "more", "Ще"];
     const active = id === route || (id === "more" && !tabIds.includes(route));
-    return h("a", { href: "#/" + id, class: active ? "active" : "" }, h("span", { class: "ico" }, it[1]), it[2]);
+    return h("a", { href: "#/" + id, class: active ? "active" : "" }, icon(it[1]), it[2]);
   }));
   const main = h("main", { class: "main" });
   document.getElementById("root").replaceChildren(h("div", { class: "app" }, sidebar, main), tabbar);
   closeSheet();
   const view = route === "more" ? viewMore : VIEWS[route];
-  Promise.resolve(view(main)).catch((e) => { main.replaceChildren(emptyState(e.message)); });
+  Promise.resolve(view(main)).catch((e) => { main.replaceChildren(emptyState(e.message, "alert")); });
 }
 
 function topbar(title, ...actions) {
-  return h("div", { class: "topbar" }, h("h1", {}, title), h("div", { class: "row" }, actions));
+  let sub = null;
+  if (actions.length && typeof actions[0] === "string") sub = actions.shift();
+  return h("div", { class: "topbar" },
+    h("div", {}, h("h1", {}, title), sub ? h("div", { class: "sub" }, sub) : null),
+    h("div", { class: "row" }, actions));
 }
 
 function viewMore(main) {
   main.append(topbar("Меню"));
-  main.append(h("div", { class: "card nav" }, NAV[state.user.role].map(([id, ico, label]) =>
-    h("a", { href: "#/" + id }, h("span", { class: "ico" }, ico), label))));
+  const dark = document.documentElement.getAttribute("data-theme") === "dark";
+  main.append(h("div", { class: "card", style: { padding: "6px" } }, NAV[state.user.role].map(([id, ico, label]) =>
+    h("a", { href: "#/" + id, class: "row", style: { padding: "12px", color: "var(--ink)" } }, icon(ico), h("span", { class: "grow" }, label), icon("right", "sm"))),
+    h("button", { class: "btn ghost", style: { width: "100%", justifyContent: "flex-start", padding: "12px" }, onclick: toggleTheme }, icon(dark ? "sun" : "moon"), dark ? "Світла тема" : "Темна тема"),
+    h("button", { class: "btn ghost", style: { width: "100%", justifyContent: "flex-start", padding: "12px", color: "var(--danger)" }, onclick: logout }, icon("logout"), "Вийти")));
 }
 
 const reload = () => renderApp();
 
 // ============================================================ спільні форми
 function apptSheet(a, onChange) {
-  const isMgr = state.user.role !== "master";
   const canEdit = ["pending", "confirmed", "in_progress"].includes(a.status);
-  const actions = h("div", { class: "grid", style: { gridTemplateColumns: "1fr 1fr", marginTop: "16px" } });
   const done = async (p, msg) => { await run(p, msg); closeSheet(); onChange(); };
+  const secondary = h("div", { class: "grid", style: { gridTemplateColumns: "1fr 1fr", gap: "8px" } });
   if (canEdit) {
-    if (a.status !== "in_progress") {
-      actions.append(h("button", { class: "btn", onclick: () => done(api.post(`/api/appointments/${a.id}/status`, { status: "in_progress" }), "Клієнта прийнято") }, "Прийняти клієнта"));
-    }
-    actions.append(h("button", { class: "btn gold", onclick: () => closeOrderSheet(a, onChange) }, "Закрити замовлення"));
     if (a.status === "pending") {
-      actions.append(h("button", { class: "btn", onclick: () => done(api.post(`/api/appointments/${a.id}/status`, { status: "confirmed" }), "Підтверджено") }, "Підтвердити"));
+      secondary.append(h("button", { class: "btn", onclick: () => done(() => api.post(`/api/appointments/${a.id}/status`, { status: "confirmed" }), "Підтверджено") }, icon("ok", "sm"), "Підтвердити"));
     }
-    actions.append(h("button", { class: "btn", onclick: () => apptForm({ appt: a }, onChange) }, "Перенести / змінити"));
     if (a.status !== "in_progress") {
-      actions.append(h("button", { class: "btn ghost", onclick: () => confirmSheet("Клієнт не прийшов?", `${a.client.name}, ${hm(a.starts_at)}`, "Так, не прийшов",
-        async () => { await run(api.post(`/api/appointments/${a.id}/status`, { status: "no_show" })); onChange(); }) }, "Не прийшов"));
+      secondary.append(h("button", { class: "btn", onclick: () => done(() => api.post(`/api/appointments/${a.id}/status`, { status: "in_progress" }), "Клієнта прийнято") }, icon("play", "sm"), "Клієнт прийшов"));
     }
-    actions.append(h("button", { class: "btn danger", onclick: () => confirmSheet("Скасувати запис?", `${a.client.name}, ${dm(a.starts_at)} ${hm(a.starts_at)}`, "Скасувати запис",
-      async (reason) => { await run(api.post(`/api/appointments/${a.id}/status`, { status: "cancelled", reason: reason || null }), "Запис скасовано"); onChange(); },
-      { danger: true, withReason: true }) }, "Скасувати"));
+    secondary.append(h("button", { class: "btn", onclick: () => apptForm({ appt: a }, onChange) }, icon("move", "sm"), "Перенести"));
+    if (a.status !== "in_progress") {
+      secondary.append(h("button", { class: "btn", onclick: () => confirmSheet("Клієнт не прийшов?", `${a.client.name}, ${hm(a.starts_at)}`, "Так, не прийшов",
+        async () => { await run(() => api.post(`/api/appointments/${a.id}/status`, { status: "no_show" })); onChange(); }) }, icon("noshow", "sm"), "Не прийшов"));
+    }
+    secondary.append(h("button", { class: "btn danger", onclick: () => confirmSheet("Скасувати запис?", `${a.client.name}, ${dm(a.starts_at)} ${hm(a.starts_at)}`, "Скасувати запис",
+      async (reason) => { await run(() => api.post(`/api/appointments/${a.id}/status`, { status: "cancelled", reason: reason || null }), "Запис скасовано"); onChange(); },
+      { danger: true, withReason: true }) }, icon("cancel", "sm"), "Скасувати"));
   }
-  openSheet(`${hm(a.starts_at)}–${hm(a.ends_at)} · ${dm(a.starts_at)}`,
+  openSheet("Запис",
     h("div", { class: "stack" },
-      h("div", { class: "row" }, h("h3", { style: { margin: 0 } }, a.service_name), chip(a.status)),
-      h("div", {}, "Клієнт: ", h("b", {}, a.client.name), " · ", h("a", { href: "tel:" + a.client.phone }, a.client.phone)),
-      h("div", {}, "Майстер: ", a.master_name),
-      h("div", {}, "Ціна: ", h("b", {}, money(a.price)), " · ", a.duration_min, " хв",
-        a.source === "telegram" ? h("span", { class: "chip", style: { marginLeft: "8px" } }, "Telegram") : null),
-      a.comment ? h("div", { class: "muted" }, "Коментар: ", a.comment) : null,
-      a.cancel_reason ? h("div", { class: "muted" }, "Причина скасування: ", a.cancel_reason) : null,
-      a.order_id ? h("div", { class: "muted" }, "Замовлення #", a.order_id) : null,
-      h("button", { class: "btn ghost sm", onclick: () => clientSheet(a.client.id) }, "Історія клієнта")),
-    actions);
+      h("div", { class: "row" }, h("div", { class: "grow" },
+        h("div", { style: { fontSize: "26px", fontWeight: 700, letterSpacing: "-.02em" } }, `${hm(a.starts_at)}–${hm(a.ends_at)}`),
+        h("div", { class: "muted" }, `${weekday(a.starts_at.slice(0, 10))}, ${dmy(a.starts_at)} · ${a.duration_min} хв`)), chip(a.status)),
+      h("div", { class: "client-box" }, avatar(a.client.name, "lg"),
+        h("div", { class: "grow" }, h("div", { style: { fontWeight: 700, fontSize: "15px" } }, a.client.name),
+          h("a", { href: "tel:" + a.client.phone, class: "row small", style: { gap: "5px" } }, icon("phone", "sm"), a.client.phone)),
+        h("button", { class: "btn sm", onclick: () => clientSheet(a.client.id) }, icon("history", "sm"), "Історія")),
+      h("div", { class: "info-list" },
+        h("div", { class: "info-row" }, icon("scissors"), h("b", {}, a.service_name)),
+        h("div", { class: "info-row" }, icon("user"), "Майстер: ", h("b", {}, a.master_name)),
+        h("div", { class: "info-row" }, icon("banknote"), "Ціна: ", h("b", {}, money(a.price))),
+        a.source === "telegram" ? h("div", { class: "info-row" }, icon("send"), "Запис через Telegram-бот") : null,
+        a.comment ? h("div", { class: "info-row" }, icon("edit"), a.comment) : null,
+        a.cancel_reason ? h("div", { class: "info-row" }, icon("cancel"), "Причина: ", a.cancel_reason) : null,
+        a.order_id ? h("div", { class: "info-row" }, icon("receipt"), "Замовлення #", a.order_id) : null),
+      canEdit ? h("button", { class: "btn primary big", onclick: () => closeOrderSheet(a, onChange) }, icon("banknote"), "Закрити замовлення") : null,
+      canEdit ? secondary : null));
 }
 
 function closeOrderSheet(a, onChange) {
@@ -324,8 +447,9 @@ function closeOrderSheet(a, onChange) {
   const mats = new Map(); // material_id -> qty
   const custom = [];
   const amount = h("input", { class: "huge", inputmode: "decimal", value: kopToInput(a.price) });
+  const PAY_ICON = { cash: "banknote", card: "card", transfer: "transfer" };
   const methods = h("div", { class: "choice" }, Object.entries(PAY).map(([k, t]) =>
-    h("button", { type: "button", onclick: (e) => { method = k; [...methods.children].forEach((b) => b.classList.remove("on")); e.currentTarget.classList.add("on"); } }, t)));
+    h("button", { type: "button", onclick: (e) => { method = k; [...methods.children].forEach((b) => b.classList.remove("on")); e.currentTarget.classList.add("on"); } }, icon(PAY_ICON[k]), t)));
 
   const matList = h("div");
   const drawMats = () => {
@@ -487,139 +611,178 @@ VIEWS.today = async (main) => {
   const [list, my, shift] = await Promise.all([
     api.get(`/api/appointments?date_from=${d}`), api.get("/api/finance/my"), api.get("/api/shifts/current"),
   ]);
-  main.append(topbar(`${WD_LONG[(new Date().getDay() + 6) % 7]}, ${dm(d)}`,
-    h("button", { class: "btn gold", onclick: () => apptForm({ date: d }, reload) }, "+ Запис")));
-  main.append(h("div", { class: "grid kpi", style: { marginBottom: "14px" } },
-    kpi("Заробіток сьогодні", my.day.earning, "accent"),
-    kpi("Виручка сьогодні", my.day.revenue),
-    h("div", { class: "card kpi-tile" }, h("div", { class: "kpi-label" }, "Зміна"),
-      h("div", { class: "kpi-value", style: { fontSize: "20px" } }, shift ? "Відкрита з " + hm(shift.opened_at) : "Не відкрита"))));
   const active = list.filter((a) => !["cancelled", "no_show"].includes(a.status));
-  if (!active.length) main.append(h("div", { class: "card" }, emptyState("На сьогодні записів немає")));
+  const left = active.filter((a) => a.status !== "completed");
+  main.append(topbar(`Добрий день, ${state.user.full_name.split(" ")[0]}`,
+    `${WD_LONG[(new Date().getDay() + 6) % 7]}, ${dm(d)} · записів: ${active.length}, залишилось: ${left.length}`,
+    h("button", { class: "btn primary", onclick: () => apptForm({ date: d }, reload) }, icon("plus", "sm"), "Запис")));
+  main.append(h("div", { class: "grid kpi", style: { marginBottom: "16px" } },
+    kpi("Мій заробіток сьогодні", my.day.earning, "dark", { ico: "wallet" }),
+    kpi("Виручка сьогодні", my.day.revenue, "", { ico: "banknote" }),
+    kpi("Цей місяць", my.month.earning, "", { ico: "chart", sub: `${my.month.orders_count} послуг` }),
+    h("div", { class: "card kpi-tile" }, h("div", { class: "kpi-top" }, h("span", { class: "kpi-ico" }, icon("check", "sm")), h("span", { class: "kpi-label" }, "Зміна")),
+      h("div", { class: "kpi-value", style: { fontSize: "18px" } }, shift ? "Відкрита з " + hm(shift.opened_at) : "Не відкрита"),
+      h("a", { href: "#/shift", class: "small" }, shift ? "Закрити зміну →" : "Деталі →"))));
+  if (!active.length) { main.append(h("div", { class: "card" }, emptyState("На сьогодні записів немає", "calendar"))); return; }
   for (const a of active) {
     const done = a.status === "completed";
-    main.append(h("div", { class: "card appt" + (done ? " done" : ""), onclick: () => (done ? null : apptSheet(a, reload)) },
+    main.append(h("div", { class: `card appt st-b-${a.status}` + (done ? " done" : ""), onclick: () => (done ? null : apptSheet(a, reload)) },
       h("div", { class: "appt-time" }, hm(a.starts_at), h("small", {}, "до " + hm(a.ends_at))),
       h("div", { class: "appt-body" },
-        h("div", { class: "row" }, h("span", { class: "appt-title grow" }, a.client.name), chip(a.status)),
-        h("div", {}, h("a", { href: "tel:" + a.client.phone, onclick: (e) => e.stopPropagation() }, a.client.phone)),
-        h("div", { class: "muted" }, a.service_name, " · ", money(a.price))),
-      done ? null : h("button", { class: "btn gold", style: { alignSelf: "center" }, onclick: (e) => { e.stopPropagation(); closeOrderSheet(a, reload); } }, "Закрити")));
+        h("div", { class: "row" }, h("span", { class: "appt-title" }, a.client.name), chip(a.status)),
+        h("div", { class: "muted" }, a.service_name, " · ", money(a.price)),
+        h("a", { href: "tel:" + a.client.phone, class: "small row", style: { gap: "4px", marginTop: "2px" }, onclick: (e) => e.stopPropagation() }, icon("phone", "sm"), a.client.phone)),
+      done ? h("span", { class: "muted small" }, "Закрито") :
+        h("button", { class: "btn primary", onclick: (e) => { e.stopPropagation(); closeOrderSheet(a, reload); } }, icon("banknote", "sm"), "Закрити")));
   }
 };
 
 // ---------- Календар
 VIEWS.calendar = async (main) => {
   const params = new URLSearchParams(location.hash.split("?")[1] || "");
-  let day = params.get("d") || today();
+  const day = params.get("d") || today();
   const isMaster = state.user.role === "master";
   const go = (dd) => { location.hash = "#/calendar?d=" + dd; };
-  const dateInput = h("input", { type: "date", value: day, style: { width: "auto" }, onchange: (e) => go(e.target.value) });
-  main.append(topbar("Календар",
-    h("button", { class: "btn", onclick: () => go(addDays(day, -1)) }, "‹"),
+  const dateInput = h("input", { type: "date", value: day, style: { width: "auto" }, "aria-label": "Дата", onchange: (e) => go(e.target.value) });
+  main.append(topbar("Календар", `${WD_LONG[(new Date(day + "T12:00").getDay() + 6) % 7]}, ${dmy(day)}`,
+    h("button", { class: "btn", "aria-label": "Попередній день", onclick: () => go(addDays(day, -1)) }, icon("left", "sm")),
+    h("button", { class: "btn", onclick: () => go(today()) }, "Сьогодні"),
+    h("button", { class: "btn", "aria-label": "Наступний день", onclick: () => go(addDays(day, 1)) }, icon("right", "sm")),
     dateInput,
-    h("button", { class: "btn", onclick: () => go(addDays(day, 1)) }, "›"),
-    h("button", { class: "btn ghost", onclick: () => go(today()) }, "Сьогодні"),
-    h("button", { class: "btn gold", onclick: () => apptForm({ date: day }, reload) }, "+ Запис")));
+    h("button", { class: "btn primary", onclick: () => apptForm({ date: day }, reload) }, icon("plus", "sm"), "Новий запис")));
+
+  // стрічка днів: тиждень довкола обраного дня
+  const wdIdx = (iso) => String((new Date(iso + "T12:00").getDay() + 6) % 7);
+  const salonSched = state.settings.schedule || {};
+  const strip = h("div", { class: "daystrip" });
+  for (let i = -3; i <= 10; i++) {
+    const dd = addDays(day, i);
+    const closed = !salonSched[wdIdx(dd)];
+    strip.append(h("button", { class: (dd === day ? "on " : "") + (dd === today() ? "today " : "") + (closed ? "off" : ""), onclick: () => go(dd), title: closed ? "Вихідний" : "" },
+      h("small", {}, weekday(dd)), h("b", {}, Number(dd.slice(8, 10)))));
+  }
+  main.append(strip);
 
   const list = await api.get(`/api/appointments?date_from=${day}`);
   if (!isMaster) {
     // «Швидкий запис» з Telegram: клієнти просять передзвонити
     const calls = await api.get("/api/callbacks").catch(() => []);
     if (calls.length) {
-      main.append(h("div", { class: "card", style: { marginBottom: "12px", borderColor: "rgba(201,164,92,.55)" } },
-        h("h3", {}, "📞 Просять передзвонити (" + calls.length + ")"),
-        calls.map((c) => h("div", { class: "row", style: { padding: "6px 0", borderBottom: "1px solid var(--line)" } },
-          h("b", {}, c.name || "Клієнт"), h("a", { href: "tel:" + c.phone }, c.phone),
-          h("span", { class: "muted small grow" }, dm(c.created_at), " ", hm(c.created_at)),
-          h("button", { class: "btn sm", onclick: async () => { await run(() => api.post(`/api/callbacks/${c.id}/done`), "Позначено"); reload(); } }, "Передзвонили")))));
+      main.append(h("div", { class: "callout" }, icon("phone"),
+        h("div", { class: "grow" }, h("b", {}, `Просять передзвонити: ${calls.length}`),
+          calls.map((c) => h("div", { class: "row", style: { padding: "5px 0" } },
+            h("span", {}, c.name || "Клієнт"), h("a", { href: "tel:" + c.phone }, h("b", {}, c.phone)),
+            h("span", { class: "muted small grow" }, dm(c.created_at), " ", hm(c.created_at)),
+            h("button", { class: "btn sm", onclick: async () => { await run(() => api.post(`/api/callbacks/${c.id}/done`), "Позначено"); reload(); } }, icon("ok", "sm"), "Передзвонили"))))));
     }
   }
   const masters = isMaster ? [{ id: state.user.id, full_name: state.user.full_name, schedule: state.user.schedule }] : state.masters;
-  if (!masters.length) { main.append(h("div", { class: "card" }, emptyState("Додайте майстрів у розділі «Персонал»"))); return; }
+  if (!masters.length) { main.append(h("div", { class: "card" }, emptyState("Додайте майстрів у розділі «Персонал»", "users"))); return; }
 
-  const wd = String((new Date(day + "T12:00").getDay() + 6) % 7);
-  const salonSched = state.settings.schedule || {};
+  const wd = wdIdx(day);
   const spanOf = (m) => ((m.schedule || salonSched)[wd] || null);
   const toMin = (s) => { const [a, b] = s.split(":").map(Number); return a * 60 + b; };
   let startMin = 24 * 60, endMin = 0;
   for (const m of masters) { const sp = spanOf(m); if (sp) { startMin = Math.min(startMin, toMin(sp[0])); endMin = Math.max(endMin, toMin(sp[1])); } }
   for (const a of list) { startMin = Math.min(startMin, toMin(hm(a.starts_at))); endMin = Math.max(endMin, toMin(hm(a.ends_at))); }
   if (startMin >= endMin) { startMin = 9 * 60; endMin = 20 * 60; }
-  startMin = Math.floor(startMin / 30) * 30; endMin = Math.ceil(endMin / 30) * 30;
-  const STEP = 30, ROW = 44, HEAD = 42, TIMEW = 56;
+  startMin = Math.floor(startMin / 60) * 60; endMin = Math.ceil(endMin / 60) * 60;
+  const STEP = 30, ROW = 40, HEAD = 52, TIMEW = 58;
   const rows = (endMin - startMin) / STEP;
-  const colW = isMaster ? "minmax(220px, 1fr)" : "minmax(170px, 1fr)";
+  const colW = isMaster ? "minmax(240px, 1fr)" : "minmax(180px, 1fr)";
+  const activeList = list.filter((a) => !["cancelled", "no_show"].includes(a.status));
 
   const grid = h("div", { class: "cal-grid", style: { gridTemplateColumns: `${TIMEW}px repeat(${masters.length}, ${colW})`, gridTemplateRows: `${HEAD}px repeat(${rows}, ${ROW}px)` } });
-  grid.append(h("div", { class: "cal-head", style: { borderLeft: 0 } }, weekday(day)));
-  masters.forEach((m) => grid.append(h("div", { class: "cal-head" }, m.full_name)));
+  grid.append(h("div", { class: "cal-corner" }));
+  masters.forEach((m) => {
+    const n = activeList.filter((a) => a.master_id === m.id).length;
+    const sp = spanOf(m);
+    grid.append(h("div", { class: "cal-head" }, avatar(m.full_name, "sm"),
+      h("div", { class: "who" }, h("b", {}, m.full_name), h("span", {}, sp ? `${sp[0]}–${sp[1]} · записів: ${n}` : "вихідний"))));
+  });
   for (let r = 0; r < rows; r++) {
     const min = startMin + r * STEP;
     const time = `${pad(Math.floor(min / 60))}:${pad(min % 60)}`;
-    grid.append(h("div", { class: "cal-time" }, min % 60 === 0 ? time : ""));
+    grid.append(h("div", { class: "cal-time" + (r === 0 ? " first" : "") }, min % 60 === 0 ? time : ""));
     masters.forEach((m) => {
       const sp = spanOf(m);
       const off = !sp || min < toMin(sp[0]) || min >= toMin(sp[1]);
-      grid.append(h("div", { class: "cal-cell" + (off ? " off" : ""), title: off ? "Неробочий час" : "Новий запис " + time,
-        onclick: () => apptForm({ master_id: m.id, date: day, time }, reload) }));
+      grid.append(h("div", { class: "cal-cell" + (off ? " off" : "") + (min % 60 ? " half" : ""), title: off ? "Неробочий час" : `Новий запис · ${m.full_name} · ${time}`,
+        onclick: off ? null : () => apptForm({ master_id: m.id, date: day, time }, reload) }));
     });
   }
   const wrap = h("div", { class: "cal" }, grid);
   main.append(wrap);
+  main.append(h("div", { class: "legend" },
+    ["pending", "confirmed", "in_progress", "completed"].map((st) => chip(st)),
+    h("span", {}, "Клікніть у вільну клітинку, щоб створити запис")));
   // події позиціонуємо після рендеру, коли відомі ширини колонок
   requestAnimationFrame(() => {
     const heads = grid.querySelectorAll(".cal-head");
-    list.filter((a) => !["cancelled", "no_show"].includes(a.status)).forEach((a) => {
+    activeList.forEach((a) => {
       const col = masters.findIndex((m) => m.id === a.master_id);
       if (col < 0) return;
-      const head = heads[col + 1];
+      const head = heads[col];
       const top = HEAD + ((toMin(hm(a.starts_at)) - startMin) / STEP) * ROW;
-      const height = Math.max(((toMin(hm(a.ends_at)) - toMin(hm(a.starts_at))) / STEP) * ROW - 3, 22);
-      grid.append(h("div", { class: "cal-ev " + a.status, style: { top: top + 1 + "px", height: height + "px", left: head.offsetLeft + 3 + "px", width: head.offsetWidth - 6 + "px" },
+      const height = Math.max(((toMin(hm(a.ends_at)) - toMin(hm(a.starts_at))) / STEP) * ROW - 3, 24);
+      grid.append(h("div", { class: "cal-ev " + a.status, title: `${hm(a.starts_at)}–${hm(a.ends_at)} ${a.client.name} · ${a.service_name}`,
+        style: { top: top + 2 + "px", height: height + "px", left: head.offsetLeft + 4 + "px", width: head.offsetWidth - 8 + "px" },
         onclick: () => apptSheet(a, reload) },
-        h("b", {}, hm(a.starts_at), " ", a.client.name), a.service_name, a.status === "pending" ? " · очікує" : ""));
+        h("b", {}, a.client.name), h("div", { class: "t" }, `${hm(a.starts_at)}–${hm(a.ends_at)}`), height > 50 ? h("div", {}, a.service_name) : null));
     });
+    // лінія «зараз»
+    if (day === today()) {
+      const now = new Date();
+      const nm = now.getHours() * 60 + now.getMinutes();
+      if (nm >= startMin && nm <= endMin) {
+        grid.append(h("div", { class: "now-line", style: { top: HEAD + ((nm - startMin) / STEP) * ROW + "px", left: TIMEW + "px", right: "0" } }));
+        if (params.get("d") === null) wrap.scrollTop = Math.max(0, ((nm - startMin) / STEP) * ROW - 120);
+      }
+    }
   });
   const cancelled = list.filter((a) => ["cancelled", "no_show"].includes(a.status));
   if (cancelled.length) {
     main.append(h("details", { class: "card", style: { marginTop: "12px" } },
       h("summary", { class: "muted", style: { cursor: "pointer" } }, `Скасовані та неявки: ${cancelled.length}`),
-      cancelled.map((a) => h("div", { class: "row", style: { padding: "6px 0" } }, hm(a.starts_at), a.client.name, h("span", { class: "muted" }, a.master_name, " · ", a.service_name), chip(a.status)))));
+      cancelled.map((a) => h("div", { class: "row", style: { padding: "6px 0" } }, h("b", {}, hm(a.starts_at)), a.client.name, h("span", { class: "muted grow" }, a.master_name, " · ", a.service_name), chip(a.status)))));
   }
 };
 
 // ---------- Заробіток (майстер)
 VIEWS.earnings = async (main) => {
   const [my, orders, payouts] = await Promise.all([api.get("/api/finance/my"), api.get("/api/orders?period=month"), api.get("/api/payouts")]);
-  main.append(topbar("Мій заробіток"));
+  main.append(topbar("Мій заробіток", "Нарахування з кожного закритого замовлення та виплати від директора"));
   main.append(h("div", { class: "grid kpi" },
-    kpi("Сьогодні", my.day.earning, "accent"), kpi("Цей тиждень", my.week.earning), kpi("Цей місяць", my.month.earning),
-    kpi("До виплати", my.balance.balance, "accent")));
+    kpi("Сьогодні", my.day.earning, "", { ico: "clock", sub: `${my.day.orders_count} посл.` }),
+    kpi("Цей тиждень", my.week.earning, "", { ico: "calendar", sub: `${my.week.orders_count} посл.` }),
+    kpi("Цей місяць", my.month.earning, "", { ico: "chart", sub: `${my.month.orders_count} посл.` }),
+    kpi("До виплати", my.balance.balance, "dark", { ico: "wallet" })));
+  const paidShare = my.balance.accrued ? Math.min(100, Math.round((my.balance.paid / my.balance.accrued) * 100)) : 0;
   main.append(h("div", { class: "card", style: { marginTop: "12px" } },
     h("div", { class: "sum-line" }, h("span", {}, "Нараховано за весь час"), h("b", {}, money(my.balance.accrued))),
     h("div", { class: "sum-line" }, h("span", {}, "Виплачено"), h("b", {}, money(my.balance.paid))),
+    h("div", { class: "progress", style: { margin: "6px 0" } }, h("div", { style: { width: paidShare + "%" } })),
     h("div", { class: "sum-line total" }, h("span", {}, "Залишок до виплати"), h("span", {}, money(my.balance.balance)))));
-  main.append(h("h2", { style: { marginTop: "22px" } }, "Замовлення цього місяця"));
+  main.append(h("div", { class: "section" }, h("h2", {}, "Замовлення цього місяця")));
   main.append(orders.length ? h("div", { class: "card table-wrap" }, h("table", {},
     h("tr", {}, h("th", {}, "Дата"), h("th", {}, "Послуга"), h("th", {}, "Клієнт"), h("th", { class: "num" }, "Сума"), h("th", { class: "num" }, "Мій заробіток")),
-    orders.map((o) => h("tr", {}, h("td", {}, dm(o.closed_at), " ", hm(o.closed_at)), h("td", {}, o.service_name), h("td", {}, o.client_name),
-      h("td", { class: "num" }, money(o.amount)), h("td", { class: "num" }, h("b", {}, money(o.master_earning))))))) : h("div", { class: "card" }, emptyState("Ще немає закритих замовлень")));
+    orders.map((o) => h("tr", {}, h("td", {}, dm(o.closed_at), " ", h("span", { class: "muted" }, hm(o.closed_at))), h("td", {}, o.service_name), h("td", {}, o.client_name),
+      h("td", { class: "num" }, money(o.amount)), h("td", { class: "num" }, h("b", {}, money(o.master_earning))))))) : h("div", { class: "card" }, emptyState("Ще немає закритих замовлень", "receipt")));
   if (payouts.length) {
-    main.append(h("h2", { style: { marginTop: "22px" } }, "Виплати"));
+    main.append(h("div", { class: "section" }, h("h2", {}, "Виплати")));
     main.append(h("div", { class: "card table-wrap" }, h("table", {},
-      payouts.map((p) => h("tr", {}, h("td", {}, dmy(p.paid_at)), h("td", {}, PAY[p.method]), h("td", { class: "muted" }, p.note || ""), h("td", { class: "num" }, money(p.amount)))))));
+      h("tr", {}, h("th", {}, "Дата"), h("th", {}, "Спосіб"), h("th", {}, "Примітка"), h("th", { class: "num" }, "Сума")),
+      payouts.map((p) => h("tr", {}, h("td", {}, dmy(p.paid_at)), h("td", {}, PAY[p.method]), h("td", { class: "muted" }, p.note || (p.shift_id ? "За зміну" : "")), h("td", { class: "num" }, money(p.amount)))))));
   }
 };
 
 function shiftReport(r) {
+  const n = (label, v, ico) => h("div", { class: "card kpi-tile" }, h("div", { class: "kpi-top" }, h("span", { class: "kpi-ico" }, icon(ico, "sm")), h("span", { class: "kpi-label" }, label)), h("div", { class: "kpi-value" }, v));
   return h("div", { class: "stack" },
-    h("div", { class: "grid kpi" },
-      h("div", { class: "card kpi-tile" }, h("div", { class: "kpi-label" }, "Клієнтів"), h("div", { class: "kpi-value" }, r.clients_count)),
-      h("div", { class: "card kpi-tile" }, h("div", { class: "kpi-label" }, "Послуг"), h("div", { class: "kpi-value" }, r.services_count)),
-      h("div", { class: "card kpi-tile" }, h("div", { class: "kpi-label" }, "Скасувань"), h("div", { class: "kpi-value" }, r.cancellations))),
+    h("div", { class: "grid", style: { gridTemplateColumns: "repeat(3, 1fr)" } },
+      n("Клієнтів", r.clients_count, "users"), n("Послуг", r.services_count, "scissors"), n("Скасувань", r.cancellations, "cancel")),
     h("div", { class: "card" },
-      (r.services || []).map((s) => h("div", { class: "sum-line" }, h("span", {}, s.service, " × ", s.count), h("span", {}, money(s.revenue)))),
+      (r.services || []).map((s) => h("div", { class: "sum-line" }, h("span", {}, s.service, h("span", { class: "muted" }, " × ", s.count)), h("span", {}, money(s.revenue)))),
       h("div", { class: "divider" }),
       h("div", { class: "sum-line" }, h("span", {}, "Загальна виручка"), h("b", {}, money(r.revenue))),
       Object.entries(r.by_payment || {}).map(([k, v]) => h("div", { class: "sum-line muted small" }, h("span", {}, PAY[k] || k), h("span", {}, money(v)))),
@@ -630,23 +793,22 @@ function shiftReport(r) {
 // ---------- Зміна (майстер)
 VIEWS.shift = async (main) => {
   const [cur, history] = await Promise.all([api.get("/api/shifts/current"), api.get("/api/shifts")]);
-  main.append(topbar("Моя зміна"));
+  main.append(topbar("Моя зміна", cur ? `Відкрита з ${dmy(cur.opened_at)} ${hm(cur.opened_at)}` : "Зміна відкривається автоматично з першим закритим замовленням"));
   if (cur) {
-    main.append(h("p", { class: "muted" }, "Відкрита з ", dmy(cur.opened_at), " ", hm(cur.opened_at)));
     main.append(shiftReport(cur.report));
-    main.append(h("button", { class: "btn gold big", style: { marginTop: "14px" }, onclick: () => confirmSheet("Закрити зміну?",
+    main.append(h("button", { class: "btn primary big", style: { marginTop: "14px" }, onclick: () => confirmSheet("Закрити зміну?",
       "Буде сформовано звіт, директор отримає його на підтвердження виплати.", "Закрити зміну", async () => {
         const sh = await run(() => api.post("/api/shifts/close"), "Зміну закрито");
-        openSheet("Звіт зміни", shiftReport(sh.report));
         renderApp();
-      }) }, "Закрити зміну"));
+        openSheet("Звіт зміни", shiftReport(sh.report));
+      }) }, icon("lock"), "Закрити зміну"));
   } else {
-    main.append(h("div", { class: "card" }, h("p", {}, "Зміна відкриється автоматично при першому закритому замовленні."),
-      h("button", { class: "btn", onclick: async () => { await run(() => api.post("/api/shifts/open"), "Зміну відкрито"); reload(); } }, "Відкрити зміну зараз")));
+    main.append(h("div", { class: "card" }, emptyState("Зараз зміна не відкрита", "clock"),
+      h("div", { style: { textAlign: "center" } }, h("button", { class: "btn", onclick: async () => { await run(() => api.post("/api/shifts/open"), "Зміну відкрито"); reload(); } }, "Відкрити зміну зараз"))));
   }
   const past = history.filter((s) => s.status !== "open");
   if (past.length) {
-    main.append(h("h2", { style: { marginTop: "22px" } }, "Попередні зміни"));
+    main.append(h("div", { class: "section" }, h("h2", {}, "Попередні зміни")));
     main.append(h("div", { class: "card table-wrap" }, h("table", {},
       h("tr", {}, h("th", {}, "Дата"), h("th", { class: "num" }, "Виручка"), h("th", { class: "num" }, "До виплати"), h("th", {}, "Статус")),
       past.map((s) => h("tr", { class: "click", onclick: () => openSheet("Зміна " + dmy(s.opened_at), shiftReport(s.report)) },
@@ -658,19 +820,23 @@ VIEWS.shift = async (main) => {
 VIEWS.profile = async (main) => {
   const u = state.user;
   main.append(topbar("Профіль"));
-  const oldP = h("input", { type: "password", autocomplete: "current-password" });
-  const newP = h("input", { type: "password", autocomplete: "new-password" });
+  const oldP = h("input", { type: "password", autocomplete: "current-password", id: "pw-old" });
+  const newP = h("input", { type: "password", autocomplete: "new-password", id: "pw-new" });
   const code = h("div", { class: "kpi-value" });
+  const dark = document.documentElement.getAttribute("data-theme") === "dark";
   main.append(h("div", { class: "grid two" },
-    h("div", { class: "card stack" }, h("h3", {}, u.full_name), h("div", { class: "muted" }, ROLES[u.role], " · ", u.username),
-      u.role === "master" && u.share_bp !== null ? h("div", {}, "Ваш відсоток: ", pct(u.share_bp)) : null,
-      h("button", { class: "btn danger", onclick: logout }, "Вийти")),
+    h("div", { class: "card stack" },
+      h("div", { class: "row" }, avatar(u.full_name, "lg"), h("div", {}, h("h3", { style: { margin: 0 } }, u.full_name), h("div", { class: "muted" }, ROLES[u.role], " · ", u.username))),
+      u.role === "master" && u.share_bp !== null ? h("div", { class: "info-row" }, icon("percent"), "Ваш відсоток: ", h("b", {}, pct(u.share_bp))) : null,
+      h("div", { class: "row" },
+        h("button", { class: "btn", onclick: toggleTheme }, icon(dark ? "sun" : "moon", "sm"), dark ? "Світла тема" : "Темна тема"),
+        h("button", { class: "btn danger", onclick: logout }, icon("logout", "sm"), "Вийти"))),
     h("div", { class: "card stack" }, h("h3", {}, "Сповіщення в Telegram"),
-      h("p", { class: "muted" }, u.telegram_linked ? "Telegram підключено ✓" : "Отримайте код і надішліть боту салону: /link КОД"),
+      h("p", { class: "muted", style: { margin: 0 } }, u.telegram_linked ? "Telegram підключено ✓" : "Увійдіть у бот через «Для майстрів» з PIN — або отримайте код і надішліть боту: /link КОД"),
       code,
-      h("button", { class: "btn", onclick: async () => { const r = await run(() => api.post("/api/auth/telegram-code")); code.textContent = "/link " + r.code; } }, "Отримати код")),
+      h("button", { class: "btn", onclick: async () => { const r = await run(() => api.post("/api/auth/telegram-code")); code.textContent = "/link " + r.code; } }, icon("send", "sm"), "Отримати код")),
     h("div", { class: "card stack" }, h("h3", {}, "Змінити пароль"), field("Поточний пароль", oldP), field("Новий пароль (8+ символів, літери й цифри)", newP),
-      h("button", { class: "btn gold", onclick: async () => {
+      h("button", { class: "btn primary", onclick: async () => {
         await run(() => api.post("/api/auth/change-password", { old_password: oldP.value, new_password: newP.value }), "Пароль змінено, увійдіть знову");
         logout();
       } }, "Змінити пароль"))));
@@ -678,16 +844,17 @@ VIEWS.profile = async (main) => {
 
 // ---------- Клієнти
 VIEWS.clients = async (main) => {
-  main.append(topbar("Клієнти"));
-  const q = h("input", { placeholder: "Пошук за ім'ям або телефоном", type: "search" });
+  main.append(topbar("Клієнти", "Пошук, картка клієнта та історія відвідувань"));
+  const q = h("input", { placeholder: "Пошук за ім'ям або телефоном", type: "search", id: "client-search" });
   const box = h("div", { class: "card table-wrap", style: { marginTop: "12px" } });
-  main.append(q, box);
+  main.append(h("div", { class: "search" }, icon("search", "sm"), q), box);
   let timer;
   const load = async () => {
     const list = await api.get("/api/clients?q=" + encodeURIComponent(q.value.trim()));
-    box.replaceChildren(list.length ? h("table", {}, h("tr", {}, h("th", {}, "Ім'я"), h("th", {}, "Телефон"), h("th", {}, "")),
-      list.map((c) => h("tr", { class: "click", onclick: () => clientSheet(c.id) }, h("td", {}, c.name), h("td", {}, c.phone),
-        h("td", {}, c.telegram_linked ? h("span", { class: "chip" }, "Telegram") : "")))) : emptyState("Нікого не знайдено"));
+    box.replaceChildren(list.length ? h("table", {}, h("tr", {}, h("th", {}, "Клієнт"), h("th", {}, "Телефон"), h("th", {}, "")),
+      list.map((c) => h("tr", { class: "click", onclick: () => clientSheet(c.id) },
+        h("td", {}, h("div", { class: "row" }, avatar(c.name, "sm"), h("b", {}, c.name))), h("td", {}, c.phone),
+        h("td", { class: "right" }, c.telegram_linked ? h("span", { class: "chip st-confirmed" }, "Telegram") : "")))) : emptyState("Нікого не знайдено", "search"));
   };
   q.addEventListener("input", () => { clearTimeout(timer); timer = setTimeout(load, 300); });
   await load();
@@ -695,56 +862,112 @@ VIEWS.clients = async (main) => {
 
 // ---------- Панель директора
 function periodPicker(onChange, initial = "month") {
-  const from = h("input", { type: "date", style: { width: "auto" } });
-  const to = h("input", { type: "date", style: { width: "auto" } });
+  const from = h("input", { type: "date", style: { width: "auto" }, "aria-label": "З" });
+  const to = h("input", { type: "date", style: { width: "auto" }, "aria-label": "По" });
   const custom = h("span", { class: "row hidden" }, from, "—", to,
-    h("button", { class: "btn sm", onclick: () => from.value && onChange(`date_from=${from.value}&date_to=${to.value || from.value}`) }, "OK"));
+    h("button", { class: "btn sm", onclick: () => from.value && onChange(`date_from=${from.value}&date_to=${to.value || from.value}`, "custom") }, "Показати"));
   const s = seg([["day", "День"], ["week", "Тиждень"], ["month", "Місяць"], ["year", "Рік"], ["custom", "Період…"]], initial, (v) => {
     custom.classList.toggle("hidden", v !== "custom");
-    if (v !== "custom") onChange("period=" + v);
+    if (v !== "custom") onChange("period=" + v, v);
   });
-  return h("div", { class: "row" }, s, custom);
+  return h("div", { class: "row", style: { marginBottom: "14px" } }, s, custom);
+}
+
+// попередній період для порівняння (минулий місяць/рік або той самий відрізок перед поточним)
+function prevRange(from, to, kind) {
+  const d = (iso) => new Date(iso + "T12:00");
+  if (kind === "month") { const f = d(from); const pf = new Date(f.getFullYear(), f.getMonth() - 1, 1, 12); const pt = new Date(f.getFullYear(), f.getMonth(), 0, 12); return [isoDate(pf), isoDate(pt)]; }
+  if (kind === "year") { const y = Number(from.slice(0, 4)) - 1; return [`${y}-01-01`, `${y}-12-31`]; }
+  const len = Math.round((d(to) - d(from)) / 86400000) + 1;
+  return [addDays(from, -len), addDays(from, -1)];
+}
+
+function revenueChart(byDay) {
+  const NS = "http://www.w3.org/2000/svg";
+  const W = 760, H = 190, L = 46, B = 22, T = 10;
+  const svg = document.createElementNS(NS, "svg");
+  svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+  svg.setAttribute("class", "chart");
+  svg.setAttribute("role", "img");
+  svg.setAttribute("aria-label", "Виручка по днях");
+  const max = Math.max(1, ...byDay.map((x) => x.revenue));
+  const step = Math.pow(10, Math.floor(Math.log10(max / 100 / 4 || 1)));
+  const nice = Math.ceil(max / 100 / 4 / step) * step * 4 * 100 || max;
+  const el = (tag, attrs, text) => { const e = document.createElementNS(NS, tag); for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v); if (text !== undefined) e.textContent = text; svg.append(e); return e; };
+  for (let i = 0; i <= 4; i++) {
+    const y = T + (H - T - B) * (1 - i / 4);
+    el("line", { x1: L, x2: W, y1: y, y2: y, class: "grid-line" });
+    el("text", { x: L - 6, y: y + 3, "text-anchor": "end" }, Math.round((nice * i) / 4 / 100).toLocaleString("uk-UA"));
+  }
+  const bw = (W - L) / byDay.length;
+  byDay.forEach((x, i) => {
+    const bh = ((H - T - B) * x.revenue) / nice;
+    const r = el("rect", { x: L + i * bw + bw * 0.18, y: H - B - bh, width: Math.max(2, bw * 0.64), height: Math.max(0, bh), rx: 3, class: "bar" });
+    const t = document.createElementNS(NS, "title"); t.textContent = `${dm(x.date)}: ${money(x.revenue)}`; r.append(t);
+    if (byDay.length <= 16 || i % Math.ceil(byDay.length / 12) === 0) el("text", { x: L + i * bw + bw / 2, y: H - 6, "text-anchor": "middle" }, dm(x.date));
+  });
+  return svg;
 }
 
 VIEWS.dashboard = async (main) => {
   const body = h("div");
-  main.append(topbar("Фінансова панель"), periodPicker((q) => load(q)), body);
-  const load = async (q) => {
+  main.append(topbar("Огляд", "Фінанси салону: виручка, зарплати майстрів, витрати й прибуток",
+    h("button", { class: "btn", onclick: () => { location.hash = "#/expenses"; } }, icon("plus", "sm"), "Витрата"),
+    h("button", { class: "btn primary", onclick: () => { location.hash = "#/calendar"; } }, icon("calendar", "sm"), "Календар")),
+    periodPicker((q, kind) => load(q, kind)), body);
+  const load = async (q, kind = "month") => {
     body.replaceChildren(h("div", { class: "empty" }, "Завантаження…"));
     const d = await api.get("/api/finance/dashboard?" + q);
     const s = d.summary;
-    const maxDay = Math.max(1, ...d.by_day.map((x) => x.revenue));
+    const [pf, pt] = prevRange(s.from, s.to, kind);
+    const p = (await api.get(`/api/finance/dashboard?date_from=${pf}&date_to=${pt}`).catch(() => null))?.summary || {};
+    const vs = kind === "month" ? "мин. місяць" : kind === "year" ? "мин. рік" : "попер. період";
+    const exp = s.expenses;
+    const expRows = [["Оренда", exp.rent, "home"], ["Комунальні", exp.utilities, "zap"], ["Реклама", exp.advertising, "megaphone"], ["Інші витрати", exp.other, "receipt"]];
     body.replaceChildren(...[
-      h("p", { class: "muted" }, `${dmy(s.from)} — ${dmy(s.to)} · замовлень: ${s.orders_count} · клієнтів: ${s.clients_count} · середній чек: ${money(s.average_check)} · скасувань: ${s.cancellations}`),
       h("div", { class: "grid kpi" },
-        kpi("Виручка салону", s.revenue, "accent"), kpi("Частка майстрів", s.masters_share), kpi("Частка салону", s.salon_share),
-        kpi("Витрати на матеріали", s.materials), kpi("Оренда", s.expenses.rent), kpi("Комунальні", s.expenses.utilities),
-        kpi("Реклама", s.expenses.advertising), kpi("Інші витрати", s.expenses.other),
-        kpi("Валовий прибуток", s.gross_profit, "accent"), kpi("Чистий прибуток", s.net_profit, "accent")),
+        kpi("Виручка салону", s.revenue, "dark", { ico: "banknote", prev: p.revenue, sub: vs }),
+        kpi("Чистий прибуток", s.net_profit, "accent", { ico: "trend", prev: p.net_profit, sub: vs }),
+        kpi("Валовий прибуток", s.gross_profit, "", { ico: "chart", prev: p.gross_profit }),
+        kpi("Середній чек", s.average_check, "", { ico: "receipt", prev: p.average_check, sub: `${s.orders_count} замовл. · ${s.clients_count} клієнтів` })),
       h("div", { class: "grid two", style: { marginTop: "12px" } },
-        h("div", { class: "card" }, h("h3", {}, "Зарплата майстрів"),
-          h("div", { class: "sum-line" }, h("span", {}, "Нараховано за період"), h("b", {}, money(s.masters_share))),
-          h("div", { class: "sum-line" }, h("span", {}, "Фактично виплачено за період"), h("b", {}, money(s.payouts))),
-          h("div", { class: "sum-line total" }, h("span", {}, "Загальний борг по зарплаті (на сьогодні)"), h("span", {}, money(s.salary_debt_total)))),
-        h("div", { class: "card" }, h("h3", {}, "Оплати клієнтів"),
-          Object.keys(PAY).map((k) => h("div", { class: "sum-line" }, h("span", {}, PAY[k]), h("b", {}, money(s.by_payment[k] || 0)))),
-          h("div", { class: "sum-line muted small" }, h("span", {}, "Закупівля матеріалів (грошовий потік)"), h("span", {}, money(s.expenses.materials_purchases))))),
-      d.by_day.length > 1 ? h("div", { class: "card", style: { marginTop: "12px" } }, h("h3", {}, "Виручка по днях"),
-        h("div", { class: "bars" }, d.by_day.map((x) => h("div", { style: { height: (x.revenue / maxDay) * 100 + "%" }, "data-tip": `${dm(x.date)}: ${money(x.revenue)}` })))) : null,
-      h("h2", { style: { marginTop: "22px" } }, "По майстрах"),
-      h("div", { class: "card table-wrap" }, h("table", {},
+        h("div", { class: "card" }, h("div", { class: "card-head" }, h("h3", {}, "Куди йдуть гроші"), h("span", { class: "muted small" }, `${dmy(s.from)} — ${dmy(s.to)}`)),
+          h("div", { class: "sum-line" }, h("span", {}, "Виручка"), h("b", {}, money(s.revenue))),
+          h("div", { class: "sum-line" }, h("span", { class: "muted" }, "− Частка майстрів"), h("span", {}, money(s.masters_share))),
+          h("div", { class: "sum-line" }, h("span", { class: "muted" }, "− Матеріали"), h("span", {}, money(s.materials))),
+          h("div", { class: "sum-line total" }, h("span", {}, "Валовий прибуток"), h("span", {}, money(s.gross_profit))),
+          expRows.map(([l, v]) => h("div", { class: "sum-line" }, h("span", { class: "muted" }, "− " + l), h("span", {}, money(v)))),
+          h("div", { class: "sum-line total" }, h("span", {}, "Чистий прибуток"), h("span", { class: s.net_profit < 0 ? "neg" : "" }, money(s.net_profit)))),
+        h("div", { class: "stack" },
+          h("div", { class: "card" }, h("div", { class: "card-head" }, h("h3", {}, "Зарплата майстрів")),
+            h("div", { class: "sum-line" }, h("span", {}, "Нараховано за період"), h("b", {}, money(s.masters_share))),
+            h("div", { class: "sum-line" }, h("span", {}, "Виплачено за період"), h("b", {}, money(s.payouts))),
+            h("div", { class: "sum-line total" }, h("span", {}, "Борг по зарплаті зараз"), h("span", {}, money(s.salary_debt_total))),
+            s.salary_debt_total > 0 ? h("a", { href: "#/shifts", class: "small" }, "Підтвердити виплати →") : null),
+          h("div", { class: "card" }, h("div", { class: "card-head" }, h("h3", {}, "Оплати клієнтів")),
+            [["cash", "banknote"], ["card", "card"], ["transfer", "transfer"]].map(([k, ic]) => {
+              const v = s.by_payment[k] || 0;
+              return h("div", { class: "stack", style: { marginBottom: "8px" } },
+                h("div", { class: "sum-line", style: { padding: 0 } }, h("span", { class: "row" }, icon(ic, "sm"), PAY[k]), h("b", {}, money(v))),
+                h("div", { class: "progress" }, h("div", { style: { width: (s.revenue ? (v / s.revenue) * 100 : 0) + "%" } })));
+            }),
+            h("div", { class: "sum-line muted small" }, h("span", {}, "Закупівля матеріалів (грошовий потік)"), h("span", {}, money(exp.materials_purchases)))))),
+      d.by_day.length > 1 ? h("div", { class: "card", style: { marginTop: "12px" } }, h("div", { class: "card-head" }, h("h3", {}, "Виручка по днях"), h("span", { class: "muted small" }, "грн")), revenueChart(d.by_day)) : null,
+      h("div", { class: "section" }, h("h2", {}, "По майстрах")),
+      d.by_master.length ? h("div", { class: "card table-wrap" }, h("table", {},
         h("tr", {}, h("th", {}, "Майстер"), h("th", { class: "num" }, "Послуг"), h("th", { class: "num" }, "Виручка"), h("th", { class: "num" }, "Нараховано"), h("th", { class: "num" }, "Виплачено"), h("th", { class: "num" }, "Борг")),
-        d.by_master.map((m) => h("tr", {}, h("td", {}, m.master_name), h("td", { class: "num" }, m.orders_count), h("td", { class: "num" }, money(m.revenue)),
-          h("td", { class: "num" }, money(m.masters_share)), h("td", { class: "num" }, money(m.paid)), h("td", { class: "num" }, h("b", {}, money(m.balance))))))),
-      h("h2", { style: { marginTop: "22px" } }, "По послугах"),
+        d.by_master.map((m) => h("tr", {}, h("td", {}, h("div", { class: "row" }, avatar(m.master_name, "sm"), m.master_name)), h("td", { class: "num" }, m.orders_count), h("td", { class: "num" }, money(m.revenue)),
+          h("td", { class: "num" }, money(m.masters_share)), h("td", { class: "num" }, money(m.paid)), h("td", { class: "num" }, h("b", {}, money(m.balance)))))))
+        : h("div", { class: "card" }, emptyState("Додайте майстрів у розділі «Персонал»", "users")),
+      h("div", { class: "section" }, h("h2", {}, "По послугах")),
       d.by_service.length ? h("div", { class: "card table-wrap" }, h("table", {},
         h("tr", {}, h("th", {}, "Послуга"), h("th", { class: "num" }, "К-сть"), h("th", { class: "num" }, "Виручка"), h("th", { class: "num" }, "Майстрам"), h("th", { class: "num" }, "Матеріали"), h("th", { class: "num" }, "Салону")),
         d.by_service.map((x) => h("tr", {}, h("td", {}, x.service_name), h("td", { class: "num" }, x.orders_count), h("td", { class: "num" }, money(x.revenue)),
           h("td", { class: "num" }, money(x.masters_share)), h("td", { class: "num" }, money(x.materials)), h("td", { class: "num" }, money(x.salon_net_from_orders))))))
-        : h("div", { class: "card" }, emptyState("Немає замовлень за період")),
+        : h("div", { class: "card" }, emptyState("Немає замовлень за період", "receipt")),
     ].filter(Boolean));
   };
-  await load("period=month");
+  await load("period=month", "month");
 };
 
 // ---------- Зміни й виплати
@@ -883,6 +1106,61 @@ VIEWS.expenses = async (main) => {
   await load();
 };
 
+// Вибір послуг майстра групами: розділ → тип (→ вид). Галочка групи вмикає всі її послуги.
+// Нічого не обрано = майстер виконує всі послуги.
+function servicesPicker(selected) {
+  const services = state.services.filter((s) => s.is_active);
+  const groups = new Map();
+  for (const s of services) {
+    const key = [s.section || "Послуги", s.category || "Інше"].join(" · ");
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(s);
+  }
+  const summary = h("div", { class: "small muted" });
+  const refreshSummary = () => {
+    summary.textContent = selected.size ? `Обрано послуг: ${selected.size} з ${services.length}` : "Нічого не обрано — майстер виконує всі послуги";
+  };
+  const blocks = [];
+  for (const [key, items] of groups) {
+    const groupBox = h("input", { type: "checkbox" });
+    const childBoxes = [];
+    const syncGroup = () => {
+      const n = items.filter((x) => selected.has(x.id)).length;
+      groupBox.checked = n === items.length;
+      groupBox.indeterminate = n > 0 && n < items.length;
+      count.textContent = n ? `${n}/${items.length}` : `${items.length}`;
+    };
+    const count = h("span", { class: "chip plain" });
+    groupBox.addEventListener("change", () => {
+      items.forEach((x) => (groupBox.checked ? selected.add(x.id) : selected.delete(x.id)));
+      childBoxes.forEach((b) => { b.checked = groupBox.checked; });
+      syncGroup(); refreshSummary();
+    });
+    // підгрупи за видом (напр. Фарбування → Мелірування)
+    const bySub = new Map();
+    items.forEach((x) => { const k = x.subcategory || ""; if (!bySub.has(k)) bySub.set(k, []); bySub.get(k).push(x); });
+    const list = h("div", { style: { padding: "4px 0 6px 28px", display: "grid", gap: "4px" } });
+    for (const [sub, xs] of bySub) {
+      if (sub) list.append(h("div", { class: "small muted", style: { marginTop: "4px", fontWeight: 700 } }, sub));
+      xs.forEach((x) => {
+        const b = h("input", { type: "checkbox", checked: selected.has(x.id), onchange: (e) => { e.target.checked ? selected.add(x.id) : selected.delete(x.id); syncGroup(); refreshSummary(); } });
+        childBoxes.push(b);
+        list.append(h("label", { class: "row small", style: { gap: "8px" } }, b, h("span", { class: "grow" }, x.name), h("span", { class: "muted" }, priceText(x))));
+      });
+    }
+    const det = h("details", { style: { borderBottom: "1px solid var(--line)" } },
+      h("summary", { class: "row", style: { padding: "9px 4px", cursor: "pointer", listStyle: "none" } },
+        h("span", { onclick: (e) => e.stopPropagation() }, groupBox), h("b", { class: "grow" }, key), count, icon("right", "sm")),
+      list);
+    syncGroup();
+    blocks.push(det);
+  }
+  refreshSummary();
+  return h("div", { class: "card", style: { padding: "4px 12px" } },
+    blocks.length ? blocks : emptyState("Спершу додайте послуги", "scissors"),
+    h("div", { class: "row", style: { padding: "8px 4px" } }, summary));
+}
+
 // ---------- Персонал
 VIEWS.staff = async (main) => {
   const users = await api.get("/api/users");
@@ -907,8 +1185,7 @@ VIEWS.staff = async (main) => {
     const active = h("input", { type: "checkbox", checked: u ? u.is_active : true });
     const pin = h("input", { inputmode: "numeric", autocomplete: "off", maxlength: 8, placeholder: u?.bot_pin_set ? "задано — введіть новий, щоб змінити" : "4–8 цифр" });
     const svcIds = new Set(u?.service_ids || []);
-    const svcBox = h("div", { class: "row" }, state.services.filter((s) => s.is_active).map((s) => h("label", { class: "row small", style: { gap: "4px" } },
-      h("input", { type: "checkbox", checked: svcIds.has(s.id), onchange: (e) => (e.target.checked ? svcIds.add(s.id) : svcIds.delete(s.id)) }), s.name)));
+    const svcBox = servicesPicker(svcIds);
     const useOwn = h("input", { type: "checkbox", checked: !!u?.schedule });
     const sched = u?.schedule || def.schedule || {};
     const days = WD_LONG.map((name, i) => {
@@ -947,7 +1224,7 @@ VIEWS.staff = async (main) => {
       h("div", { class: "form-grid" }, field("Ім'я", fullName), field("Телефон", phone)),
       h("div", { class: "form-grid" }, field("Роль", role), field("PIN для Telegram-бота", pin)),
       h("div", { class: "form-grid" }, field("Відсоток майстра, %", share), field("Облік матеріалів", mode)),
-      h("details", {}, h("summary", { class: "muted", style: { cursor: "pointer" } }, "Послуги майстра (порожньо = усі)"), svcBox),
+      h("div", {}, h("div", { class: "kpi-label", style: { marginBottom: "6px" } }, "Послуги майстра"), svcBox),
       h("details", {}, h("summary", { class: "muted", style: { cursor: "pointer" } }, "Графік роботи"),
         h("label", { class: "row small", style: { margin: "8px 0" } }, useOwn, "Індивідуальний графік (інакше — графік салону)"), schedBox),
       isNew ? null : h("label", { class: "row" }, active, "Активний (може входити в систему)"),
