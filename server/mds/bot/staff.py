@@ -23,7 +23,7 @@ from ..db import Database
 from ..errors import DomainError
 from ..models import ApptStatus, Role, ShiftStatus, User
 from ..money import fmt
-from ..services import analytics, bookings, catalog, orders, users
+from ..services import analytics, bookings, callbacks, catalog, orders, users
 from ..services.catalog import find_client_by_phone
 from ..services.common import Actor
 from . import views as v
@@ -268,7 +268,7 @@ def build_staff_router() -> Router:
             active = [a for a in items if a.status not in (ApptStatus.CANCELLED, ApptStatus.NO_SHOW)]
             cancelled = len(items) - len(active)
             cards = [(v.staff_appt_text(a, show_master=is_dir), v.staff_appt_kb(a, is_dir)) for a in active]
-        head = f"📋 <b>{v.WEEKDAYS[day.weekday()]} {day:%d.%m}</b> — записів: {len(active)}"
+        head = f"📋 <b>{v.day_title(day)}</b> — записів: {len(active)}"
         if cancelled:
             head += f" (скасовано/не прийшли: {cancelled})"
         await cb.message.edit_text(head if cards else head + "\nЗаписів немає.",
@@ -353,7 +353,7 @@ def build_staff_router() -> Router:
         except DomainError as e:
             await cb.answer(e.message, show_alert=True)
             return
-        await cb.message.edit_text(f"🔁 {v.WEEKDAYS[day.weekday()]} {day:%d.%m} — новий час:",
+        await cb.message.edit_text(f"🔁 <b>{v.day_title(day)}</b> — новий час:",
                                    reply_markup=v.slots_kb(f"s:mvs:{appt_id}", slots, f"s:mv:{appt_id}"))
         await cb.answer()
 
@@ -499,7 +499,7 @@ def build_staff_router() -> Router:
                 await cb.answer(EXPIRED, show_alert=True)
                 return
             slots = bookings.free_slots(s, int(master_id), int(service_id), day)
-        await cb.message.edit_text(f"➕ {v.WEEKDAYS[day.weekday()]} {day:%d.%m} — оберіть час:",
+        await cb.message.edit_text(f"➕ <b>{v.day_title(day)}</b> — оберіть час:",
                                    reply_markup=v.slots_kb(f"s:at:{master_id}:{service_id}", slots, f"s:as:{master_id}:{service_id}"))
         await cb.answer()
 
@@ -668,6 +668,37 @@ def build_staff_router() -> Router:
         except Exception:  # noqa: BLE001 — той самий текст (повторне натискання)
             pass
         await cb.answer()
+
+    @router.callback_query(F.data == "s:calls")
+    async def calls(cb: CallbackQuery, db: Database, staff: StaffSessions):
+        with db.session() as s:
+            u = _director(s, staff, cb.message.chat.id)
+            if not u:
+                await cb.answer(EXPIRED, show_alert=True)
+                return
+            reqs = callbacks.list_requests(s, Actor.of(u))
+            lines = [f"• {v.e(r.name or 'Клієнт')}, <b>{r.phone}</b> — {r.created_at:%d.%m %H:%M}" for r in reqs]
+            rows = [[(f"✅ Передзвонили: {r.phone}", f"s:cbd:{r.id}")] for r in reqs]
+        text = ("📞 <b>Просять передзвонити</b>\n" + "\n".join(lines)) if lines else "📞 Нових заявок на дзвінок немає."
+        try:
+            await cb.message.edit_text(text, reply_markup=v.kb(rows + [[("☰ Меню", "s:menu")]]))
+        except Exception:  # noqa: BLE001 — той самий текст
+            pass
+        await cb.answer()
+
+    @router.callback_query(F.data.startswith("s:cbd:"))
+    async def call_done(cb: CallbackQuery, db: Database, staff: StaffSessions):
+        try:
+            with db.session() as s:
+                u = _director(s, staff, cb.message.chat.id)
+                if not u:
+                    await cb.answer(EXPIRED, show_alert=True)
+                    return
+                callbacks.mark_done(s, Actor.of(u), int(cb.data.split(":")[2]))
+        except DomainError as e:
+            await cb.answer(e.message, show_alert=True)
+            return
+        await calls(cb, db, staff)
 
     @router.callback_query(F.data == "s:pay")
     async def payouts(cb: CallbackQuery, db: Database, staff: StaffSessions):

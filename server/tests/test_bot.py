@@ -101,7 +101,7 @@ def test_full_booking_flow_and_notifications(h, db):
     h.send("📅 Записатися")
     h.click_text("Стрижка")
     h.click_text("Олена")
-    h.click_text("Пн 02.11")
+    h.click_text("Сьогодні")
     h.click_text("10:00")
     assert "номером" in h.session.texts()[-1]
     # чужий контакт не приймається
@@ -127,8 +127,8 @@ def test_full_booking_flow_and_notifications(h, db):
     # повторний запис: клієнт уже відомий — без запиту номера
     h.send("📅 Записатися")
     h.click_text("Манікюр")
-    h.click_text("👥 Будь-який")
-    h.click_text("Пн 02.11")
+    h.click_text("👥 Будь-хто")
+    h.click_text("Сьогодні")
     slot_texts = [b.text for b in h.session.buttons()]
     assert "10:00" in slot_texts  # Ірина вільна о 10:00
     h.click_text("10:00")
@@ -143,7 +143,7 @@ def test_slot_taken_between_steps(h, db, seed):
     h.send("📅 Записатися")
     h.click_text("Стрижка")
     h.click_text("Олена")
-    h.click_text("Пн 02.11")
+    h.click_text("Сьогодні")
     h.click_text("10:00")
     h.send(contact=Contact(phone_number="380931234567", first_name="Катя", user_id=TG_ID))
     # поки клієнт думав, адміністратор зайняв цей час
@@ -165,9 +165,9 @@ def test_my_bookings_cancel_and_move(h, db, seed):
                                         starts_at=datetime(2026, 11, 3, 10), client_name="Катя", client_phone="0931234567")
         appt_id = a.id
     h.send("🗓 Мої записи")
-    assert "03.11.2026 о 10:00" in h.session.texts()[-1]
+    assert "Завтра, 3 листопада о 10:00" in h.session.texts()[-1]
     h.click(f"mv:{appt_id}")
-    h.click_text("Ср 04.11")
+    h.click_text("Ср, 4 листопада")
     h.click_text("15:00")
     assert "перенесено" in h.session.texts()[-1]
     with db.session() as s:
@@ -302,7 +302,7 @@ def test_master_flow_add_list_close_earn_shift(h, db, pins):
     # додати запис
     h.click("s:add")
     h.click_text("Стрижка")
-    h.click_text("Пн 02.11")
+    h.click_text("Сьогодні")
     h.click_text("10:00")
     h.send("0671112233")
     assert "Новий клієнт" in h.session.texts()[-1]
@@ -364,7 +364,7 @@ def test_director_flow(h, db, pins):
 
     # перенести
     h.click(f"s:mv:{a.id}")
-    h.click_text("Пн 02.11")
+    h.click_text("Сьогодні")
     h.click_text("15:00")
     assert "Перенесено" in h.session.texts()[-1]
     # видалити (скасування з історією)
@@ -379,7 +379,7 @@ def test_director_flow(h, db, pins):
     h.click("s:add")
     h.click(f"s:am:{pins['m2']}")
     h.click_text("Манікюр")
-    h.click_text("Пн 02.11")
+    h.click_text("Сьогодні")
     h.click_text("14:00")
     h.send("0671112233")  # відомий клієнт — запис одразу
     assert "Запис створено" in h.session.texts()[-1]
@@ -470,3 +470,59 @@ def test_three_level_coloring_and_back_navigation(h, db, seed):
     h.send("💅 Послуги та ціни")
     t = h.session.texts()[-1]
     assert "<i>Мелірування</i>" in t and t.index("В один тон") < t.index("Мелірування")
+
+
+def test_menu_has_quick_booking_and_no_my_bookings(h):
+    h.send("/start")
+    menu = h.session.last_markup()
+    texts = [b.text for row in menu.keyboard for b in row]
+    assert "⚡ Швидкий запис" in texts and "🗓 Мої записи" not in texts
+
+
+def test_quick_booking_creates_callback_request_and_notifies(h, db, pins):
+    from mds.models import CallbackRequest, Notification
+    with db.session() as s:
+        s.get(User, pins["director"]).telegram_chat_id = 9001
+    h.send("⚡ Швидкий запис")
+    assert "зателефонує" in h.session.texts()[-1]
+    h.send("абв")
+    assert "Не вдалося розпізнати номер" in h.session.texts()[-1]
+    h.send("067 123 45 67")
+    assert "зателефонуємо" in h.session.texts()[-1]
+    h.send("⚡ Швидкий запис")
+    h.send(contact=Contact(phone_number="380671234567", first_name="Катя", user_id=TG_ID))  # повтор — без дубля
+    with db.session() as s:
+        reqs = s.query(CallbackRequest).all()
+        assert [r.phone for r in reqs] == ["+380671234567"]
+        assert any("передзвонити" in n.text and n.chat_id == 9001 for n in s.query(Notification))
+    # директор бачить заявку в боті й позначає опрацьованою
+    staff_login(h, pins["director"], "9999")
+    h.click("s:calls")
+    assert "+380671234567" in h.session.texts()[-1]
+    h.click(f"s:cbd:{reqs[0].id}")
+    assert "Нових заявок на дзвінок немає" in h.session.texts()[-1]
+
+
+def test_masters_show_first_name_and_nearest_free_time(h, db, seed):
+    from mds.services import bookings, users as us
+    d = seed["actors"]["director"]
+    with db.session() as s:
+        us.update_user(s, d, seed["m1"], {"full_name": "Олена Коваль"})
+        # Ірина зайнята весь сьогоднішній день — її найближчий вільний час завтра
+        us.update_user(s, d, seed["m2"], {"schedule": {"0": ["09:00", "10:00"], "1": ["09:00", "18:00"]}})
+        bookings.create_appointment(s, seed["actors"]["admin"], master_id=seed["m2"], service_id=seed["haircut"],
+                                    starts_at=datetime(2026, 11, 2, 9), client_name="X", client_phone="0500000000")
+    h.send("📅 Записатися")
+    h.click_text("Стрижка")
+    labels = [b.text for b in h.session.buttons()]
+    assert labels[0] == "👥 Будь-хто · сьогодні о 09:00"
+    assert "Олена · сьогодні о 09:00" in labels  # без прізвища
+    assert "Ірина · завтра о 09:00" in labels
+    h.click_text("Олена")
+    days = [b.text for b in h.session.buttons()]
+    assert days[0].startswith("Сьогодні · ") and days[1].startswith("Завтра · ") and days[2].startswith("Ср, 4 листопада")
+    h.click_text("Сьогодні")
+    assert "Сьогодні, 2 листопада" in h.session.texts()[-1]
+    labels = [b.text for b in h.session.buttons()]
+    assert labels[0] == "🌅 Ранок" and "☀️ День" in labels and "🌙 Вечір" in labels
+    h.click("nop")  # заголовок групи нічого не робить

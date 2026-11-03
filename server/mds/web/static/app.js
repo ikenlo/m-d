@@ -523,6 +523,18 @@ VIEWS.calendar = async (main) => {
     h("button", { class: "btn gold", onclick: () => apptForm({ date: day }, reload) }, "+ Запис")));
 
   const list = await api.get(`/api/appointments?date_from=${day}`);
+  if (!isMaster) {
+    // «Швидкий запис» з Telegram: клієнти просять передзвонити
+    const calls = await api.get("/api/callbacks").catch(() => []);
+    if (calls.length) {
+      main.append(h("div", { class: "card", style: { marginBottom: "12px", borderColor: "rgba(201,164,92,.55)" } },
+        h("h3", {}, "📞 Просять передзвонити (" + calls.length + ")"),
+        calls.map((c) => h("div", { class: "row", style: { padding: "6px 0", borderBottom: "1px solid var(--line)" } },
+          h("b", {}, c.name || "Клієнт"), h("a", { href: "tel:" + c.phone }, c.phone),
+          h("span", { class: "muted small grow" }, dm(c.created_at), " ", hm(c.created_at)),
+          h("button", { class: "btn sm", onclick: async () => { await run(() => api.post(`/api/callbacks/${c.id}/done`), "Позначено"); reload(); } }, "Передзвонили")))));
+    }
+  }
   const masters = isMaster ? [{ id: state.user.id, full_name: state.user.full_name, schedule: state.user.schedule }] : state.masters;
   if (!masters.length) { main.append(h("div", { class: "card" }, emptyState("Додайте майстрів у розділі «Персонал»"))); return; }
 

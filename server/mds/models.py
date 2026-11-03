@@ -324,6 +324,21 @@ class Setting(Base):
     value: Mapped[dict | list | str | int | None] = mapped_column(JSON)
 
 
+class CallbackRequest(Base):
+    """«Швидкий запис»: клієнт лишив номер, адміністратор/директор передзвонює."""
+
+    __tablename__ = "callback_requests"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    phone: Mapped[str] = mapped_column(String(32))
+    name: Mapped[str | None] = mapped_column(String(128))
+    telegram_user_id: Mapped[int | None] = mapped_column(BigInteger)
+    status: Mapped[str] = mapped_column(String(16), default="new")  # new | done
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
+    handled_at: Mapped[datetime | None] = mapped_column(DateTime)
+    handled_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+
+
 class Notification(Base):
     """Черга повідомлень Telegram (outbox). Записується в тій самій транзакції,
     що й подія; доставляє процес бота."""
@@ -344,6 +359,7 @@ __all__ = [
     "Appointment",
     "ApptStatus",
     "AuditLog",
+    "CallbackRequest",
     "Client",
     "Expense",
     "ExpenseCategory",

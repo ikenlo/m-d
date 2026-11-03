@@ -12,6 +12,7 @@ from aiogram.types import (
     ReplyKeyboardMarkup,
 )
 
+from .. import clock
 from ..models import Appointment, ApptStatus, Service, User
 from ..money import fmt
 
@@ -21,6 +22,8 @@ BTN_MY = "🗓 Мої записи"
 BTN_FREE = "🕐 Вільний час"
 BTN_CONTACTS = "📍 Контакти"
 BTN_STAFF = "👩‍🎨 Для майстрів"
+BTN_QUICK = "⚡ Швидкий запис"
+BTN_CANCEL = "✖️ Скасувати"
 
 WEEKDAYS = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Нд"]
 STATUS_UA = {
@@ -36,10 +39,9 @@ STATUS_UA = {
 def main_menu() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         keyboard=[
-            [KeyboardButton(text=BTN_BOOK)],
+            [KeyboardButton(text=BTN_BOOK), KeyboardButton(text=BTN_QUICK)],
             [KeyboardButton(text=BTN_SERVICES), KeyboardButton(text=BTN_FREE)],
-            [KeyboardButton(text=BTN_MY), KeyboardButton(text=BTN_CONTACTS)],
-            [KeyboardButton(text=BTN_STAFF)],
+            [KeyboardButton(text=BTN_CONTACTS), KeyboardButton(text=BTN_STAFF)],
         ],
         resize_keyboard=True,
     )
@@ -48,6 +50,14 @@ def main_menu() -> ReplyKeyboardMarkup:
 def contact_request() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         keyboard=[[KeyboardButton(text="📱 Поділитися номером", request_contact=True)]],
+        resize_keyboard=True,
+        one_time_keyboard=True,
+    )
+
+
+def quick_contact_kb() -> ReplyKeyboardMarkup:
+    return ReplyKeyboardMarkup(
+        keyboard=[[KeyboardButton(text="📱 Надіслати мій номер", request_contact=True)], [KeyboardButton(text=BTN_CANCEL)]],
         resize_keyboard=True,
         one_time_keyboard=True,
     )
@@ -155,18 +165,58 @@ def parse_path(v: str) -> list[int]:
     return [int(x) for x in v.split(".") if x != ""]
 
 
-def masters_kb(service_id: int, masters: list[User]) -> InlineKeyboardMarkup:
-    rows = [[("👥 Будь-який вільний майстер", f"mst:{service_id}:0")]]
-    rows += [[(m.full_name, f"mst:{service_id}:{m.id}")] for m in masters]
+MONTHS_GEN = ["січня", "лютого", "березня", "квітня", "травня", "червня",
+              "липня", "серпня", "вересня", "жовтня", "листопада", "грудня"]
+WEEKDAYS_LONG = ["Понеділок", "Вівторок", "Середа", "Четвер", "П'ятниця", "Субота", "Неділя"]
+
+
+def short_name(full_name: str) -> str:
+    """Для клієнтів — лише ім'я майстра, без прізвища."""
+    return (full_name or "").split()[0] if full_name else ""
+
+
+def day_label(d: date, long: bool = False) -> str:
+    """«Сьогодні», «Завтра», «Пт, 6 листопада» (long: «П'ятниця, 6 листопада»)."""
+    today = clock.now().date()
+    if d == today:
+        return "Сьогодні"
+    if d == today + timedelta(days=1):
+        return "Завтра"
+    wd = WEEKDAYS_LONG[d.weekday()] if long else WEEKDAYS[d.weekday()]
+    return f"{wd}, {d.day} {MONTHS_GEN[d.month - 1]}"
+
+
+def day_title(d: date) -> str:
+    """Заголовок: «Сьогодні, 2 листопада» / «П'ятниця, 6 листопада»."""
+    lbl = day_label(d, long=True)
+    return f"{lbl}, {d.day} {MONTHS_GEN[d.month - 1]}" if lbl in ("Сьогодні", "Завтра") else lbl
+
+
+def when_label(t: datetime) -> str:
+    """Найближчий час: «сьогодні о 14:00», «завтра о 10:00», «пт, 6 листопада о 10:00»."""
+    lbl = day_label(t.date())
+    return f"{lbl[0].lower() + lbl[1:]} о {t:%H:%M}"
+
+
+def masters_kb(service_id: int, masters: list[tuple[User, datetime]], any_first: datetime | None) -> InlineKeyboardMarkup:
+    """masters: [(майстер, найближчий вільний час)] — показуємо лише вільних."""
+    rows = []
+    if any_first and len(masters) > 1:
+        rows.append([(f"👥 Будь-хто · {when_label(any_first)}", f"mst:{service_id}:0")])
+    rows += [[(f"{short_name(m.full_name)} · {when_label(t)}", f"mst:{service_id}:{m.id}")] for m, t in masters]
     rows.append([("« Назад", "book")])
     return kb(rows)
 
 
-def days_kb(prefix: str, days: list[date], back: str) -> InlineKeyboardMarkup:
+def days_kb(prefix: str, days: list[date], back: str, counts: dict[date, int] | None = None) -> InlineKeyboardMarkup:
+    """Дні по два в ряд: «Сьогодні · 6 віл.», «Пт, 6 листопада»."""
     rows, row = [], []
     for d in days:
-        row.append((f"{WEEKDAYS[d.weekday()]} {d:%d.%m}", f"{prefix}:{d:%Y%m%d}"))
-        if len(row) == 3:
+        label = day_label(d)
+        if counts and counts.get(d):
+            label += f" · {counts[d]} віл."
+        row.append((label, f"{prefix}:{d:%Y%m%d}"))
+        if len(row) == 2:
             rows.append(row)
             row = []
     if row:
@@ -175,15 +225,19 @@ def days_kb(prefix: str, days: list[date], back: str) -> InlineKeyboardMarkup:
     return kb(rows)
 
 
+DAY_PARTS = [("🌅 Ранок", 0, 12), ("☀️ День", 12, 17), ("🌙 Вечір", 17, 24)]
+
+
 def slots_kb(prefix: str, slots: list[datetime], back: str) -> InlineKeyboardMarkup:
-    rows, row = [], []
-    for t in slots:
-        row.append((t.strftime("%H:%M"), f"{prefix}:{t:%Y%m%d%H%M}"))
-        if len(row) == 4:
-            rows.append(row)
-            row = []
-    if row:
-        rows.append(row)
+    """Час, згрупований за частинами дня (заголовки груп — неактивні кнопки)."""
+    rows = []
+    for title, h0, h1 in DAY_PARTS:
+        part = [t for t in slots if h0 <= t.hour < h1]
+        if not part:
+            continue
+        rows.append([(title, "nop")])
+        for i in range(0, len(part), 4):
+            rows.append([(t.strftime("%H:%M"), f"{prefix}:{t:%Y%m%d%H%M}") for t in part[i:i + 4]])
     rows.append([("« Інший день", back)])
     return kb(rows)
 
@@ -194,8 +248,8 @@ def confirm_kb() -> InlineKeyboardMarkup:
 
 def appt_text(a: Appointment) -> str:
     return (
-        f"<b>{WEEKDAYS[a.starts_at.weekday()]} {a.starts_at:%d.%m.%Y о %H:%M}</b>\n"
-        f"{e(a.service.name)} · {('від ' if a.service.price_from else '') + fmt(a.price)}\nМайстер: {e(a.master.full_name)}\n"
+        f"<b>{day_title(a.starts_at.date())} о {a.starts_at:%H:%M}</b>\n"
+        f"{e(a.service.name)} · {('від ' if a.service.price_from else '') + fmt(a.price)}\nМайстер: {e(short_name(a.master.full_name))}\n"
         f"Статус: {STATUS_UA.get(a.status, a.status)}"
     )
 
@@ -212,8 +266,8 @@ def summary_text(service: Service, master_name: str, start: datetime) -> str:
     return (
         "Перевірте запис:\n\n"
         f"<b>{e(service.name)}</b> · {price_text(service)}\n"
-        f"Майстер: {e(master_name)}\n"
-        f"Дата: <b>{WEEKDAYS[start.weekday()]} {start:%d.%m.%Y о %H:%M}</b>"
+        f"Майстер: {e(short_name(master_name) if master_name != 'будь-який вільний' else master_name)}\n"
+        f"Коли: <b>{day_title(start.date())} о {start:%H:%M}</b>"
     )
 
 
@@ -246,13 +300,14 @@ def contacts_text(st: dict) -> str:
 
 
 def free_text(day: date, rows: list[tuple[str, list[tuple[datetime, datetime]]]]) -> str:
-    head = f"🕐 <b>Вільний час: {WEEKDAYS[day.weekday()]} {day:%d.%m}</b>\n"
+    head = f"🕐 <b>Вільний час · {day_title(day)}</b>\n"
     if not any(w for _, w in rows):
-        return head + "\nНа цей день вільного часу немає."
+        return head + "\nНа цей день вільного часу немає. Оберіть інший день 👇"
     out = [head]
     for name, wins in rows:
         spans = ", ".join(f"{a:%H:%M}–{b:%H:%M}" for a, b in wins) if wins else "зайнято"
-        out.append(f"<b>{e(name)}</b>: {spans}")
+        out.append(f"<b>{e(short_name(name))}</b>: {spans}")
+    out.append("\n<i>Час рахується за графіком майстрів і вже зробленими записами.</i>")
     return "\n".join(out)
 
 
@@ -276,12 +331,12 @@ def master_menu_kb() -> InlineKeyboardMarkup:
 def director_menu_kb() -> InlineKeyboardMarkup:
     return kb([
         [("📅 Усі записи", "s:list"), ("➕ Додати запис", "s:add")],
-        [("📊 Фінанси", "s:fin"), ("💸 Виплати", "s:pay")],
-        [("🚪 Вийти", "s:logout")],
+        [("📞 Передзвонити", "s:calls"), ("📊 Фінанси", "s:fin")],
+        [("💸 Виплати", "s:pay"), ("🚪 Вийти", "s:logout")],
     ])
 
 
-def staff_days_kb(prefix: str, days: list[date], back: str = "s:menu") -> InlineKeyboardMarkup:
+def staff_days_kb(prefix: str, days: list[date], back: str = "s:menu", counts: dict | None = None) -> InlineKeyboardMarkup:
     return days_kb(prefix, days, back)
 
 

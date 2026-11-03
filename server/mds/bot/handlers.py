@@ -13,7 +13,7 @@ from .. import clock
 from ..db import Database
 from ..errors import DomainError
 from ..models import ApptStatus, Client, Role, Service, User
-from ..services import bookings, catalog, users
+from ..services import bookings, callbacks, catalog, users
 from ..services.common import Actor, all_settings, get_setting
 from . import views as v
 
@@ -24,6 +24,13 @@ MAX_DAYS_SHOWN = 14
 class Booking(StatesGroup):
     waiting_contact = State()
     confirming = State()
+
+
+class QuickCall(StatesGroup):
+    phone = State()
+
+
+MENU_TEXTS = {v.BTN_BOOK, v.BTN_QUICK, v.BTN_SERVICES, v.BTN_FREE, v.BTN_CONTACTS, v.BTN_STAFF, v.BTN_MY}
 
 
 def _client_by_tg(s, tg_id: int) -> Client | None:
@@ -60,6 +67,39 @@ def build_router() -> Router:
         await message.answer(text, reply_markup=v.main_menu())
 
 
+    # ---------------------------------------------------- швидкий запис
+    @router.message(Command("call"))
+    @router.message(F.text == v.BTN_QUICK)
+    async def quick_start(message: Message, state: FSMContext):
+        await state.clear()
+        await state.set_state(QuickCall.phone)
+        await message.answer(
+            "⚡ <b>Швидкий запис</b>\n\nЗалиште номер телефону — адміністратор зателефонує вам "
+            "і запише на зручний час.\n\nНатисніть кнопку нижче або напишіть номер, наприклад 0671234567.",
+            reply_markup=v.quick_contact_kb(),
+        )
+
+    @router.message(QuickCall.phone)
+    async def quick_phone(message: Message, db: Database, state: FSMContext):
+        if message.text in MENU_TEXTS or message.text == v.BTN_CANCEL:
+            await state.clear()
+            await message.answer("Швидкий запис скасовано.", reply_markup=v.main_menu())
+            return
+        if message.contact:
+            phone = message.contact.phone_number
+            name = " ".join(x for x in (message.contact.first_name, message.contact.last_name) if x)
+        else:
+            phone, name = message.text or "", message.from_user.full_name
+        try:
+            with db.session() as s:
+                callbacks.create_request(s, Actor.telegram(message.from_user.id), phone, name)
+        except DomainError:
+            await message.answer("Не вдалося розпізнати номер. Напишіть, наприклад, 0671234567 — або натисніть кнопку.",
+                                 reply_markup=v.quick_contact_kb())
+            return
+        await state.clear()
+        await message.answer("✅ Дякуємо! Ми зателефонуємо вам найближчим часом.", reply_markup=v.main_menu())
+
     @router.message(Command("contacts"))
     @router.message(F.text == v.BTN_CONTACTS)
     async def contacts(message: Message, db: Database):
@@ -72,7 +112,10 @@ def build_router() -> Router:
     async def free_days(message: Message, state: FSMContext):
         await state.clear()
         days = v.horizon(clock.now().date(), 7)
-        await message.answer("🕐 Вільний час — оберіть день:", reply_markup=v.days_kb("free", days, "book"))
+        await message.answer(
+            "🕐 <b>Вільний час</b>\nОберіть день — покажу, коли кожен майстер вільний:",
+            reply_markup=v.days_kb("free", days, "book"),
+        )
 
     @router.callback_query(F.data.startswith("free:"))
     async def free_day(cb: CallbackQuery, db: Database):
@@ -124,61 +167,77 @@ def build_router() -> Router:
         service_id = int(cb.data.split(":")[1])
         with db.session() as s:
             svc = s.get(Service, service_id)
-            masters = users.masters_for_service(s, service_id)
-            if svc is None or not svc.is_active or not masters:
+            if svc is None or not svc.is_active:
                 await cb.answer("Послуга зараз недоступна", show_alert=True)
                 return
-            kb = v.masters_kb(service_id, masters)
+            # показуємо лише майстрів, у яких є вільний час, і їхній найближчий вільний час
+            free = [(m, t) for m in users.masters_for_service(s, service_id)
+                    if (t := _nearest(s, service_id, m.id))]
+            any_first = min((t for _, t in free), default=None)
             title = svc.name
-        await cb.message.edit_text(f"<b>{title}</b>\nОберіть майстра:", reply_markup=kb)
+        if not free:
+            await cb.answer("Найближчими днями вільного часу на цю послугу немає 😔", show_alert=True)
+            return
+        await cb.message.edit_text(f"<b>{v.e(title)}</b>\nОберіть майстра:", reply_markup=v.masters_kb(service_id, free, any_first))
         await cb.answer()
 
+    def _horizon(s) -> list:
+        return v.horizon(clock.now().date(), min(int(get_setting(s, "booking_horizon_days")), MAX_DAYS_SHOWN))
 
-    def _available_days(s, service_id: int, master_id: int) -> list:
-        horizon = min(int(get_setting(s, "booking_horizon_days")), MAX_DAYS_SHOWN)
-        out = []
-        for d in v.horizon(clock.now().date(), horizon):
-            if master_id:
-                ok = bool(bookings.free_slots(s, master_id, service_id, d, for_client=True))
-            else:
-                ok = bool(bookings.free_slots_any(s, service_id, d, for_client=True))
-            if ok:
-                out.append(d)
+    def _slots(s, service_id: int, master_id: int, d) -> list:
+        if master_id:
+            return bookings.free_slots(s, master_id, service_id, d, for_client=True)
+        return list(bookings.free_slots_any(s, service_id, d, for_client=True))
+
+    def _nearest(s, service_id: int, master_id: int):
+        for d in _horizon(s):
+            slots = _slots(s, service_id, master_id, d)
+            if slots:
+                return slots[0]
+        return None
+
+    def _available_days(s, service_id: int, master_id: int) -> dict:
+        """{день: кількість вільних початків} — лише дні, де є вільний час."""
+        out = {}
+        for d in _horizon(s):
+            n = len(_slots(s, service_id, master_id, d))
+            if n:
+                out[d] = n
         return out
 
+    @router.callback_query(F.data == "nop")
+    async def nop(cb: CallbackQuery):
+        await cb.answer()
 
     @router.callback_query(F.data.startswith("mst:"))
     async def pick_master(cb: CallbackQuery, db: Database):
         _, service_id, master_id = cb.data.split(":")
         with db.session() as s:
             days = _available_days(s, int(service_id), int(master_id))
+            who = v.short_name(s.get(User, int(master_id)).full_name) if int(master_id) else "будь-який майстер"
         if not days:
             await cb.answer("Найближчими днями вільного часу немає 😔", show_alert=True)
             return
         await cb.message.edit_text(
-            "Оберіть день:", reply_markup=v.days_kb(f"day:{service_id}:{master_id}", days, f"svc:{service_id}")
+            f"Майстер: <b>{v.e(who)}</b>\n📅 Оберіть день (поруч — кількість вільних годин для запису):",
+            reply_markup=v.days_kb(f"day:{service_id}:{master_id}", list(days), f"svc:{service_id}", counts=days),
         )
         await cb.answer()
-
 
     @router.callback_query(F.data.startswith("day:"))
     async def pick_day(cb: CallbackQuery, db: Database):
         _, service_id, master_id, day_s = cb.data.split(":")
         day = v.parse_day(day_s)
         with db.session() as s:
-            if int(master_id):
-                slots = bookings.free_slots(s, int(master_id), int(service_id), day, for_client=True)
-            else:
-                slots = list(bookings.free_slots_any(s, int(service_id), day, for_client=True))
+            slots = _slots(s, int(service_id), int(master_id), day)
         if not slots:
             await cb.answer("На цей день вільного часу вже немає", show_alert=True)
             return
         await cb.message.edit_text(
-            f"{v.WEEKDAYS[day.weekday()]} {day:%d.%m} — оберіть час:",
+            f"📅 <b>{v.day_title(day)}</b>\n🕐 Оберіть зручний час:",
             reply_markup=v.slots_kb(f"slot:{service_id}:{master_id}", slots, f"mst:{service_id}:{master_id}"),
         )
         await cb.answer()
-
 
     async def _show_summary(target: Message, db: Database, state: FSMContext, edit: bool) -> None:
         data = await state.get_data()
@@ -342,7 +401,7 @@ def build_router() -> Router:
             await cb.answer("На цей день вільного часу немає", show_alert=True)
             return
         await cb.message.edit_text(
-            f"{v.WEEKDAYS[day.weekday()]} {day:%d.%m} — новий час:",
+            f"📅 <b>{v.day_title(day)}</b>\n🕐 Новий час:",
             reply_markup=v.slots_kb(f"mvs:{appt_id}", slots, f"mv:{appt_id}"),
         )
         await cb.answer()
