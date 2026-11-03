@@ -658,3 +658,46 @@ def test_bug_report_rejects_non_image(db, seed, tmp_path):
     with db.session() as s, pytest.raises(ValidationError):
         bugreport.create(s, seed["actors"]["m1"], tmp_path, text="Щось не так",
                          image_b64=base64.b64encode(b"<script>alert(1)</script>").decode())
+
+
+def _visits(db, seed, master_key, n, tg=TG_ID, start_h=9):
+    from mds.services import bookings, orders
+    from mds.services.common import Actor as A
+    with db.session() as s:
+        for i in range(n):
+            a = bookings.create_appointment(s, A.telegram(tg), master_id=seed[master_key], service_id=seed["haircut"],
+                                            starts_at=datetime(2026, 11, 2, start_h + i), client_name="Катя", client_phone="0931234567")
+            orders.close_order(s, seed["actors"]["admin"], a.id, amount=50000, payment_method="cash")
+
+
+def test_favorite_master_after_three_visits(h, db, seed):
+    from mds.models import Client
+    from mds.services import bookings
+    _visits(db, seed, "m2", 2)
+    with db.session() as s:
+        cid = s.query(Client).one().id
+        assert bookings.favorite_master(s, cid) is None  # 2 візити — ще не улюблений
+    _visits(db, seed, "m2", 1, start_h=12)
+    with db.session() as s:
+        m, n = bookings.favorite_master(s, cid)
+        assert m.id == seed["m2"] and n == 3
+    h.send("📅 Записатися")
+    h.click_text("Стрижка")
+    labels = [b.text for b in h.session.buttons()]
+    assert labels[0].startswith("⭐ Ваш майстер Ірина")
+    assert "3 рази були в майстра Ірина" in h.session.texts()[-1]
+
+
+def test_favorite_master_respects_service_and_threshold_setting(db, seed):
+    from mds.models import Client
+    from mds.services import bookings, users as us
+    from mds.services.common import Actor as A, update_settings
+    _visits(db, seed, "m1", 2)
+    with db.session() as s:
+        cid = s.query(Client).one().id
+        update_settings(s, A.system(), {"favorite_master_visits": 2})
+        assert bookings.favorite_master(s, cid)[0].id == seed["m1"]
+        # Олена більше не робить манікюр → для манікюру не пропонуємо
+        us.update_user(s, seed["actors"]["director"], seed["m1"], {"service_ids": [seed["haircut"]]})
+        assert bookings.favorite_master(s, cid, seed["manicure"]) is None
+        assert bookings.favorite_master(s, cid, seed["haircut"])[0].id == seed["m1"]

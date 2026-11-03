@@ -546,3 +546,29 @@ def client_rebook(s: Session, actor: Actor, old_appt_id: int, starts_at: datetim
     old = get_appointment(s, actor, old_appt_id)  # перевіряє, що запис цього клієнта
     return create_appointment(s, actor, master_id=old.master_id, service_id=old.service_id,
                               starts_at=starts_at, client_id=old.client_id)
+
+
+# ------------------------------------------------------ улюблений майстер
+
+def favorite_master(s: Session, client_id: int, service_id: int | None = None) -> tuple[User, int] | None:
+    """Майстер, до якого клієнт приходив найчастіше (щонайменше N разів — налаштування
+    «favorite_master_visits», за замовч. 3). Якщо задано послугу — лише майстер, що її виконує."""
+    from sqlalchemy import func
+
+    from .users import masters_for_service
+
+    need = int(get_setting(s, "favorite_master_visits"))
+    rows = s.execute(
+        select(Appointment.master_id, func.count(Appointment.id).label("n"))
+        .where(Appointment.client_id == client_id, Appointment.status == ApptStatus.COMPLETED)
+        .group_by(Appointment.master_id)
+        .order_by(func.count(Appointment.id).desc())
+    ).all()
+    allowed = {m.id for m in masters_for_service(s, service_id)} if service_id else None
+    for master_id, n in rows:
+        if n < need:
+            break
+        m = s.get(User, master_id)
+        if m and m.is_active and m.role == Role.MASTER and (allowed is None or m.id in allowed):
+            return m, int(n)
+    return None

@@ -681,7 +681,15 @@ function apptForm({ appt = null, master_id = null, date = today(), time = "10:00
       if (digits.length < 9 || isMaster && false) { found.textContent = ""; return; }
       try {
         const list = await api.get("/api/clients?q=" + encodeURIComponent(digits.slice(-9)));
-        if (list.length === 1) { clientId = list[0].id; name.value = list[0].name; found.textContent = "Постійний клієнт: " + list[0].name; }
+        if (list.length === 1) {
+          clientId = list[0].id; name.value = list[0].name; found.textContent = "Постійний клієнт: " + list[0].name;
+          const card = await api.get(`/api/clients/${clientId}`).catch(() => null);
+          const fav = card?.favorite_master;
+          if (fav && !isMaster && masters.some((m) => m.id === fav.id)) {
+            if (!master_id) { mst.value = String(fav.id); loadSlots(); }
+            found.textContent = `Постійний клієнт: ${list[0].name} · ⭐ улюблений майстер — ${fav.full_name} (${fav.visits} візитів)`;
+          }
+        }
         else found.textContent = list.length ? `Знайдено ${list.length}` : "Новий клієнт";
       } catch (_) { found.textContent = ""; }
     }, 350);
@@ -734,6 +742,7 @@ async function clientSheet(id) {
     h("div", { class: "stack" },
       h("div", {}, h("a", { href: "tel:" + c.phone }, c.phone), c.telegram_linked ? h("span", { class: "chip", style: { marginLeft: "8px" } }, "Telegram") : null),
       h("div", { class: "muted" }, `Візитів: ${visits} · записів усього: ${c.history.length}`),
+      c.favorite_master ? h("div", { class: "info-row" }, icon("user"), "⭐ Улюблений майстер: ", h("b", {}, c.favorite_master.full_name), ` (${c.favorite_master.visits} візитів)`) : null,
       isMgr ? h("details", {}, h("summary", { class: "muted", style: { cursor: "pointer" } }, "Редагувати"),
         h("div", { class: "stack", style: { marginTop: "8px" } }, field("Ім'я", name), field("Телефон", phone), field("Нотатки", notes),
           h("button", { class: "btn gold", onclick: async () => {
@@ -1003,7 +1012,27 @@ function shiftReport(r) {
       h("div", { class: "sum-line" }, h("span", {}, "Загальна виручка"), h("b", {}, money(r.revenue))),
       Object.entries(r.by_payment || {}).map(([k, v]) => h("div", { class: "sum-line muted small" }, h("span", {}, PAY[k] || k), h("span", {}, money(v)))),
       h("div", { class: "sum-line" }, h("span", {}, "Заробіток майстра"), h("b", {}, money(r.master_earning))),
-      h("div", { class: "sum-line total" }, h("span", {}, "Сума до виплати"), h("span", {}, money(r.payout_due)))));
+      r.cash ? cashBlock(r) : h("div", { class: "sum-line total" }, h("span", {}, "Сума до виплати"), h("span", {}, money(r.payout_due)))));
+}
+
+// Розрахунок готівки після зміни: скільки майстер бере з каси, скільки лишає, скільки доплачує директор
+function cashBlock(r) {
+  const c = r.cash;
+  const line = (label, v, cls = "") => h("div", { class: "sum-line " + cls }, h("span", {}, label), h("b", {}, money(v)));
+  if (c.mode !== "take_from_till") {
+    return h("div", {}, h("div", { class: "divider" }),
+      line("Готівка від клієнтів — лишити в касі", c.from_clients),
+      h("div", { class: "sum-line total" }, h("span", {}, "Зарплату виплачує директор"), h("span", {}, money(r.payout_due))));
+  }
+  return h("div", {}, h("div", { class: "divider" }),
+    h("div", { class: "kpi-label", style: { margin: "4px 0 6px" } }, "Каса"),
+    line("Готівка від клієнтів", c.from_clients),
+    line("Картка / переказ (на рахунок салону)", c.noncash, "muted"),
+    line("💵 Майстер бере з каси (свій заробіток)", c.master_takes),
+    h("div", { class: "sum-line total" }, h("span", {}, "🏦 Залишити в касі"), h("span", {}, money(c.leave_in_till))),
+    c.director_pays > 0
+      ? h("div", { class: "sum-line total" }, h("span", {}, "💳 Директор доплачує на карту"), h("span", {}, money(c.director_pays)))
+      : h("div", { class: "sum-line muted small" }, h("span", {}, "Директору доплачувати нічого — заробіток отримано з каси"), h("span", {}, "")));
 }
 
 // ---------- Зміна (майстер)
@@ -1016,7 +1045,8 @@ VIEWS.shift = async (main) => {
       "Буде сформовано звіт, директор отримає його на підтвердження виплати.", "Закрити зміну", async () => {
         const sh = await run(() => api.post("/api/shifts/close"), "Зміну закрито");
         renderApp();
-        openSheet("Звіт зміни", shiftReport(sh.report));
+        // показати звіт після того, як закриється вікно підтвердження
+        setTimeout(() => openSheet("Звіт зміни", shiftReport(sh.report)), 60);
       }) }, icon("lock"), "Закрити зміну"));
   } else {
     main.append(h("div", { class: "card" }, emptyState("Зараз зміна не відкрита", "clock"),
@@ -1199,10 +1229,14 @@ VIEWS.shifts = async (main) => {
       h("div", { class: "row", style: { alignItems: "flex-start" } }, avatar(s.master_name),
         h("div", { class: "grow" }, h("b", {}, s.master_name),
           h("div", { class: "muted small" }, `${dmy(s.opened_at)} · ${hm(s.opened_at)}–${s.closed_at ? hm(s.closed_at) : ""}`)),
-        h("div", { class: "right" }, h("div", { class: "kpi-value" }, money(s.payout_due)), h("div", { class: "muted small" }, "до виплати"))),
+        h("div", { class: "right" }, h("div", { class: "kpi-value" }, money(s.payout_due)), h("div", { class: "muted small" }, r.cash?.mode === "take_from_till" ? "доплатити на карту" : "до виплати"))),
       h("div", { class: "row small" },
         h("span", { class: "chip plain" }, `Клієнтів: ${r.clients_count}`), h("span", { class: "chip plain" }, `Послуг: ${r.services_count}`),
         h("span", { class: "chip plain" }, `Виручка: ${money(r.revenue)}`), r.cancellations ? h("span", { class: "chip st-pending" }, `Скасувань: ${r.cancellations}`) : null),
+      r.cash ? h("div", { class: "row small" },
+        h("span", { class: "chip st-completed" }, `Заробіток: ${money(r.master_earning)}`),
+        r.cash.master_takes ? h("span", { class: "chip st-confirmed" }, `Взяв з каси: ${money(r.cash.master_takes)}`) : null,
+        h("span", { class: "chip st-in_progress" }, `У касі лишилось: ${money(r.cash.leave_in_till)}`)) : null,
       h("div", { class: "row" },
         h("button", { class: "btn grow", onclick: () => openShift(s.id) }, icon("receipt", "sm"), "Звіт"),
         h("button", { class: "btn primary grow", onclick: () => payoutForm(s) }, icon("banknote", "sm"), "Виплатити"))));
@@ -1228,7 +1262,7 @@ VIEWS.shifts = async (main) => {
     const mst = select(state.masters.map((m) => [m.id, m.full_name]), shift?.master_id);
     if (shift) mst.disabled = true;
     const amount = h("input", { inputmode: "decimal", value: shift ? kopToInput(shift.payout_due) : "" });
-    const method = select(Object.entries(PAY), "cash");
+    const method = select(Object.entries(PAY), shift?.report?.cash?.mode === "take_from_till" ? "card" : "cash");
     const note = h("input", { placeholder: shift ? "" : "Аванс, премія…" });
     const btn = h("button", { class: "btn gold big", onclick: async () => {
       btn.disabled = true;
@@ -1695,6 +1729,8 @@ VIEWS.settings = async (main) => {
   const horizon = h("input", { type: "number", min: 1, value: s.booking_horizon_days });
   const lead = h("input", { type: "number", min: 0, value: s.booking_min_lead_min });
   const auto = h("input", { type: "checkbox", checked: s.telegram_auto_confirm });
+  const takesCash = h("input", { type: "checkbox", checked: s.master_takes_cash !== false });
+  const favVisits = h("input", { type: "number", min: 1, max: 50, value: s.favorite_master_visits || 3 });
   const staffCode = h("input", { inputmode: "numeric", maxlength: 8, value: s.bot_staff_code || "" });
   const addr = h("input", { value: s.salon_address || "" });
   const phone = h("input", { value: s.salon_phone || "", type: "tel" });
@@ -1709,10 +1745,12 @@ VIEWS.settings = async (main) => {
   main.append(topbar("Налаштування"), h("div", { class: "grid two" },
     h("div", { class: "card stack" }, h("h3", {}, "Оплата майстрів"),
       field("Стандартний відсоток майстра, %", share), field("Облік матеріалів за замовчуванням", mode),
+      h("label", { class: "row" }, takesCash, "Після зміни майстер бере заробіток з готівки в касі (решту доплачує директор)"),
       h("p", { class: "muted small" }, "Індивідуальні умови задаються в картці майстра (розділ «Персонал»). Зміни діють для нових замовлень; закриті замовлення зберігають умови на момент закриття.")),
     h("div", { class: "card stack" }, h("h3", {}, "Запис клієнтів"), field("Назва салону", name),
       h("div", { class: "form-grid" }, field("Крок слотів, хв", step), field("Запис наперед, днів", horizon), field("Мін. хв до запису (бот)", lead)),
-      h("label", { class: "row" }, auto, "Записи з Telegram одразу підтверджені")),
+      h("label", { class: "row" }, auto, "Записи з Telegram одразу підтверджені"),
+      field("Улюблений майстер клієнта — після скількох візитів", favVisits)),
     h("div", { class: "card stack" }, h("h3", {}, "Telegram-бот"),
       field("Код входу в розділ «Для майстрів»", staffCode),
       h("p", { class: "muted small" }, "Після коду кожен обирає себе й вводить особистий PIN (задається в розділі «Персонал»)."),
@@ -1726,6 +1764,7 @@ VIEWS.settings = async (main) => {
       const body = {
         salon_name: name.value, default_share_bp: Math.round(parseFloat(share.value) * 100), default_materials_mode: mode.value,
         slot_step_min: +step.value, booking_horizon_days: +horizon.value, booking_min_lead_min: +lead.value, telegram_auto_confirm: auto.checked,
+        master_takes_cash: takesCash.checked, favorite_master_visits: Math.max(1, parseInt(favVisits.value || "3", 10)),
         bot_staff_code: staffCode.value.trim(), salon_address: addr.value.trim(), salon_phone: phone.value.trim(), salon_instagram: insta.value.trim(),
         schedule: Object.fromEntries(days.map((d) => [String(d.i), d.on.checked ? [d.a.value, d.b.value] : null])),
       };

@@ -1,10 +1,10 @@
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 import pytest
 
 from mds import clock
 from mds.errors import Conflict, Forbidden, ValidationError
-from mds.models import Appointment, ApptStatus, LedgerEntry, Order, ShiftStatus
+from mds.models import Appointment, ApptStatus, LedgerEntry, Order, Payout, Shift, ShiftStatus
 from mds.services import analytics, bookings, expenses, orders, users
 
 DAY = date(2026, 11, 2)
@@ -87,8 +87,16 @@ def test_cannot_close_cancelled_or_foreign(db, seed):
         assert s.get(Appointment, a.id).status == ApptStatus.CONFIRMED
 
 
+def _director_pays_all(db):
+    """Режим «усю зарплату виплачує директор» (майстер не бере з каси)."""
+    from mds.services.common import Actor, set_setting
+    with db.session() as s:
+        set_setting(s, Actor.system(), "master_takes_cash", False)
+
+
 def test_shift_close_report_and_payout(db, seed):
     m1, d, adm = seed["actors"]["m1"], seed["actors"]["director"], seed["actors"]["admin"]
+    _director_pays_all(db)
     with db.session() as s:
         a = mk(s, seed, h=9)
         b = mk(s, seed, service="haircut", h=11, phone="0502223344")
@@ -122,6 +130,7 @@ def test_shift_close_report_and_payout(db, seed):
 
 def test_director_correction_reverses_and_updates_balance(db, seed):
     m1, d = seed["actors"]["m1"], seed["actors"]["director"]
+    _director_pays_all(db)
     with db.session() as s:
         a = mk(s, seed)
         o = orders.close_order(s, m1, a.id, amount=60000, payment_method="cash")
@@ -215,3 +224,44 @@ def test_login_lockout(db, seed):
     with db.session() as s:
         u, err = users.authenticate(s, "olena", "Master123")
         assert u is not None
+
+
+def test_master_takes_earning_from_till_rest_paid_by_director(db, seed):
+    """12 стрижок по 500 грн: 7 готівкою, 5 карткою. Заробіток 50% = 3000 грн.
+    Готівки 3500 → майстер бере 3000 з каси, 500 лишає; директору доплачувати 0."""
+    m1 = seed["actors"]["m1"]
+    with db.session() as s:
+        for i in range(12):
+            a = bookings.create_appointment(s, seed["actors"]["admin"], master_id=seed["m1"], service_id=seed["haircut"],
+                                            starts_at=datetime(2026, 11, 2, 8) + timedelta(hours=i), client_name=f"К{i}",
+                                            client_phone=f"05000000{i:02d}")
+            orders.close_order(s, m1, a.id, amount=50000, payment_method="cash" if i < 7 else "card")
+        sh = orders.close_shift(s, m1, seed["m1"])
+        c = sh.report["cash"]
+        assert sh.report["master_earning"] == 300000
+        assert c == {"from_clients": 350000, "noncash": 250000, "master_takes": 300000, "leave_in_till": 50000,
+                     "director_pays": 0, "mode": "take_from_till"}
+        assert sh.payout_due == 0 and sh.status == ShiftStatus.PAID
+    with db.session() as s:
+        assert orders.master_balance(s, seed["m1"]) == {"accrued": 300000, "paid": 300000, "balance": 0}
+        p = s.query(Payout).one()
+        assert p.cash_shift_id == sh.id and p.shift_id is None and p.method == "cash"
+
+
+def test_not_enough_cash_director_pays_difference(db, seed):
+    """Клієнти платили переважно карткою: готівки 500, заробіток 1500 → з каси 500, у касі 0, директор доплачує 1000."""
+    m1, d = seed["actors"]["m1"], seed["actors"]["director"]
+    with db.session() as s:
+        for i, method in enumerate(["cash", "card", "transfer", "card", "card", "card"]):
+            a = bookings.create_appointment(s, seed["actors"]["admin"], master_id=seed["m1"], service_id=seed["haircut"],
+                                            starts_at=datetime(2026, 11, 2, 9 + i), client_name=f"К{i}", client_phone=f"05000001{i:02d}")
+            orders.close_order(s, m1, a.id, amount=50000, payment_method=method)
+        sh = orders.close_shift(s, m1, seed["m1"])
+        c = sh.report["cash"]
+        assert (c["from_clients"], c["master_takes"], c["leave_in_till"], c["director_pays"]) == (50000, 50000, 0, 100000)
+        assert sh.payout_due == 100000 and sh.status == ShiftStatus.CLOSED
+        orders.confirm_payout(s, d, master_id=seed["m1"], amount=100000, shift_id=sh.id, method="card")
+    with db.session() as s:
+        assert orders.master_balance(s, seed["m1"])["balance"] == 0
+        pub = orders.shift_public(s, s.get(Shift, sh.id))
+        assert pub["cash_payout"]["amount"] == 50000 and pub["payout"]["amount"] == 100000

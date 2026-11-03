@@ -305,6 +305,8 @@ class Payout(Base):
     master_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
     # unique: одна виплата на зміну (захист від подвійної виплати)
     shift_id: Mapped[int | None] = mapped_column(ForeignKey("shifts.id"), unique=True)
+    # майстер узяв свій заробіток із готівки в касі при закритті цієї зміни
+    cash_shift_id: Mapped[int | None] = mapped_column(ForeignKey("shifts.id"))
     amount: Mapped[int] = mapped_column(Integer)
     method: Mapped[str] = mapped_column(String(16), default=PaymentMethod.CASH)
     note: Mapped[str | None] = mapped_column(Text)

@@ -75,4 +75,6 @@ def get_client(client_id: int, actor: Actor = Depends(get_actor), s: Session = D
         history = [a for a in history if a.master_id == actor.user_id]
         if not history:
             raise NotFound(f"Клієнта #{client_id} не знайдено")
-    return {**catalog.client_public(c), "history": [bookings.appt_public(a) for a in history]}
+    fav = bookings.favorite_master(s, c.id)
+    return {**catalog.client_public(c), "history": [bookings.appt_public(a) for a in history],
+            "favorite_master": {"id": fav[0].id, "full_name": fav[0].full_name, "visits": fav[1]} if fav else None}
