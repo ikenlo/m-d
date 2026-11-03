@@ -130,3 +130,21 @@ def test_stock_and_schedule_api(client_api):
     g = c.get("/api/schedule?date_from=2026-11-02&date_to=2026-11-08", headers=d).json()
     assert len(g["days"]) == 7 and g["cells"][str(ids["m1"])]["2026-11-05"]["source"] == "day"
     assert c.delete(f"/api/schedule/{ids['m1']}/2026-11-05", headers=d).json() == {"ok": True}
+
+
+def test_material_validation_no_server_errors(db, seed):
+    d = seed["actors"]["director"]
+    with db.session() as s:
+        m = catalog.create_material(s, d, {"name": "Igora Royal", "tone": "6-0", "unit": "г", "pack_name": "туба",
+                                           "pack_size": 60})
+        assert m.unit_cost == 0  # ціну можна вказати пізніше
+        for bad in ({"name": ""}, {"unit": ""}, {"pack_name": " "}, {"min_stock": -1}):
+            with pytest.raises(ValidationError):
+                catalog.update_material(s, d, m.id, bad)
+        for q in (1e300, float("inf"), "abc"):
+            with pytest.raises(ValidationError):
+                stock.receive(s, d, m.id, q)
+        with pytest.raises(ValidationError):
+            stock.adjust(s, d, m.id, 1e300)
+        stock.receive(s, d, m.id, "1,5")
+        assert m.stock_milli == 1500
