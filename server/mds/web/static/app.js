@@ -471,6 +471,11 @@ function renderApp() {
     return h("a", { href: "#/" + id, class: active ? "active" : "" }, icon(it[1]), it[2]);
   }));
   const main = h("main", { class: "main" });
+  // телефон: закріплена шапка з суцільним фоном — вміст прокручується під нею, а не під годинником iPhone
+  const title = route === "more" ? "Меню" : (items.find((i) => i[0] === route) || [])[2] || "";
+  const mbar = h("header", { class: "mbar" }, h("div", { class: "brand-mark" }, "M&D"), h("b", { class: "grow" }, title),
+    h("button", { class: "icon-btn", "aria-label": "Повідомити про помилку", onclick: bugReportForm }, icon("bug")));
+  main.append(mbar);
   document.getElementById("root").replaceChildren(h("div", { class: "app" }, sidebar, main), tabbar);
   closeSheet();
   const view = route === "more" ? viewMore : VIEWS[route];
@@ -813,7 +818,7 @@ async function pendingBlock(onChange) {
       h("div", { class: "grow", style: { minWidth: "180px" } },
         h("div", {}, h("b", {}, a.client.name), " · ", h("a", { href: "tel:" + a.client.phone }, a.client.phone)),
         h("div", { class: "muted small" }, a.service_name, isMgr ? ` · ${a.master_name}` : "", a.source === "telegram" ? " · з Telegram" : ""),
-        a.awaiting_client ? h("span", { class: "chip st-in_progress", style: { marginTop: "4px" } }, "запропоновано інший час — чекаємо відповіді клієнта") : null),
+        a.awaiting_client ? h("span", { class: "chip st-in_progress", style: { marginTop: "4px", whiteSpace: "normal" } }, "запропоновано інший час — чекаємо відповіді клієнта") : null),
       h("div", { class: "row" },
         h("button", { class: "btn sm primary", onclick: async () => { await run(() => api.post(`/api/appointments/${a.id}/status`, { status: "confirmed" }), "Запис підтверджено"); onChange(); } }, icon("ok", "sm"), "Підтвердити"),
         h("button", { class: "btn sm", onclick: () => proposeForm(a, onChange) }, icon("clock", "sm"), "Інший час"),
@@ -839,7 +844,7 @@ VIEWS.today = async (main) => {
       h("div", { class: "kpi-value", style: { fontSize: "18px" } }, shift ? "Відкрита з " + hm(shift.opened_at) : "Не відкрита"),
       h("a", { href: "#/shift", class: "small" }, shift ? "Закрити зміну →" : "Деталі →"))));
   const pend = await pendingBlock(reload);
-  if (pend) main.insertBefore(pend, main.children[1]);
+  if (pend) main.querySelector(".topbar").after(pend);
   if (!active.length) { main.append(h("div", { class: "card" }, emptyState("На сьогодні записів немає", "calendar"))); return; }
   for (const a of active) {
     const done = a.status === "completed";
