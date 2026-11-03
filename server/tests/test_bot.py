@@ -701,3 +701,39 @@ def test_favorite_master_respects_service_and_threshold_setting(db, seed):
         us.update_user(s, seed["actors"]["director"], seed["m1"], {"service_ids": [seed["haircut"]]})
         assert bookings.favorite_master(s, cid, seed["manicure"]) is None
         assert bookings.favorite_master(s, cid, seed["haircut"])[0].id == seed["m1"]
+
+
+class _NotModifiedSession(FakeSession):
+    """Telegram відповідає «message is not modified» на будь-яке редагування."""
+
+    async def make_request(self, bot, method, timeout=None):
+        from aiogram.exceptions import TelegramBadRequest
+        if isinstance(method, (EditMessageText, EditMessageReplyMarkup)):
+            self.calls.append(method)
+            raise TelegramBadRequest(method=method, message="Bad Request: message is not modified")
+        return await super().make_request(bot, method, timeout)
+
+
+class _BrokenSession(FakeSession):
+    async def make_request(self, bot, method, timeout=None):
+        if isinstance(method, EditMessageText):
+            self.calls.append(method)
+            raise RuntimeError("щось зламалося")
+        return await super().make_request(bot, method, timeout)
+
+
+def test_same_screen_twice_does_not_hang_button(db, seed):
+    h = BotHarness(db)
+    h.session = _NotModifiedSession()
+    h.bot = make_bot("123456:TEST-TOKEN", session=h.session)
+    h.click("book")  # не кидає виняток
+    answers = [c for c in h.session.calls if isinstance(c, AnswerCallbackQuery)]
+    assert answers, "кнопка має отримати відповідь, щоб не крутилася"
+
+
+def test_unexpected_error_answers_user(db, seed):
+    h = BotHarness(db)
+    h.session = _BrokenSession()
+    h.bot = make_bot("123456:TEST-TOKEN", session=h.session)
+    h.click("book")
+    assert any("Щось пішло не так" in (a or "") for a in h.session.alerts())

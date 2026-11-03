@@ -14,7 +14,8 @@ from aiogram.client.session.aiohttp import AiohttpSession
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.fsm.storage.memory import MemoryStorage
-from aiogram.types import FSInputFile, InlineKeyboardButton, InlineKeyboardMarkup
+from aiogram.exceptions import TelegramBadRequest
+from aiogram.types import ErrorEvent, FSInputFile, InlineKeyboardButton, InlineKeyboardMarkup
 
 from ..db import Database
 from ..services import notifications
@@ -24,9 +25,35 @@ from .staff import StaffSessions
 log = logging.getLogger("mds.bot")
 
 
+async def on_error(event: ErrorEvent) -> bool:
+    """Помилки обробників не повинні «вішати» кнопки в Telegram.
+
+    - «message is not modified» (повторне натискання / той самий екран) — тихо ігноруємо;
+    - інше — пишемо в журнал і відповідаємо на натискання, щоб кнопка не крутилася."""
+    exc = event.exception
+    cb = event.update.callback_query
+    if isinstance(exc, TelegramBadRequest) and "message is not modified" in str(exc):
+        if cb:
+            try:
+                await cb.answer()
+            except Exception:  # noqa: BLE001 — уже відповіли
+                pass
+        return True
+    log.exception("Помилка в обробнику бота (update %s)", event.update.update_id, exc_info=exc)
+    try:
+        if cb:
+            await cb.answer("Щось пішло не так. Спробуйте ще раз або почніть з /start", show_alert=True)
+        elif event.update.message:
+            await event.update.message.answer("Щось пішло не так. Спробуйте ще раз або почніть з /start")
+    except Exception:  # noqa: BLE001
+        pass
+    return True
+
+
 def build_dispatcher(db: Database) -> Dispatcher:
     dp = Dispatcher(storage=MemoryStorage(), db=db, staff=StaffSessions())
     dp.include_router(build_router())
+    dp.errors.register(on_error)
     return dp
 
 
