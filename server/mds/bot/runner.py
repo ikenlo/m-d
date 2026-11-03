@@ -4,8 +4,13 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
+import ssl
 
+from aiohttp import ClientSession
 from aiogram import Bot, Dispatcher
+from aiogram.__meta__ import __version__ as aiogram_version
+from aiogram.client.session.aiohttp import AiohttpSession
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.fsm.storage.memory import MemoryStorage
@@ -23,7 +28,31 @@ def build_dispatcher(db: Database) -> Dispatcher:
     return dp
 
 
+class EnvAwareSession(AiohttpSession):
+    """HTTP-сесія бота, що враховує стандартні налаштування мережі сервера:
+    HTTPS_PROXY / NO_PROXY (корпоративний проксі) і SSL_CERT_FILE (власний CA)."""
+
+    def __init__(self, **kw) -> None:
+        super().__init__(**kw)
+        cafile = os.getenv("SSL_CERT_FILE")
+        if cafile and os.path.exists(cafile):
+            self._connector_init["ssl"] = ssl.create_default_context(cafile=cafile)
+
+    async def create_session(self) -> ClientSession:
+        if self._should_reset_connector:
+            await self.close()
+        if self._session is None or self._session.closed:
+            self._session = ClientSession(
+                connector=self._connector_type(**self._connector_init),
+                headers={"User-Agent": f"mds-connect aiogram/{aiogram_version}"},
+                trust_env=True,
+            )
+            self._should_reset_connector = False
+        return self._session
+
+
 def make_bot(token: str, **kw) -> Bot:
+    kw.setdefault("session", EnvAwareSession())
     return Bot(token, default=DefaultBotProperties(parse_mode=ParseMode.HTML), **kw)
 
 
@@ -51,13 +80,23 @@ async def outbox_loop(bot: Bot, db: Database, interval: float = 3.0) -> None:
         await asyncio.sleep(interval)
 
 
-async def run_bot(token: str, db: Database) -> None:
-    bot = make_bot(token)
-    dp = build_dispatcher(db)
-    sender = asyncio.create_task(outbox_loop(bot, db))
-    try:
-        log.info("Telegram-бот запущено")
-        await dp.start_polling(bot, handle_signals=False)
-    finally:
-        sender.cancel()
-        await bot.session.close()
+async def run_bot(token: str, db: Database, *, retry_delay: float = 15.0) -> None:
+    """Запуск бота з автоматичним перезапуском: помилка мережі не зупиняє бота назавжди
+    і обов'язково потрапляє в журнал (раніше падіння фонової задачі було непомітним)."""
+    while True:
+        bot = make_bot(token)
+        dp = build_dispatcher(db)
+        sender = asyncio.create_task(outbox_loop(bot, db))
+        try:
+            me = await bot.get_me()
+            log.info("Telegram-бот @%s запущено", me.username)
+            await dp.start_polling(bot, handle_signals=False)
+            return
+        except asyncio.CancelledError:
+            raise
+        except Exception:  # noqa: BLE001
+            log.exception("Telegram-бот зупинився з помилкою; перезапуск через %.0f с", retry_delay)
+        finally:
+            sender.cancel()
+            await bot.session.close()
+        await asyncio.sleep(retry_delay)

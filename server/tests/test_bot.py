@@ -204,3 +204,23 @@ def test_staff_link_and_today(h, db, seed):
     h2.send("/today")
     assert "лише персоналу" in h2.session.texts()[-1]
 
+
+
+def test_env_aware_session_uses_proxy_env_and_custom_ca(monkeypatch):
+    """Бот має працювати за корпоративним проксі зі власним сертифікатом (HTTPS_PROXY, SSL_CERT_FILE)."""
+    import certifi
+
+    from mds.bot.runner import EnvAwareSession
+
+    monkeypatch.setenv("SSL_CERT_FILE", certifi.where())
+    s = EnvAwareSession()
+
+    async def check():
+        cs = await s.create_session()
+        try:
+            return cs.trust_env
+        finally:
+            await s.close()
+
+    assert asyncio.run(check()) is True
+    assert s._connector_init["ssl"] is not None
