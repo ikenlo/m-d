@@ -72,7 +72,7 @@ class ServicePatch(BaseModel):
 
 class MaterialIn(BaseModel):
     name: str
-    unit_cost: int  # копійки за упаковку
+    unit_cost: int | None = 0  # копійки за упаковку (можна вказати пізніше)
     unit: str = "шт"  # базова одиниця обліку: г / мл / шт
     tone: str | None = None
     category: str | None = None

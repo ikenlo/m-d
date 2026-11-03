@@ -68,7 +68,7 @@ const money = (k) => {
   return v.toLocaleString("uk-UA", { minimumFractionDigits: k % 100 ? 2 : 0, maximumFractionDigits: 2 }) + " ₴";
 };
 const toKop = (s) => {
-  const n = parseFloat(String(s).replace(/\s/g, "").replace(",", "."));
+  const n = parseFloat(String(s).replace(/\s/g, "").replace(",", ".").replace(/[^\d.\-]/g, ""));
   return Number.isFinite(n) ? Math.round(n * 100) : NaN;
 };
 const priceText = (s) => (s.price_from ? "від " : "") + money(s.price);
@@ -1589,14 +1589,20 @@ function materialForm(m, list, onSaved) {
   const name = h("input", { value: m?.name || "", placeholder: "Напр. Igora Royal", list: "dl-mname" });
   const tone = h("input", { value: m?.tone || "", placeholder: "Напр. 7-1 (для фарб)" });
   const cat = h("input", { value: m?.category || "", placeholder: "Фарби, Окисники, Догляд…", list: "dl-mcat" });
-  const unit = select([["г", "грами (г)"], ["мл", "мілілітри (мл)"], ["шт", "штуки (шт)"]], m?.unit || "г");
+  const units = [["г", "грами (г)"], ["мл", "мілілітри (мл)"], ["шт", "штуки (шт)"]];
+  if (m && !units.some(([u]) => u === m.unit)) units.push([m.unit, m.unit]);
+  const unit = select(units, m?.unit || "г");
   const packName = h("input", { value: m?.pack_name || "туба", placeholder: "туба, банка, шт" });
   const packSize = h("input", { type: "number", min: 1, step: 1, value: m?.pack_size || 60 });
-  const cost = h("input", { inputmode: "decimal", value: m ? kopToInput(m.unit_cost) : "", placeholder: "ціна однієї упаковки" });
+  const cost = h("input", { inputmode: "decimal", value: m ? kopToInput(m.unit_cost) : "", placeholder: "можна пізніше" });
   const min = h("input", { type: "number", min: 0, step: "any", value: m?.min_stock ?? "", placeholder: "напр. 60" });
   const initial = h("input", { type: "number", min: 0, step: "any", placeholder: "у г / мл / шт" });
   const active = h("input", { type: "checkbox", checked: m ? m.is_active : true });
-  const syncUnit = () => { if (unit.value === "шт") { packSize.value = 1; packName.value = "шт"; } };
+  const minField = field(`Мінімальний залишок (${m?.unit || "г"})`, min);
+  const syncUnit = () => {
+    if (unit.value === "шт") { packSize.value = 1; packName.value = "шт"; } else if (packName.value === "шт") { packName.value = unit.value === "мл" ? "банка" : "туба"; }
+    minField.querySelector("label, .label, span").textContent = `Мінімальний залишок (${unit.value})`;
+  };
   unit.addEventListener("change", syncUnit);
   openSheet(m ? m.display_name : "Новий матеріал", h("div", { class: "stack" },
     h("datalist", { id: "dl-mname" }, uniq("name").map((x) => h("option", { value: x }))),
@@ -1607,12 +1613,15 @@ function materialForm(m, list, onSaved) {
       "Облік ведеться в ", h("b", {}, "г / мл / шт"), ". Упаковка — як купуєте: напр. туба 60 г. ",
       "Майстер списує або цілу тубу, або частину (½ туби, 20 г).")),
     h("div", { class: "form-grid" }, field("Одиниця обліку", unit), field("Упаковка (назва)", packName), field("В упаковці (г / мл / шт)", packSize)),
-    h("div", { class: "form-grid" }, field("Ціна упаковки, ₴", cost), field("Мінімальний залишок", min), m ? null : field("Є зараз на складі", initial)),
+    h("div", { class: "form-grid" }, field("Ціна упаковки, ₴", cost), minField, m ? null : field("Є зараз на складі", initial)),
     m ? h("label", { class: "row" }, active, "Використовується") : null,
     h("button", { class: "btn primary big", onclick: async () => {
+      if (!name.value.trim()) return toast("Вкажіть назву матеріалу", true);
+      const price = cost.value.trim() ? toKop(cost.value) : 0;
+      if (!Number.isFinite(price) || price < 0) return toast("Ціна упаковки — число, напр. 320", true);
       const body = { name: name.value.trim(), tone: tone.value.trim() || null, category: cat.value.trim() || null, unit: unit.value,
         pack_name: packName.value.trim() || unit.value, pack_size: Math.max(1, parseInt(packSize.value || "1", 10)),
-        unit_cost: toKop(cost.value), min_stock: min.value === "" ? null : parseFloat(min.value) };
+        unit_cost: price, min_stock: min.value === "" ? null : parseFloat(min.value) };
       if (!m && initial.value) body.stock = parseFloat(initial.value);
       if (m) body.is_active = active.checked;
       await run(() => (m ? api.patch("/api/materials/" + m.id, body) : api.post("/api/materials", body)), "Збережено");
@@ -1626,22 +1635,28 @@ function stockMoveForm(m, kind, onSaved) {
   const cost = h("input", { inputmode: "decimal", placeholder: "за накладною, ₴" });
   const asExp = h("input", { type: "checkbox", checked: state.user.role === "director" });
   const note = h("input", { placeholder: kind === "writeoff" ? "Обов'язково: чому списуємо" : "Примітка" });
-  if (m.pack_size > 1) packs.addEventListener("input", () => { qty.value = packs.value ? +(parseFloat(packs.value) * m.pack_size).toFixed(3) : ""; });
+  if (m.pack_size > 1) {
+    packs.addEventListener("input", () => { qty.value = packs.value ? +(parseFloat(packs.value) * m.pack_size).toFixed(3) : ""; });
+    qty.addEventListener("input", () => { packs.value = qty.value ? +(parseFloat(qty.value) / m.pack_size).toFixed(2) : ""; });
+    if (kind === "adjust") packs.value = +(m.stock / m.pack_size).toFixed(2);
+  }
   const title = { receipt: "Прихід", adjust: "Інвентаризація", writeoff: "Списання" }[kind];
   openSheet(`${title}: ${m.display_name}`, h("div", { class: "stack" },
     h("div", { class: "muted" }, "Зараз на складі: ", h("b", {}, fmtQty(m, m.stock))),
-    kind === "adjust" ? field(`Фактично є (${m.unit})`, qty) :
-      h("div", { class: "form-grid" }, m.pack_size > 1 ? field(`Кількість (${m.pack_name})`, packs) : null, field(`Кількість (${m.unit})`, qty)),
-    kind === "receipt" ? field("Сума закупівлі, ₴ (необов'язково)", cost) : null,
+    h("div", { class: "form-grid" }, m.pack_size > 1 ? field(`${kind === "adjust" ? "Фактично є" : "Кількість"} (${m.pack_name})`, packs) : null,
+      field(`${kind === "adjust" ? "Фактично є" : "Кількість"} (${m.unit})`, qty)),
+    kind === "receipt" ? field("Сума закупівлі, ₴ (порожньо — за ціною упаковки)", cost) : null,
     kind === "receipt" && state.user.role === "director" ? h("label", { class: "row" }, asExp, "Записати у витрати «Закупівля матеріалів»") : null,
     field("Примітка", note),
     h("button", { class: "btn primary big", onclick: async () => {
-      const v = parseFloat(qty.value);
+      const v = parseFloat(String(qty.value).replace(",", "."));
       if (!(v >= 0)) return toast("Вкажіть кількість", true);
+      if (kind !== "adjust" && !(v > 0)) return toast("Кількість має бути більшою за 0", true);
+      if (kind === "writeoff" && !note.value.trim()) return toast("Вкажіть причину списання", true);
       const url = `/api/stock/${m.id}/` + (kind === "adjust" ? "adjust" : kind);
       const body = kind === "adjust" ? { actual: v, note: note.value || null }
         : kind === "writeoff" ? { qty: v, note: note.value }
-          : { qty: v, cost: cost.value ? toKop(cost.value) : null, as_expense: asExp.checked && !!cost.value, note: note.value || null };
+          : { qty: v, cost: cost.value ? toKop(cost.value) : null, as_expense: asExp.checked, note: note.value || null };
       await run(() => api.post(url, body), "Склад оновлено");
       closeSheet(); onSaved();
     } }, title)));
@@ -1696,11 +1711,11 @@ VIEWS.stock = async (main) => {
             h("td", { class: "muted" }, m.category || ""),
             h("td", { class: "num" }, h("span", {}, h("b", { class: m.stock < 0 ? "neg" : "" }, fmtQty(m, m.stock)), m.low ? h("span", { class: "chip st-pending", style: { marginLeft: "8px" } }, "мало") : null)),
             h("td", { class: "num" }, h("span", {}, money(m.unit_cost), h("span", { class: "muted small" }, " / " + m.pack_name))),
-            canEdit ? h("td", { class: "right", style: { whiteSpace: "nowrap" } },
-              h("button", { class: "btn sm", onclick: () => stockMoveForm(m, "receipt", refresh) }, icon("plus", "sm"), "Прихід"), " ",
-              h("button", { class: "btn sm", onclick: () => stockMoveForm(m, "adjust", refresh) }, "Інвентаризація"), " ",
-              h("button", { class: "btn sm ghost", title: "Списати (зіпсовано тощо)", onclick: () => stockMoveForm(m, "writeoff", refresh) }, icon("trash", "sm")), " ",
-              h("button", { class: "btn sm ghost", title: "Редагувати", onclick: () => materialForm(m, list, refresh) }, icon("edit", "sm"))) : null)),
+            canEdit ? h("td", { class: "right" }, h("div", { class: "stock-actions" },
+              h("button", { class: "btn sm", onclick: () => stockMoveForm(m, "receipt", refresh) }, icon("plus", "sm"), "Прихід"),
+              h("button", { class: "btn sm", onclick: () => stockMoveForm(m, "adjust", refresh) }, "Інвентаризація"),
+              h("button", { class: "btn sm ghost", title: "Списати (зіпсовано, прострочено)", onclick: () => stockMoveForm(m, "writeoff", refresh) }, "Списати"),
+              h("button", { class: "btn sm ghost", title: "Редагувати", "aria-label": "Редагувати", onclick: () => materialForm(m, list, refresh) }, icon("edit", "sm")))) : null)),
         ]))) : h("div", { class: "card" }, emptyState("Склад порожній. Додайте матеріали й фарби кнопкою «+ Матеріал»", "box")));
   }
   draw();

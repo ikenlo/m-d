@@ -16,11 +16,16 @@ from ..models import Material, Order, Role, StockMove
 from .common import Actor, audit, get_or_404
 
 
+MAX_MILLI = 10**12  # 1 000 000 000 г / мл / шт — запобіжник від помилкового введення
+
+
 def to_milli(qty) -> int:
     try:
-        v = round(float(str(qty).replace(",", ".")) * 1000)
-    except (TypeError, ValueError):
+        v = round(float(str(qty).replace(",", ".").replace(" ", "")) * 1000)
+    except (TypeError, ValueError, OverflowError):
         raise ValidationError("Невірна кількість") from None
+    if abs(v) > MAX_MILLI:
+        raise ValidationError("Завелика кількість")
     return v
 
 

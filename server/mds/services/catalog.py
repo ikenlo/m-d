@@ -127,10 +127,16 @@ def _check_material(data: dict, creating: bool) -> dict:
     for k in ("name", "tone", "category", "unit", "pack_name"):
         if k in out and isinstance(out[k], str):
             out[k] = out[k].strip() or None
-    if creating and not out.get("name"):
+    if (creating or "name" in out) and not out.get("name"):
         raise ValidationError("Вкажіть назву матеріалу")
-    if "unit_cost" in out and (out["unit_cost"] is None or int(out["unit_cost"]) < 0):
-        raise ValidationError("Вкажіть ціну упаковки")
+    for k, label in (("unit", "одиницю обліку"), ("pack_name", "назву упаковки")):
+        if not creating and k in out and not out[k]:
+            raise ValidationError(f"Вкажіть {label}")
+    if "unit_cost" in out:
+        if out["unit_cost"] is None:
+            out["unit_cost"] = 0
+        if int(out["unit_cost"]) < 0:
+            raise ValidationError("Ціна упаковки не може бути від'ємною")
     if "pack_size" in out:
         out["pack_size"] = int(out["pack_size"] or 1)
         if out["pack_size"] <= 0:
@@ -142,15 +148,21 @@ def _check_material(data: dict, creating: bool) -> dict:
         out["pack_name"] = out["pack_name"] or "шт"
     if "min_stock" in data:
         v = data["min_stock"]
-        out["min_stock_milli"] = None if v in (None, "") else round(float(v) * 1000)
+        if v in (None, ""):
+            out["min_stock_milli"] = None
+        else:
+            from .stock import to_milli
+
+            out["min_stock_milli"] = to_milli(v)
+            if out["min_stock_milli"] < 0:
+                raise ValidationError("Мінімальний залишок не може бути від'ємним")
     return out
 
 
 def create_material(s: Session, actor: Actor, data: dict) -> Material:
     actor.require(Role.DIRECTOR, Role.ADMIN)
     vals = _check_material(data, creating=True)
-    if "unit_cost" not in vals:
-        raise ValidationError("Вкажіть ціну упаковки")
+    vals.setdefault("unit_cost", 0)  # ціну можна вказати пізніше
     m = Material(**vals)
     s.add(m)
     s.flush()
