@@ -430,11 +430,17 @@ async function loadRefs() {
   state.settings = settings;
 }
 
+function setThemeColor(c) {
+  const m = document.querySelector('meta[name="theme-color"]');
+  if (m) m.setAttribute("content", c);
+}
+
 function renderLogin() {
   window.onhashchange = null;
+  setThemeColor("#0b1f19"); // темна смужка статусу над темним екраном входу
   const user = h("input", { autocomplete: "username", autocapitalize: "none", placeholder: "Логін", id: "login-user" });
   const pass = h("input", { type: "password", autocomplete: "current-password", placeholder: "Пароль", id: "login-pass" });
-  const btn = h("button", { class: "btn primary big", type: "submit" }, "Увійти");
+  const btn = h("button", { class: "btn login-btn big", type: "submit" }, "Увійти");
   const form = h("form", { class: "stack", onsubmit: async (e) => {
     e.preventDefault();
     btn.disabled = true;
@@ -451,24 +457,17 @@ function renderLogin() {
   } }, field("Логін", user), field("Пароль", pass), btn);
   document.getElementById("root").replaceChildren(
     h("div", { class: "login" },
-      h("div", { class: "login-brand" },
-        h("div", {},
-          h("div", { class: "brand", style: { padding: 0 } }, h("div", { class: "brand-mark" }, "M&D"),
-            h("div", {}, h("div", { class: "brand-name" }, "MDS Connect"), h("div", { class: "brand-sub" }, "Салон краси M&D"))),
-          h("h1", {}, "Записи, майстри й фінанси салону в одному місці"),
-          h("p", {}, "Календар записів, закриття замовлень, зарплати майстрів і прибуток салону — автоматично."),
-          h("ul", {},
-            h("li", {}, icon("calendar"), "Календар усіх майстрів і записи з Telegram"),
-            h("li", {}, icon("percent"), "Автоматичний розрахунок 50/50 і виплати"),
-            h("li", {}, icon("chart"), "Виручка, витрати й чистий прибуток"))),
-        h("div", { class: "small foot", style: { color: "rgba(245,241,230,.5)" } }, "Внутрішня система салону. Доступ лише для персоналу.")),
-      h("div", { class: "login-form" }, h("div", { class: "card" },
-        h("h2", {}, "Вхід"), h("p", { class: "muted", style: { marginTop: 0 } }, "Увійдіть логіном і паролем, які видав директор."),
-        form))));
-  user.focus();
+      h("div", { class: "login-card" },
+        h("div", { class: "login-mark" }, "M&D"),
+        h("div", { class: "login-name" }, "MDS Connect"),
+        h("div", { class: "login-sub" }, "Beauty salon M&D"),
+        form),
+      h("div", { class: "login-foot" }, "Внутрішня система салону · доступ лише для персоналу")));
+  autoFocus(user);
 }
 
 function renderApp() {
+  setThemeColor(document.documentElement.getAttribute("data-theme") === "dark" ? "#0b1a15" : "#f4f3ee");
   const role = state.user.role;
   const items = NAV[role];
   let route = currentRoute();

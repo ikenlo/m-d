@@ -358,26 +358,44 @@ tr.click:hover td { background: var(--surface-2); }
 .toast.err { background: var(--danger); color: #fff; }
 @media (max-width: 600px) { .toast { left: 16px; right: 16px; top: auto; bottom: 86px; } }
 
-/* ================================================================ вхід */
-.login { min-height: 100vh; display: grid; grid-template-columns: 1.05fr 1fr; }
-.login-brand {
-  background: radial-gradient(900px 500px at 10% 0%, #23604a 0%, transparent 60%), var(--brand);
-  color: var(--brand-ink); padding: 48px; display: flex; flex-direction: column; justify-content: space-between;
+/* ================================================================ вхід (фірмовий M&D) */
+.login {
+  min-height: 100vh; min-height: 100dvh; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 18px; padding: 24px max(16px, env(safe-area-inset-right, 0px)) calc(24px + env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px));
+  background: radial-gradient(1000px 520px at 85% -10%, rgba(201, 164, 92, .16), transparent 60%),
+              radial-gradient(700px 420px at 0% 110%, rgba(201, 164, 92, .08), transparent 60%), #0b1f19;
+  color: #f3efe6; color-scheme: dark;
 }
-.login-brand h1 { font: 600 44px/1.05 var(--serif); color: #f3e6c4; margin: 18px 0 12px; }
-.login-brand p { color: rgba(245, 241, 230, .72); max-width: 380px; font-size: 15px; }
-.login-brand ul { list-style: none; padding: 0; margin: 22px 0 0; display: grid; gap: 10px; color: rgba(245, 241, 230, .85); }
-.login-brand li { display: flex; gap: 10px; align-items: center; }
-.login-brand li svg { color: var(--gold-soft); }
-.login-form { display: grid; place-items: center; padding: 24px; background: var(--bg); }
-.login-form .card { width: 100%; max-width: 380px; padding: 28px; }
-.login-form h2 { font-size: 22px; margin-bottom: 4px; }
-@media (max-width: 860px) {
-  .login { grid-template-columns: 1fr; }
-  .login-brand { padding: 28px 20px 26px; }
-  .login-brand h1 { font-size: 32px; margin: 12px 0 6px; }
-  .login-brand ul, .login-brand .foot { display: none; }
+.login-card {
+  width: 100%; max-width: 380px; padding: 32px 26px 26px; border-radius: 18px; text-align: center;
+  background: linear-gradient(180deg, #143629, #0f2a22); border: 1px solid rgba(227, 203, 148, .18);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, .45);
 }
+.login-mark {
+  width: 66px; height: 66px; margin: 0 auto 14px; border-radius: 18px; display: grid; place-items: center;
+  border: 1px solid #c9a45c; color: #c9a45c; font: 600 22px "Cormorant Garamond", Georgia, serif;
+}
+.login-name { font: 600 30px/1.1 "Cormorant Garamond", Georgia, serif; color: #e3cb94; }
+.login-sub { font-size: 11px; letter-spacing: 2.4px; text-transform: uppercase; color: #8e8a7f; margin: 6px 0 24px; }
+.login form { text-align: left; }
+.login label.f > span { color: #8e8a7f; text-transform: uppercase; letter-spacing: .7px; font-size: 11.5px; }
+.login input {
+  background: #0b1f19; border: 1px solid rgba(227, 203, 148, .18); color: #f3efe6; min-height: 48px; border-radius: 11px;
+}
+.login input::placeholder { color: #6f6c63; }
+.login input:focus { border-color: #c9a45c; box-shadow: 0 0 0 3px rgba(201, 164, 92, .25); }
+/* автозаповнення iPhone/Chrome — без жовтого фону */
+.login input:-webkit-autofill, .login input:-webkit-autofill:hover, .login input:-webkit-autofill:focus {
+  -webkit-text-fill-color: #f3efe6; caret-color: #f3efe6;
+  -webkit-box-shadow: 0 0 0 1000px #0b1f19 inset; box-shadow: 0 0 0 1000px #0b1f19 inset;
+  transition: background-color 9999s;
+}
+.login-btn {
+  margin-top: 6px; border: 0; color: #1a1408; font-weight: 700;
+  background: linear-gradient(180deg, #d8b46a, #b8914a);
+}
+.login-btn:hover { background: linear-gradient(180deg, #e0bd74, #c09850); }
+.login-foot { font-size: 12px; color: #6f6c63; text-align: center; }
 
 /* ================================================================ різне */
 .mat-row { display: flex; align-items: center; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--line); }
