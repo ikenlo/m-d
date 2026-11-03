@@ -1,0 +1,139 @@
+"""Командний рядок MDS Connect.
+
+  python -m mds init                 — створити/оновити БД і першого директора
+  python -m mds migrate              — застосувати міграції
+  python -m mds create-user ...      — додати співробітника
+  python -m mds run                  — API + веб-панель + Telegram-бот + авто-бекапи
+  python -m mds serve                — лише API та веб-панель
+  python -m mds bot                  — лише Telegram-бот
+  python -m mds backup               — зробити резервну копію зараз
+"""
+
+from __future__ import annotations
+
+import argparse
+import asyncio
+import getpass
+import logging
+import sys
+
+from . import clock
+from .config import Config
+from .db import Database
+from .migrate import upgrade
+
+
+def _db(cfg: Config) -> Database:
+    clock.configure(cfg.timezone)
+    return Database(cfg.database_url)
+
+
+def cmd_migrate(cfg: Config, _args) -> None:
+    upgrade(cfg.database_url)
+    print("Міграції застосовано.")
+
+
+def _ask_password(prompt: str = "Пароль: ") -> str:
+    p1 = getpass.getpass(prompt)
+    p2 = getpass.getpass("Повторіть пароль: ")
+    if p1 != p2:
+        sys.exit("Паролі не збігаються")
+    return p1
+
+
+def cmd_init(cfg: Config, args) -> None:
+    from sqlalchemy import select
+
+    from .models import Role, User
+    from .services import users
+    from .services.common import Actor
+
+    upgrade(cfg.database_url)
+    db = _db(cfg)
+    with db.session() as s:
+        if s.scalar(select(User).where(User.role == Role.DIRECTOR)):
+            print("База готова, директор уже існує.")
+            return
+    username = args.username or input("Логін директора: ").strip()
+    full_name = args.full_name or input("Ім'я директора: ").strip()
+    password = args.password or _ask_password()
+    with db.session() as s:
+        users.create_user(s, Actor.system(), username=username, password=password, full_name=full_name, role=Role.DIRECTOR)
+    print(f"Готово. Директор '{username}' створений. Запустіть: python -m mds run")
+
+
+def cmd_create_user(cfg: Config, args) -> None:
+    from .services import users
+    from .services.common import Actor
+
+    password = args.password or _ask_password()
+    with _db(cfg).session() as s:
+        u = users.create_user(s, Actor.system(), username=args.username, password=password,
+                              full_name=args.full_name, role=args.role)
+        print(f"Створено: {u.username} ({u.role})")
+
+
+def cmd_backup(cfg: Config, _args) -> None:
+    from .services.backup import make_backup
+
+    print(make_backup(cfg.database_url, cfg.backup_dir, cfg.backup_keep))
+
+
+def cmd_serve(cfg: Config, args, *, with_bot: bool = False) -> None:
+    import uvicorn
+
+    from .api.app import create_app
+
+    app = create_app(cfg, _db(cfg), background=True, with_bot=with_bot)
+    uvicorn.run(app, host=args.host or cfg.host, port=args.port or cfg.port, proxy_headers=True)
+
+
+def cmd_bot(cfg: Config, _args) -> None:
+    from .bot.runner import run_bot
+
+    if not cfg.telegram_token:
+        sys.exit("Задайте MDS_TELEGRAM_TOKEN")
+    asyncio.run(run_bot(cfg.telegram_token, _db(cfg)))
+
+
+def main(argv: list[str] | None = None) -> None:
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    p = argparse.ArgumentParser(prog="mds", description="MDS Connect — система салону M&D")
+    sub = p.add_subparsers(dest="cmd", required=True)
+
+    i = sub.add_parser("init", help="створити БД і першого директора")
+    i.add_argument("--username")
+    i.add_argument("--full-name")
+    i.add_argument("--password")
+
+    sub.add_parser("migrate", help="застосувати міграції БД")
+
+    cu = sub.add_parser("create-user", help="додати співробітника")
+    cu.add_argument("username")
+    cu.add_argument("--full-name", required=True)
+    cu.add_argument("--role", choices=["director", "admin", "master"], required=True)
+    cu.add_argument("--password")
+
+    for name in ("run", "serve"):
+        sp = sub.add_parser(name)
+        sp.add_argument("--host")
+        sp.add_argument("--port", type=int)
+
+    sub.add_parser("bot", help="лише Telegram-бот")
+    sub.add_parser("backup", help="резервна копія зараз")
+
+    args = p.parse_args(argv)
+    cfg = Config()
+    {
+        "init": cmd_init,
+        "migrate": cmd_migrate,
+        "create-user": cmd_create_user,
+        "backup": cmd_backup,
+        "serve": cmd_serve,
+        "run": lambda c, a: cmd_serve(c, a, with_bot=True),
+        "bot": cmd_bot,
+    }[args.cmd](cfg, args)
+
+
+if __name__ == "__main__":
+    main()
