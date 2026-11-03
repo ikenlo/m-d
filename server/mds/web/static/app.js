@@ -210,21 +210,44 @@ function seg(options, value, onChange) {
 }
 
 function deltaEl(cur, prev) {
-  if (prev === undefined || prev === null) return null;
-  if (!prev) return cur ? h("span", { class: "delta up" }, "нове") : null;
+  if (prev === undefined || prev === null || !prev) return null; // за попередній період даних немає
   const p = Math.round(((cur - prev) / Math.abs(prev)) * 100);
   const cls = p > 0 ? "up" : p < 0 ? "down" : "flat";
   return h("span", { class: "delta " + cls, title: "Порівняно з попереднім періодом: " + money(prev) }, (p > 0 ? "▲ " : p < 0 ? "▼ " : "") + Math.abs(p) + "%");
 }
 
-function kpi(label, value, cls = "", { ico = null, prev, sub = null, raw = false } = {}) {
+function kpi(label, value, cls = "", { ico = null, prev, vs = null, sub = null, raw = false } = {}) {
+  // vs — з чим порівнюємо («мин. місяць»): показується лише коли є дані за попередній період
+  const d = deltaEl(value, prev);
   return h("div", { class: "card kpi-tile " + cls },
     h("div", { class: "kpi-top" }, ico ? h("span", { class: "kpi-ico" }, icon(ico, "sm")) : null, h("span", { class: "kpi-label" }, label)),
     h("div", { class: "kpi-value" + (value < 0 ? " neg" : "") }, raw ? value : money(value)),
-    (sub || prev !== undefined) ? h("div", { class: "row small muted" }, deltaEl(value, prev), sub) : null);
+    d || sub ? h("div", { class: "row small muted" }, d, d && vs ? vs : null, sub) : null);
 }
 
 function emptyState(text, ico = "inbox") { return h("div", { class: "empty" }, icon(ico), h("div", {}, text)); }
+
+// На телефоні таблиці показуються картками: кожна клітинка отримує підпис зі свого заголовка
+function labelTables(root) {
+  root.querySelectorAll("table:not([data-labeled])").forEach((t) => {
+    const ths = [...(t.querySelector("tr")?.querySelectorAll("th") || [])];
+    const heads = ths.map((th) => (th.innerText || th.textContent).replace(/\s+/g, " ").trim());
+    const hide = ths.map((th) => th.classList.contains("m-hide"));
+    if (!heads.length) return;
+    t.setAttribute("data-labeled", "1");
+    t.classList.add("resp");
+    t.querySelectorAll("tr").forEach((tr) => {
+      let i = 0;
+      tr.querySelectorAll("td").forEach((td) => {
+        const span = Number(td.getAttribute("colspan") || 1);
+        if (heads[i] && span === 1) td.setAttribute("data-label", heads[i]);
+        if (hide[i] && span === 1) td.classList.add("m-hide");
+        i += span;
+      });
+    });
+  });
+}
+new MutationObserver(() => labelTables(document)).observe(document.documentElement, { childList: true, subtree: true });
 
 // ============================================================ бічна панель
 function openSheet(title, ...content) {
@@ -1052,8 +1075,8 @@ VIEWS.dashboard = async (main) => {
     const expRows = [["Оренда", exp.rent, "home"], ["Комунальні", exp.utilities, "zap"], ["Реклама", exp.advertising, "megaphone"], ["Інші витрати", exp.other, "receipt"]];
     body.replaceChildren(...[
       h("div", { class: "grid kpi" },
-        kpi("Виручка салону", s.revenue, "dark", { ico: "banknote", prev: p.revenue, sub: vs }),
-        kpi("Чистий прибуток", s.net_profit, "accent", { ico: "trend", prev: p.net_profit, sub: vs }),
+        kpi("Виручка салону", s.revenue, "dark", { ico: "banknote", prev: p.revenue, vs }),
+        kpi("Чистий прибуток", s.net_profit, "accent", { ico: "trend", prev: p.net_profit, vs }),
         kpi("Валовий прибуток", s.gross_profit, "", { ico: "chart", prev: p.gross_profit }),
         kpi("Середній чек", s.average_check, "", { ico: "receipt", prev: p.average_check, sub: `${s.orders_count} замовл. · ${s.clients_count} клієнтів` })),
       h("div", { class: "grid two", style: { marginTop: "12px" } },
@@ -1081,13 +1104,13 @@ VIEWS.dashboard = async (main) => {
       d.by_day.length > 1 ? h("div", { class: "card", style: { marginTop: "12px" } }, h("div", { class: "card-head" }, h("h3", {}, "Виручка по днях"), h("span", { class: "muted small" }, "грн")), revenueChart(d.by_day)) : null,
       h("div", { class: "section" }, h("h2", {}, "По майстрах")),
       d.by_master.length ? h("div", { class: "card table-wrap" }, h("table", {},
-        h("tr", {}, h("th", {}, "Майстер"), h("th", { class: "num" }, "Послуг"), h("th", { class: "num" }, "Виручка"), h("th", { class: "num" }, "Нараховано"), h("th", { class: "num" }, "Виплачено"), h("th", { class: "num" }, "Борг")),
+        h("tr", {}, h("th", {}, "Майстер"), h("th", { class: "num m-hide" }, "Послуг"), h("th", { class: "num" }, "Виручка"), h("th", { class: "num" }, "Нараховано"), h("th", { class: "num m-hide" }, "Виплачено"), h("th", { class: "num" }, "Борг")),
         d.by_master.map((m) => h("tr", {}, h("td", {}, h("div", { class: "row" }, avatar(m.master_name, "sm"), m.master_name)), h("td", { class: "num" }, m.orders_count), h("td", { class: "num" }, money(m.revenue)),
           h("td", { class: "num" }, money(m.masters_share)), h("td", { class: "num" }, money(m.paid)), h("td", { class: "num" }, h("b", {}, money(m.balance)))))))
         : h("div", { class: "card" }, emptyState("Додайте майстрів у розділі «Персонал»", "users")),
       h("div", { class: "section" }, h("h2", {}, "По послугах")),
       d.by_service.length ? h("div", { class: "card table-wrap" }, h("table", {},
-        h("tr", {}, h("th", {}, "Послуга"), h("th", { class: "num" }, "К-сть"), h("th", { class: "num" }, "Виручка"), h("th", { class: "num" }, "Майстрам"), h("th", { class: "num" }, "Матеріали"), h("th", { class: "num" }, "Салону")),
+        h("tr", {}, h("th", {}, "Послуга"), h("th", { class: "num" }, "К-сть"), h("th", { class: "num" }, "Виручка"), h("th", { class: "num m-hide" }, "Майстрам"), h("th", { class: "num m-hide" }, "Матеріали"), h("th", { class: "num" }, "Салону")),
         d.by_service.map((x) => h("tr", {}, h("td", {}, x.service_name), h("td", { class: "num" }, x.orders_count), h("td", { class: "num" }, money(x.revenue)),
           h("td", { class: "num" }, money(x.masters_share)), h("td", { class: "num" }, money(x.materials)), h("td", { class: "num" }, money(x.salon_net_from_orders))))))
         : h("div", { class: "card" }, emptyState("Немає замовлень за період", "receipt")),
@@ -1103,12 +1126,18 @@ VIEWS.shifts = async (main) => {
   main.append(h("h2", {}, "Очікують підтвердження виплати"));
   if (!closed.length) main.append(h("div", { class: "card" }, emptyState("Немає закритих змін, що очікують виплати")));
   for (const s of closed) {
-    main.append(h("div", { class: "card row" },
-      h("div", { class: "grow" }, h("b", {}, s.master_name), h("div", { class: "muted small" }, dmy(s.opened_at), " ", hm(s.opened_at), " — ", s.closed_at ? hm(s.closed_at) : ""),
-        h("div", { class: "small" }, `Клієнтів: ${s.report.clients_count} · послуг: ${s.report.services_count} · виручка ${money(s.report.revenue)} · скасувань: ${s.report.cancellations}`)),
-      h("div", { class: "kpi-value" }, money(s.payout_due)),
-      h("button", { class: "btn ghost", onclick: () => openShift(s.id) }, "Звіт"),
-      h("button", { class: "btn gold", onclick: () => payoutForm(s) }, "Підтвердити виплату")));
+    const r = s.report;
+    main.append(h("div", { class: "card stack" },
+      h("div", { class: "row", style: { alignItems: "flex-start" } }, avatar(s.master_name),
+        h("div", { class: "grow" }, h("b", {}, s.master_name),
+          h("div", { class: "muted small" }, `${dmy(s.opened_at)} · ${hm(s.opened_at)}–${s.closed_at ? hm(s.closed_at) : ""}`)),
+        h("div", { class: "right" }, h("div", { class: "kpi-value" }, money(s.payout_due)), h("div", { class: "muted small" }, "до виплати"))),
+      h("div", { class: "row small" },
+        h("span", { class: "chip plain" }, `Клієнтів: ${r.clients_count}`), h("span", { class: "chip plain" }, `Послуг: ${r.services_count}`),
+        h("span", { class: "chip plain" }, `Виручка: ${money(r.revenue)}`), r.cancellations ? h("span", { class: "chip st-pending" }, `Скасувань: ${r.cancellations}`) : null),
+      h("div", { class: "row" },
+        h("button", { class: "btn grow", onclick: () => openShift(s.id) }, icon("receipt", "sm"), "Звіт"),
+        h("button", { class: "btn primary grow", onclick: () => payoutForm(s) }, icon("banknote", "sm"), "Виплатити"))));
   }
   main.append(h("h2", { style: { marginTop: "22px" } }, "Усі зміни"));
   main.append(h("div", { class: "card table-wrap" }, h("table", {},
@@ -1153,8 +1182,8 @@ VIEWS.orders = async (main) => {
     const list = await api.get(`/api/orders?${q}${mst.value ? "&master_id=" + mst.value : ""}`);
     const total = list.reduce((a, o) => a + o.amount, 0);
     body.replaceChildren(list.length ? h("div", { class: "card table-wrap" }, h("table", {},
-      h("tr", {}, h("th", {}, "#"), h("th", {}, "Дата"), h("th", {}, "Майстер"), h("th", {}, "Послуга"), h("th", {}, "Клієнт"), h("th", {}, "Оплата"),
-        h("th", { class: "num" }, "Сума"), h("th", { class: "num" }, "Матеріали"), h("th", { class: "num" }, "Майстру"), h("th", { class: "num" }, "Салону")),
+      h("tr", {}, h("th", { class: "m-hide" }, "#"), h("th", {}, "Дата"), h("th", {}, "Майстер"), h("th", {}, "Послуга"), h("th", {}, "Клієнт"), h("th", { class: "m-hide" }, "Оплата"),
+        h("th", { class: "num" }, "Сума"), h("th", { class: "num m-hide" }, "Матеріали"), h("th", { class: "num" }, "Майстру"), h("th", { class: "num m-hide" }, "Салону")),
       list.map((o) => h("tr", { class: "click", onclick: () => orderSheet(o.id, load) }, h("td", {}, o.id, o.revision > 1 ? " ✎" : ""), h("td", {}, dm(o.closed_at), " ", hm(o.closed_at)),
         h("td", {}, o.master_name), h("td", {}, o.service_name), h("td", {}, o.client_name), h("td", {}, PAY[o.payment_method]),
         h("td", { class: "num" }, money(o.amount)), h("td", { class: "num" }, money(o.materials_cost)), h("td", { class: "num" }, money(o.master_earning)), h("td", { class: "num" }, money(o.salon_earning)))),
@@ -1504,14 +1533,14 @@ VIEWS.stock = async (main) => {
         h("button", { class: "btn sm" + (cat ? "" : " primary"), onclick: () => { cat = ""; draw(); } }, "Усі"),
         cats.map((c) => h("button", { class: "btn sm" + (cat === c ? " primary" : ""), onclick: () => { cat = c; draw(); } }, c))) : null,
       list.length ? h("div", { class: "card table-wrap" }, h("table", {},
-        h("tr", {}, h("th", {}, "Матеріал / тон"), h("th", {}, "Категорія"), h("th", { class: "num" }, "Залишок"), h("th", { class: "num" }, "Ціна упаковки"), canEdit ? h("th", { class: "right" }, "") : null),
+        h("tr", {}, h("th", {}, "Матеріал / тон"), h("th", { class: "m-hide" }, "Категорія"), h("th", { class: "num" }, "Залишок"), h("th", { class: "num" }, "Ціна упаковки"), canEdit ? h("th", { class: "right" }, "") : null),
         [...groups.entries()].map(([name, items]) => [
           items.length > 1 || items[0].tone ? h("tr", {}, h("td", { colspan: canEdit ? 5 : 4, style: { background: "var(--surface-2)", fontWeight: 700 } }, name, h("span", { class: "muted small" }, `  · тонів: ${items.length}`))) : null,
           items.map((m) => h("tr", { style: { opacity: m.is_active ? 1 : 0.5 } },
             h("td", {}, h("b", {}, m.tone || m.name), !m.is_active ? h("span", { class: "chip plain", style: { marginLeft: "6px" } }, "не використовується") : null),
             h("td", { class: "muted" }, m.category || ""),
-            h("td", { class: "num" }, h("b", { class: m.stock < 0 ? "neg" : "" }, fmtQty(m, m.stock)), m.low ? h("span", { class: "chip st-pending", style: { marginLeft: "8px" } }, "мало") : null),
-            h("td", { class: "num" }, money(m.unit_cost), h("span", { class: "muted small" }, " / " + m.pack_name)),
+            h("td", { class: "num" }, h("span", {}, h("b", { class: m.stock < 0 ? "neg" : "" }, fmtQty(m, m.stock)), m.low ? h("span", { class: "chip st-pending", style: { marginLeft: "8px" } }, "мало") : null)),
+            h("td", { class: "num" }, h("span", {}, money(m.unit_cost), h("span", { class: "muted small" }, " / " + m.pack_name))),
             canEdit ? h("td", { class: "right", style: { whiteSpace: "nowrap" } },
               h("button", { class: "btn sm", onclick: () => stockMoveForm(m, "receipt", refresh) }, icon("plus", "sm"), "Прихід"), " ",
               h("button", { class: "btn sm", onclick: () => stockMoveForm(m, "adjust", refresh) }, "Інвентаризація"), " ",
