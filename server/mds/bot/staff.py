@@ -117,16 +117,17 @@ def _parse_amount(text: str) -> int | None:
 
 
 def _cash_text(r: dict) -> str:
-    """Скільки майстер бере з каси, скільки лишає, скільки доплатить директор."""
+    """Заробіток майстра і як він його отримає (з каси / на карту), потім — каса."""
     c = r.get("cash")
     if not c:
         return f"До виплати: <b>{fmt(r['payout_due'])}</b>"
-    if c["mode"] != "take_from_till":
-        return f"Готівку {fmt(c['from_clients'])} лишіть у касі.\nЗарплату {fmt(r['payout_due'])} виплатить директор."
-    out = (f"Готівка від клієнтів: {fmt(c['from_clients'])}, картка/переказ: {fmt(c['noncash'])}\n"
-           f"💵 Візьміть з каси: <b>{fmt(c['master_takes'])}</b>\n🏦 Залиште в касі: <b>{fmt(c['leave_in_till'])}</b>")
-    if c["director_pays"] > 0:
-        out += f"\n💳 Директор доплатить на карту: <b>{fmt(c['director_pays'])}</b>"
+    take = c["master_takes"] if c["mode"] == "take_from_till" else 0
+    to_card = c["director_pays"] if c["mode"] == "take_from_till" else r["payout_due"]
+    out = (f"💰 Ваш заробіток: <b>{fmt(r['master_earning'])}</b>\n"
+           f"   💵 готівкою з каси: <b>{fmt(take)}</b>\n"
+           f"   💳 {'на карту від директора' if c['mode'] == 'take_from_till' else 'виплатить директор'}: <b>{fmt(to_card)}</b>\n\n"
+           f"Каса: готівка від клієнтів {fmt(c['from_clients'])}, карткою {fmt(c['noncash'])}\n"
+           f"🏦 Залиште в касі: <b>{fmt(c['leave_in_till'])}</b>")
     return out
 
 

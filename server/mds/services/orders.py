@@ -396,9 +396,9 @@ def close_shift(s: Session, actor: Actor, master_id: int) -> Shift:
         f"Клієнтів: {report['clients_count']}, послуг: {report['services_count']}, скасувань: {report['cancellations']}\n"
         f"Виручка: {fmt(report['revenue'])} (готівка {fmt(report['cash']['from_clients'])}, картка/переказ {fmt(report['cash']['noncash'])})\n"
         f"Заробіток майстра: {fmt(report['master_earning'])}\n"
-        f"Майстер узяв з каси: {fmt(report['cash']['master_takes'])}\n"
-        f"Лишилось у касі: {fmt(report['cash']['leave_in_till'])}\n"
-        f"Доплатити майстру: {fmt(report['payout_due'])}",
+        f"  • взяв готівкою з каси: {fmt(report['cash']['master_takes'])}\n"
+        f"  • переказати на карту: {fmt(report['payout_due'])}\n"
+        f"Лишилось у касі: {fmt(report['cash']['leave_in_till'])}",
         exclude_user_id=actor.user_id,
     )
     return sh

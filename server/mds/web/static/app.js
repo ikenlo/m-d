@@ -1011,28 +1011,31 @@ function shiftReport(r) {
       h("div", { class: "divider" }),
       h("div", { class: "sum-line" }, h("span", {}, "Загальна виручка"), h("b", {}, money(r.revenue))),
       Object.entries(r.by_payment || {}).map(([k, v]) => h("div", { class: "sum-line muted small" }, h("span", {}, PAY[k] || k), h("span", {}, money(v)))),
-      h("div", { class: "sum-line" }, h("span", {}, "Заробіток майстра"), h("b", {}, money(r.master_earning))),
+      r.cash ? null : h("div", { class: "sum-line" }, h("span", {}, "Заробіток майстра"), h("b", {}, money(r.master_earning))),
       r.cash ? cashBlock(r) : h("div", { class: "sum-line total" }, h("span", {}, "Сума до виплати"), h("span", {}, money(r.payout_due)))));
 }
 
-// Розрахунок готівки після зміни: скільки майстер бере з каси, скільки лишає, скільки доплачує директор
+// Розрахунок після зміни: спершу — скільки заробив майстер і як отримає гроші, потім — каса
 function cashBlock(r) {
   const c = r.cash;
   const line = (label, v, cls = "") => h("div", { class: "sum-line " + cls }, h("span", {}, label), h("b", {}, money(v)));
-  if (c.mode !== "take_from_till") {
-    return h("div", {}, h("div", { class: "divider" }),
-      line("Готівка від клієнтів — лишити в касі", c.from_clients),
-      h("div", { class: "sum-line total" }, h("span", {}, "Зарплату виплачує директор"), h("span", {}, money(r.payout_due))));
-  }
-  return h("div", {}, h("div", { class: "divider" }),
+  const takeFromTill = c.mode === "take_from_till";
+  const fromTill = takeFromTill ? c.master_takes : 0;
+  const toCard = takeFromTill ? c.director_pays : r.payout_due;
+  return h("div", {},
+    h("div", { class: "divider" }),
+    // заробіток майстра і з чого він складається
+    h("div", { style: { background: "var(--ok-bg)", borderRadius: "10px", padding: "10px 12px", margin: "4px 0 10px" } },
+      h("div", { class: "sum-line", style: { fontSize: "16px" } }, h("b", {}, "Заробіток майстра"), h("b", { style: { color: "var(--ok)" } }, money(r.master_earning))),
+      line("💵 Готівкою з каси (одразу)", fromTill, "small"),
+      line(takeFromTill ? "💳 На карту від директора" : "💳 Виплатить директор", toCard, "small"),
+      takeFromTill && toCard <= 0 ? h("div", { class: "small muted" }, "Увесь заробіток отримано готівкою з каси") : null,
+      takeFromTill && toCard > 0 && fromTill === 0 ? h("div", { class: "small muted" }, "Клієнти платили карткою, тож готівки в касі немає — увесь заробіток директор переказує на карту") : null),
+    // каса салону
     h("div", { class: "kpi-label", style: { margin: "4px 0 6px" } }, "Каса"),
     line("Готівка від клієнтів", c.from_clients),
-    line("Картка / переказ (на рахунок салону)", c.noncash, "muted"),
-    line("💵 Майстер бере з каси (свій заробіток)", c.master_takes),
-    h("div", { class: "sum-line total" }, h("span", {}, "🏦 Залишити в касі"), h("span", {}, money(c.leave_in_till))),
-    c.director_pays > 0
-      ? h("div", { class: "sum-line total" }, h("span", {}, "💳 Директор доплачує на карту"), h("span", {}, money(c.director_pays)))
-      : h("div", { class: "sum-line muted small" }, h("span", {}, "Директору доплачувати нічого — заробіток отримано з каси"), h("span", {}, "")));
+    line("Карткою / переказом — на рахунок", c.noncash, "muted"),
+    h("div", { class: "sum-line total" }, h("span", {}, "🏦 Залишити в касі"), h("span", {}, money(c.leave_in_till))));
 }
 
 // ---------- Зміна (майстер)
