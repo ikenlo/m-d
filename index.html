@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>M&amp;D Beauty Salon — салон краси в Києві</title>
+  <meta name="description" content="M&D Beauty Salon — стрижки та фарбування, манікюр, брови та вії, макіяж, догляд за обличчям і SPA. Актуальні ціни та онлайн-запис.">
+  <meta name="theme-color" content="#0d241b">
+  <meta property="og:title" content="M&D Beauty Salon">
+  <meta property="og:description" content="Салон краси преміум-класу. Онлайн-запис 24/7.">
+  <meta property="og:image" content="images/hero.jpg">
+  <link rel="icon" href="images/favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,500&family=Montserrat:wght@300;400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+  <!-- ===== Header ===== -->
+  <header class="header" id="header">
+    <div class="container header__inner">
+      <a href="#top" class="logo" aria-label="M&D Beauty Salon — на головну">
+        <span class="logo__mark">M<i>&amp;</i>D</span>
+        <span class="logo__text">Beauty Salon</span>
+      </a>
+
+      <nav class="nav" id="nav" aria-label="Головне меню">
+        <a href="#about" class="nav__link">Про нас</a>
+        <a href="#services" class="nav__link">Послуги та ціни</a>
+        <a href="#gallery" class="nav__link">Наші роботи</a>
+        <a href="#masters" class="nav__link">Майстри</a>
+        <a href="#contacts" class="nav__link">Контакти</a>
+        <a href="#booking" class="btn btn--gold nav__cta">Записатися</a>
+      </nav>
+
+      <a href="tel:+380671234567" class="header__phone" data-phone>+38 (067) 123-45-67</a>
+
+      <button class="burger" id="burger" aria-label="Відкрити меню" aria-expanded="false" aria-controls="nav">
+        <span></span><span></span><span></span>
+      </button>
+    </div>
+  </header>
+
+  <main id="top">
+    <!-- ===== Hero ===== -->
+    <section class="hero">
+      <div class="hero__bg" style="background-image:url('images/hero.jpg')"></div>
+      <div class="container hero__content">
+        <p class="eyebrow">Салон краси · Київ</p>
+        <h1 class="hero__title">Мистецтво <em>вашої</em><br> природної краси</h1>
+        <p class="hero__text">Волосся, нігті, брови, макіяж та SPA-догляд в одному місці. Преміальна косметика, стерильність і майстри, яким довіряють.</p>
+        <div class="hero__actions">
+          <a href="#booking" class="btn btn--gold btn--lg">Записатися онлайн</a>
+          <a href="#services" class="btn btn--outline btn--lg">Ціни на послуги</a>
+        </div>
+        <ul class="hero__stats">
+          <li><strong>10+</strong><span>років досвіду</span></li>
+          <li><strong>6 000+</strong><span>задоволених клієнтів</span></li>
+          <li><strong>4.9 ★</strong><span>середній рейтинг</span></li>
+        </ul>
+      </div>
+      <a href="#about" class="hero__scroll" aria-label="Гортати вниз"><span></span></a>
+    </section>
+
+    <!-- ===== About ===== -->
+    <section class="section about" id="about">
+      <div class="container about__grid">
+        <div class="about__media reveal">
+          <img src="images/about.jpg" alt="Інтер'єр салону M&D" loading="lazy" width="1200" height="833">
+          <div class="about__badge">
+            <span class="about__badge-num">M&amp;D</span>
+            <span>Марія &amp; Діана</span>
+          </div>
+        </div>
+        <div class="about__text reveal">
+          <p class="eyebrow">Про салон</p>
+          <h2 class="section__title">Простір, де про вас <em>піклуються</em></h2>
+          <p>M&amp;D Beauty Salon заснували дві подруги — стиліст Марія та нейл-майстер Діана. Ми створили місце, куди хочеться повертатися: затишний інтер'єр, ароматна кава та команда, що чує ваші побажання.</p>
+          <ul class="features">
+            <li class="feature">
+              <span class="feature__icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24"><path d="M12 2l2.4 7.2H22l-6 4.4 2.3 7.2L12 16.4 5.7 20.8 8 13.6 2 9.2h7.6z"/></svg>
+              </span>
+              <div><h3>Преміальна косметика</h3><p>Kérastase, Davines, CND, Dermalogica — лише сертифіковані бренди.</p></div>
+            </li>
+            <li class="feature">
+              <span class="feature__icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24"><path d="M12 2l8 4v6c0 5-3.5 9-8 10-4.5-1-8-5-8-10V6l8-4zm-1.2 13.6l6-6-1.4-1.4-4.6 4.6-2.2-2.2-1.4 1.4 3.6 3.6z"/></svg>
+              </span>
+              <div><h3>Стерильність 100%</h3><p>Сухожарова шафа, крафт-пакети та одноразові матеріали для кожного гостя.</p></div>
+            </li>
+            <li class="feature">
+              <span class="feature__icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24"><path d="M12 2a10 10 0 110 20 10 10 0 010-20zm1 5h-2v6l5 3 1-1.7-4-2.3V7z"/></svg>
+              </span>
+              <div><h3>Без черг і поспіху</h3><p>Онлайн-запис 24/7 та час на процедуру з запасом — ви не чекаєте.</p></div>
+            </li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== Services ===== -->
+    <section class="section services" id="services">
+      <div class="container">
+        <div class="section__head reveal">
+          <p class="eyebrow">Каталог послуг</p>
+          <h2 class="section__title">Послуги та <em>ціни</em></h2>
+          <p class="section__lead">Оберіть категорію, щоб побачити повний прайс. Натисніть «Записатися» біля послуги — і ми підставимо її у форму запису.</p>
+        </div>
+
+        <div class="tabs" role="tablist" aria-label="Категорії послуг" id="serviceTabs"></div>
+        <div class="price-panel" id="pricePanel" role="tabpanel"></div>
+        <p class="note">* Ціна «від» залежить від довжини та густоти волосся або складності роботи. Точну вартість майстер назве на консультації.</p>
+      </div>
+    </section>
+
+    <!-- ===== Gallery ===== -->
+    <section class="section gallery" id="gallery">
+      <div class="container">
+        <div class="section__head reveal">
+          <p class="eyebrow">Портфоліо</p>
+          <h2 class="section__title">Наші <em>роботи</em></h2>
+        </div>
+        <div class="filters" id="galleryFilters">
+          <button class="filter is-active" data-filter="all">Усі</button>
+          <button class="filter" data-filter="hair">Волосся</button>
+          <button class="filter" data-filter="nails">Нігті</button>
+          <button class="filter" data-filter="makeup">Макіяж</button>
+          <button class="filter" data-filter="face">Догляд</button>
+        </div>
+        <div class="gallery__grid" id="galleryGrid"></div>
+      </div>
+    </section>
+
+    <!-- ===== Masters ===== -->
+    <section class="section masters" id="masters">
+      <div class="container">
+        <div class="section__head reveal">
+          <p class="eyebrow">Команда</p>
+          <h2 class="section__title">Наші <em>майстри</em></h2>
+        </div>
+        <div class="masters__grid" id="mastersGrid"></div>
+      </div>
+    </section>
+
+    <!-- ===== Reviews ===== -->
+    <section class="section reviews">
+      <div class="container">
+        <div class="section__head reveal">
+          <p class="eyebrow">Відгуки</p>
+          <h2 class="section__title">Що кажуть <em>гості</em></h2>
+        </div>
+        <div class="reviews__grid">
+          <blockquote class="review reveal">
+            <div class="review__stars" aria-label="5 з 5">★★★★★</div>
+            <p>Нарешті знайшла колориста, який зробив саме той відтінок, що я хотіла. Марія — чарівниця! Атмосфера в салоні неймовірна.</p>
+            <footer>— Анастасія</footer>
+          </blockquote>
+          <blockquote class="review reveal">
+            <div class="review__stars" aria-label="5 з 5">★★★★★</div>
+            <p>Манікюр тримається вже 4 тижні без жодного сколу. Дуже акуратно, все стерильно, а запис онлайн займає хвилину.</p>
+            <footer>— Катерина</footer>
+          </blockquote>
+          <blockquote class="review reveal">
+            <div class="review__stars" aria-label="5 з 5">★★★★★</div>
+            <p>Подарувала мамі SPA-ритуал — вона в захваті. Тепер ходимо разом раз на місяць. Дякуємо за турботу!</p>
+            <footer>— Юлія</footer>
+          </blockquote>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== Booking ===== -->
+    <section class="section booking" id="booking">
+      <div class="container booking__grid">
+        <div class="booking__intro reveal">
+          <p class="eyebrow">Онлайн-запис</p>
+          <h2 class="section__title">Запишіться <em>за хвилину</em></h2>
+          <p>Оберіть послугу, майстра, дату та зручний час. Адміністратор підтвердить запис дзвінком або повідомленням протягом 15 хвилин у робочий час.</p>
+          <ul class="booking__perks">
+            <li>Безкоштовне скасування за 12 годин</li>
+            <li>Нагадування за день до візиту</li>
+            <li>−10% на першу процедуру за кодом <b>WELCOME</b></li>
+          </ul>
+          <p class="booking__call">Бажаєте поговорити? <a href="tel:+380671234567" data-phone>+38 (067) 123-45-67</a></p>
+        </div>
+
+        <form class="booking-form reveal" id="bookingForm" novalidate>
+          <div class="field">
+            <label for="bfCategory">Категорія</label>
+            <select id="bfCategory" name="category" required></select>
+          </div>
+          <div class="field">
+            <label for="bfService">Послуга</label>
+            <select id="bfService" name="service" required></select>
+            <small class="field__hint" id="bfServiceInfo"></small>
+          </div>
+          <div class="field">
+            <label for="bfMaster">Майстер</label>
+            <select id="bfMaster" name="master"></select>
+          </div>
+
+          <div class="field">
+            <span class="label">Дата</span>
+            <div class="dates" id="bfDates" role="radiogroup" aria-label="Оберіть дату"></div>
+          </div>
+          <div class="field">
+            <span class="label">Час</span>
+            <div class="times" id="bfTimes" role="radiogroup" aria-label="Оберіть час"></div>
+            <small class="field__error" data-error="time"></small>
+          </div>
+
+          <div class="field-row">
+            <div class="field">
+              <label for="bfName">Ваше ім'я</label>
+              <input id="bfName" name="name" type="text" autocomplete="name" placeholder="Олена" required>
+              <small class="field__error" data-error="name"></small>
+            </div>
+            <div class="field">
+              <label for="bfPhone">Телефон</label>
+              <input id="bfPhone" name="phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="+38 (0__) ___-__-__" required>
+              <small class="field__error" data-error="phone"></small>
+            </div>
+          </div>
+          <div class="field">
+            <label for="bfComment">Коментар <span class="muted">(необов'язково)</span></label>
+            <textarea id="bfComment" name="comment" rows="3" placeholder="Побажання, промокод, довжина волосся…"></textarea>
+          </div>
+
+          <label class="check">
+            <input type="checkbox" id="bfAgree" required checked>
+            <span>Погоджуюсь на обробку персональних даних</span>
+          </label>
+          <small class="field__error" data-error="agree"></small>
+
+          <div class="booking-form__summary" id="bfSummary" aria-live="polite"></div>
+          <button type="submit" class="btn btn--gold btn--block btn--lg" id="bfSubmit">Підтвердити запис</button>
+        </form>
+      </div>
+    </section>
+
+    <!-- ===== Contacts ===== -->
+    <section class="section contacts" id="contacts">
+      <div class="container contacts__grid">
+        <div class="contacts__info reveal">
+          <p class="eyebrow">Контакти</p>
+          <h2 class="section__title">Чекаємо <em>на вас</em></h2>
+          <ul class="contact-list">
+            <li><span>Адреса</span><p data-address>м. Київ, вул. Садова, 12</p></li>
+            <li><span>Телефон</span><p><a href="tel:+380671234567" data-phone>+38 (067) 123-45-67</a></p></li>
+            <li><span>Графік</span><p>Пн–Сб: 09:00 – 20:00<br>Нд: 10:00 – 18:00</p></li>
+          </ul>
+          <div class="socials">
+            <a href="https://instagram.com/" target="_blank" rel="noopener" aria-label="Instagram" data-instagram>
+              <svg viewBox="0 0 24 24"><path d="M7 2h10a5 5 0 015 5v10a5 5 0 01-5 5H7a5 5 0 01-5-5V7a5 5 0 015-5zm0 2a3 3 0 00-3 3v10a3 3 0 003 3h10a3 3 0 003-3V7a3 3 0 00-3-3H7zm5 3.5a4.5 4.5 0 110 9 4.5 4.5 0 010-9zm0 2a2.5 2.5 0 100 5 2.5 2.5 0 000-5zM17.5 6a1 1 0 110 2 1 1 0 010-2z"/></svg>
+            </a>
+            <a href="https://t.me/" target="_blank" rel="noopener" aria-label="Telegram" data-telegram>
+              <svg viewBox="0 0 24 24"><path d="M21.9 4.3l-3.2 15.1c-.2 1-.9 1.3-1.7.8l-4.8-3.5-2.3 2.2c-.3.3-.5.5-1 .5l.3-4.9 8.9-8c.4-.3-.1-.5-.6-.2L6.5 13.2l-4.7-1.5c-1-.3-1-1 .2-1.5L20.5 3c.9-.3 1.6.2 1.4 1.3z"/></svg>
+            </a>
+          </div>
+        </div>
+        <div class="contacts__map reveal">
+          <iframe id="map" title="Карта: як нас знайти" loading="lazy" referrerpolicy="no-referrer-when-downgrade"
+            src="https://www.google.com/maps?q=%D0%9A%D0%B8%D1%97%D0%B2%2C%20%D0%B2%D1%83%D0%BB%D0%B8%D1%86%D1%8F%20%D0%A1%D0%B0%D0%B4%D0%BE%D0%B2%D0%B0%2012&output=embed"></iframe>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="container footer__inner">
+      <a href="#top" class="logo logo--sm">
+        <span class="logo__mark">M<i>&amp;</i>D</span>
+        <span class="logo__text">Beauty Salon</span>
+      </a>
+      <p>© <span id="year"></span> M&amp;D Beauty Salon. Усі права захищено.</p>
+      <a href="#booking" class="footer__link">Онлайн-запис</a>
+    </div>
+  </footer>
+
+  <!-- Плаваюча кнопка запису на смартфонах -->
+  <a href="#booking" class="mobile-cta" id="mobileCta">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 2v2H5a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2V6a2 2 0 00-2-2h-2V2h-2v2H9V2H7zm-2 8h14v10H5V10z"/></svg>
+    Записатися
+  </a>
+
+  <!-- Лайтбокс -->
+  <div class="lightbox" id="lightbox" role="dialog" aria-modal="true" aria-label="Перегляд фото" hidden>
+    <button class="lightbox__close" data-lb="close" aria-label="Закрити">×</button>
+    <button class="lightbox__nav lightbox__nav--prev" data-lb="prev" aria-label="Попереднє фото">‹</button>
+    <figure class="lightbox__figure">
+      <img id="lbImg" src="" alt="">
+      <figcaption id="lbCaption"></figcaption>
+    </figure>
+    <button class="lightbox__nav lightbox__nav--next" data-lb="next" aria-label="Наступне фото">›</button>
+  </div>
+
+  <!-- Підтвердження запису -->
+  <div class="modal" id="successModal" role="dialog" aria-modal="true" aria-labelledby="successTitle" hidden>
+    <div class="modal__box">
+      <div class="modal__icon" aria-hidden="true">✓</div>
+      <h3 id="successTitle">Дякуємо за запис!</h3>
+      <div id="successText"></div>
+      <button class="btn btn--gold btn--block" data-close-modal>Чудово</button>
+    </div>
+  </div>
+
+  <script src="js/data.js"></script>
+  <script src="js/main.js"></script>
+</body>
+</html>
