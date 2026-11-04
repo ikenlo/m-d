@@ -307,7 +307,7 @@ function bugReportForm() {
     try {
       const r = await run(() => api.post("/api/bug-report", {
         text: text.value.trim(), page, image,
-        context: { device: navigator.userAgent, screen: `${window.innerWidth}×${window.innerHeight}`, version: "web", errors: recentErrors },
+        context: { device: navigator.userAgent, screen: `${window.innerWidth}×${window.innerHeight}`, version: `web ${state.version || "?"}`, errors: recentErrors },
       }));
       closeSheet();
       toast(r.delivered ? "Дякуємо! Повідомлення надіслано директору в Telegram" : "Збережено. Директор ще не підключив Telegram — повідомлення буде в журналі");
@@ -413,8 +413,21 @@ function logout() {
   renderLogin();
 }
 
+// Версія системи — з сервера (/api/health), тож завжди та, що реально розгорнута
+function versionTag(cls = "version") {
+  return h("span", { class: cls, "data-version": "1" }, state.version ? `Версія ${state.version}` : "");
+}
+function loadVersion() {
+  if (state.version) return;
+  api.get("/api/health").then((r) => {
+    state.version = r.version;
+    document.querySelectorAll("[data-version]").forEach((e) => { e.textContent = `Версія ${r.version}`; });
+  }).catch(() => {});
+}
+
 async function boot() {
   if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => {});
+  loadVersion();
   if (!api.token) return renderLogin();
   try {
     state.user = await api.get("/api/auth/me");
@@ -469,7 +482,7 @@ function renderLogin() {
         h("div", { class: "login-name" }, "MDS Connect"),
         h("div", { class: "login-sub" }, "Beauty salon M&D"),
         form),
-      h("div", { class: "login-foot" }, "Внутрішня система салону · доступ лише для персоналу")));
+      h("div", { class: "login-foot" }, "Внутрішня система салону · доступ лише для персоналу", h("br"), versionTag())));
   autoFocus(user);
 }
 
@@ -490,7 +503,8 @@ function renderApp() {
   const dark = document.documentElement.getAttribute("data-theme") === "dark";
   const sidebar = h("aside", { class: "sidebar" },
     h("div", { class: "brand" }, h("div", { class: "brand-mark" }, "M&D"),
-      h("div", {}, h("div", { class: "brand-name" }, "MDS Connect"), h("div", { class: "brand-sub" }, state.settings?.salon_name ? "Салон " + state.settings.salon_name : "Салон M&D"))),
+      h("div", {}, h("div", { class: "brand-name" }, "MDS Connect"), h("div", { class: "brand-sub" }, state.settings?.salon_name ? "Салон " + state.settings.salon_name : "Салон M&D"),
+        versionTag("brand-ver"))),
     h("nav", { class: "nav" }, navLinks),
     h("div", { class: "side-foot" },
       h("a", { href: "#/profile", style: { display: "contents" } }, avatar(state.user.full_name),
@@ -537,7 +551,8 @@ function viewMore(main) {
     h("a", { href: "#/" + id, class: "row", style: { padding: "12px", color: "var(--ink)" } }, icon(ico), h("span", { class: "grow" }, label), icon("right", "sm"))),
     h("button", { class: "btn ghost", style: { width: "100%", justifyContent: "flex-start", padding: "12px" }, onclick: bugReportForm }, icon("bug"), "Повідомити про помилку"),
     h("button", { class: "btn ghost", style: { width: "100%", justifyContent: "flex-start", padding: "12px" }, onclick: toggleTheme }, icon(dark ? "sun" : "moon"), dark ? "Світла тема" : "Темна тема"),
-    h("button", { class: "btn ghost", style: { width: "100%", justifyContent: "flex-start", padding: "12px", color: "var(--danger)" }, onclick: logout }, icon("logout"), "Вийти")));
+    h("button", { class: "btn ghost", style: { width: "100%", justifyContent: "flex-start", padding: "12px", color: "var(--danger)" }, onclick: logout }, icon("logout"), "Вийти")),
+    h("p", { class: "muted small", style: { textAlign: "center", marginTop: "14px" } }, "MDS Connect · ", versionTag()));
 }
 
 const reload = () => renderApp();
