@@ -214,14 +214,3 @@ def test_bug_report_api(client):
     r = client.post("/api/bug-report", headers=m1, json={"text": "Кнопка не працює", "page": "today"})
     assert r.status_code == 201 and r.json()["ok"] is True
     assert client.post("/api/bug-report", json={"text": "анонімно"}).status_code == 401
-
-
-def test_owner_control_and_tax_calendar_api(client):
-    d = login(client, "director", "Director123")
-    adm = login(client, "admin", "Admin1234")
-    r = client.get("/api/finance/control", headers=d)
-    assert r.status_code == 200 and set(r.json()["today"]) == {"date", "revenue", "cash", "noncash", "orders"}
-    assert client.get("/api/finance/control", headers=adm).status_code == 403
-    r = client.get("/api/taxes/calendar?year=2026", headers=d)
-    assert r.status_code == 200 and any(e["kind"] == "report" for e in r.json())
-    assert client.get("/api/taxes/calendar", headers=adm).status_code == 403

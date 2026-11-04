@@ -166,8 +166,3 @@ def payroll_quarter_csv(year: int, quarter: int, actor: Actor = Depends(get_acto
     body, name = taxes.payroll_quarter_csv(s, actor, year, quarter)
     return Response(body.encode("utf-8"), media_type="text/csv; charset=utf-8",
                     headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(name)}"})
-
-
-@router.get("/taxes/calendar")
-def tax_calendar(year: int | None = None, actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
-    return taxes.tax_calendar(s, actor, year or clock.now().year)
