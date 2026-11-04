@@ -154,7 +154,8 @@ def test_backup_endpoint(client):
 
 def test_web_panel_served(client):
     assert client.get("/").status_code == 200
-    assert client.get("/api/health").json() == {"ok": True, "version": "0.1.0"}
+    from mds import __version__
+    assert client.get("/api/health").json() == {"ok": True, "version": __version__}
 
 
 def test_master_sees_only_own_clients(client):
