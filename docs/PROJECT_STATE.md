@@ -134,7 +134,6 @@ Google Drive (імітація Google), нагадування, аналітик
 | Перерва між записами | Не реалізовано (напр. 10–15 хв на прибирання між клієнтами) — питання до директора |
 | Експорт в Excel | Відкладено — зробити, коли директор попросить |
 | Безпека (дрібне) | Немає Content-Security-Policy; токен у `localStorage`; версії залежностей задані діапазонами (не зафіксовані); стан діалогів бота і лічильник PIN — у пам'яті (скидаються при перезапуску) |
-| Інше з плану | Знижки/сертифікати, двофакторна авторизація директора — `docs/ROADMAP.md` |
 
 ## 6. Як допомагати з цим проєктом (правила)
 
@@ -167,7 +166,7 @@ server/mds/web/static/ веб-панель: app.js, style.css, sw.js, index.html
 server/migrations/     Alembic 0001–0011
 server/tests/          114 тестів
 apps/android, apps/windows   застосунки (після злиття PR)
-docs/                  ARCHITECTURE, FINANCE, API, OPERATIONS, DEPLOY_RAILWAY, APPS, ROADMAP, AUDIT_v0.1, цей файл
+docs/                  ARCHITECTURE, FINANCE, API, OPERATIONS, DEPLOY_RAILWAY, APPS, AUDIT_v0.1, цей файл
 CLAUDE.md              правила розробки; CHANGELOG.md — історія змін
 ```
 

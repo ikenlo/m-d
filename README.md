@@ -53,7 +53,6 @@ MDS_TELEGRAM_TOKEN=123:ABC python -m mds run           # API + панель + б
 - [docs/API.md](docs/API.md) — REST API (інтерактивно: `/docs` на сервері)
 - [docs/DEPLOY_RAILWAY.md](docs/DEPLOY_RAILWAY.md) — **запуск на Railway й оплата, покроково**
 - [docs/OPERATIONS.md](docs/OPERATIONS.md) — встановлення на свій сервер, бот, бекапи, оновлення
-- [docs/ROADMAP.md](docs/ROADMAP.md) — план розвитку (Android, Windows, далі)
 - [CLAUDE.md](CLAUDE.md) — правила подальшої розробки (для Claude Code і розробників)
 
 ## Тести
