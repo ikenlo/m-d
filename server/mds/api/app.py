@@ -17,7 +17,7 @@ from ..config import Config
 from ..db import Database
 from ..errors import DomainError
 from ..services import backup
-from .routers import auth, calendar, card_terminal, callbacks, catalog, money, staff, stock_schedule, system, tax_report, utilities
+from .routers import auth, calendar, card_terminal, callbacks, catalog, money, staff, stock_schedule, system, tax_report, taxes, utilities
 
 log = logging.getLogger("mds")
 STATIC = Path(__file__).resolve().parent.parent / "web" / "static"
@@ -37,17 +37,21 @@ async def _backup_loop(cfg: Config, db: Database) -> None:
 
 
 async def _reminders_loop(db: Database) -> None:
-    """Нагадування клієнтам (за добу і за 2 год) — перевірка кожні 5 хвилин."""
-    from ..services import reminders
+    """Нагадування клієнтам (за добу і за 2 год) — кожні 5 хвилин; строки податків ФОП — щогодини."""
+    from ..services import reminders, taxes
 
+    tick = 0
     while True:
         try:
             with db.session() as s:
                 n = reminders.send_due(s)
+                if tick % 12 == 0:  # щогодини — строки сплати податків ФОП (директору)
+                    taxes.tax_reminders(s)
             if n:
                 log.info("Нагадувань поставлено в чергу: %s", n)
         except Exception:  # noqa: BLE001
             log.exception("Помилка нагадувань")
+        tick += 1
         await asyncio.sleep(300)
 
 
@@ -96,7 +100,7 @@ def create_app(
             {"error": "validation", "detail": f"Невірні дані: {field} — {first.get('msg', '')}"}, status_code=422
         )
 
-    for r in (auth, card_terminal, staff, catalog, calendar, callbacks, money, stock_schedule, system, tax_report, utilities):
+    for r in (auth, card_terminal, staff, catalog, calendar, callbacks, money, stock_schedule, system, tax_report, taxes, utilities):
         app.include_router(r.router)
 
     app.mount("/static", StaticFiles(directory=STATIC), name="static")

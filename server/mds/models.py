@@ -546,3 +546,117 @@ class CardPayment(Base):
     created_by: Mapped[int | None] = mapped_column(Integer)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
+
+
+class TaxRate(Base):
+    """Ставка/показник з періодом дії. Значення НЕ зашиті в код — вводить директор/бухгалтер.
+    key: min_wage | single_tax | military_fop | esv_fop | pdfo | military_payroll | esv_employer."""
+
+    __tablename__ = "tax_rates"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    key: Mapped[str] = mapped_column(String(24), index=True)
+    rate_bp: Mapped[int | None] = mapped_column(Integer)  # ставка в bp (2000 = 20%)
+    amount: Mapped[int | None] = mapped_column(Integer)  # фіксована сума, копійки (напр. мінімальна зарплата)
+    base: Mapped[str] = mapped_column(String(16), default="fixed")  # min_wage | income | salary | salary_min_wage | fixed
+    period: Mapped[str] = mapped_column(String(8), default="month")  # month | quarter
+    due_day: Mapped[int | None] = mapped_column(Integer)  # день сплати
+    due_from: Mapped[str] = mapped_column(String(8), default="end")  # start | end — від початку чи кінця періоду
+    due_offset_months: Mapped[int] = mapped_column(Integer, default=0)
+    valid_from: Mapped[date] = mapped_column(Date)
+    valid_to: Mapped[date | None] = mapped_column(Date)
+    note: Mapped[str | None] = mapped_column(Text)
+    created_by: Mapped[int | None] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
+
+
+class TaxAccrual(Base):
+    """Нарахування податку ФОП за період. Лише додавання: виправлення — сторно + нове нарахування."""
+
+    __tablename__ = "tax_accruals"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    key: Mapped[str] = mapped_column(String(24))
+    period_start: Mapped[date] = mapped_column(Date)
+    period_end: Mapped[date] = mapped_column(Date)
+    base_amount: Mapped[int] = mapped_column(Integer)
+    rate_bp: Mapped[int | None] = mapped_column(Integer)
+    amount: Mapped[int] = mapped_column(Integer)  # сторно — від'ємне
+    due_date: Mapped[date] = mapped_column(Date)
+    dedupe_key: Mapped[str | None] = mapped_column(String(64), unique=True)
+    reverses_id: Mapped[int | None] = mapped_column(ForeignKey("tax_accruals.id", name="fk_tax_accruals_reverses_id"))
+    reversed: Mapped[bool] = mapped_column(Boolean, default=False)
+    rate_id: Mapped[int | None] = mapped_column(Integer)
+    reminded_at: Mapped[datetime | None] = mapped_column(DateTime)
+    note: Mapped[str | None] = mapped_column(Text)
+    created_by: Mapped[int | None] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
+
+
+class TaxPayment(Base):
+    __tablename__ = "tax_payments"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    key: Mapped[str] = mapped_column(String(24))
+    period_start: Mapped[date] = mapped_column(Date)
+    amount: Mapped[int] = mapped_column(Integer)
+    paid_on: Mapped[date] = mapped_column(Date)
+    note: Mapped[str | None] = mapped_column(Text)
+    created_by: Mapped[int | None] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
+
+
+class PayrollAccrual(Base):
+    """Офіційне (юридичне) нарахування зарплати працівнику за місяць. НЕ пов'язане з управлінським
+    поділом 50/50. Лише додавання: виправлення — сторно + нове нарахування."""
+
+    __tablename__ = "payroll_accruals"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", name="fk_payroll_accruals_user_id"), index=True)
+    month: Mapped[date] = mapped_column(Date)
+    gross: Mapped[int] = mapped_column(Integer)
+    pdfo: Mapped[int] = mapped_column(Integer)
+    military: Mapped[int] = mapped_column(Integer)
+    net: Mapped[int] = mapped_column(Integer)
+    esv_employer: Mapped[int] = mapped_column(Integer)
+    esv_base: Mapped[int] = mapped_column(Integer)
+    rates: Mapped[dict | None] = mapped_column(JSON)  # знімок ставок на дату нарахування
+    dedupe_key: Mapped[str | None] = mapped_column(String(64), unique=True)
+    reverses_id: Mapped[int | None] = mapped_column(ForeignKey("payroll_accruals.id", name="fk_payroll_accruals_reverses_id"))
+    reversed: Mapped[bool] = mapped_column(Boolean, default=False)
+    note: Mapped[str | None] = mapped_column(Text)
+    created_by: Mapped[int | None] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
+
+    user: Mapped[User] = relationship()
+
+
+class PayrollPayment(Base):
+    __tablename__ = "payroll_payments"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", name="fk_payroll_payments_user_id"), index=True)
+    month: Mapped[date] = mapped_column(Date)
+    amount: Mapped[int] = mapped_column(Integer)
+    paid_on: Mapped[date] = mapped_column(Date)
+    note: Mapped[str | None] = mapped_column(Text)
+    created_by: Mapped[int | None] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
+
+
+class EmployeeProfile(Base):
+    """Кадрові дані найманого працівника для офіційної зарплати і звітів (Податковий розрахунок).
+    Окремо від облікового запису: майстер у системі ≠ обов'язково найманий працівник."""
+
+    __tablename__ = "employee_profiles"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", name="fk_employee_profiles_user_id"), unique=True)
+    tin: Mapped[str | None] = mapped_column(String(10))  # РНОКПП
+    position: Mapped[str | None] = mapped_column(String(128))
+    hired_on: Mapped[date | None] = mapped_column(Date)
+    fired_on: Mapped[date | None] = mapped_column(Date)
+    main_job: Mapped[bool] = mapped_column(Boolean, default=True)  # основне місце роботи (мінімальна база ЄСВ)
+    note: Mapped[str | None] = mapped_column(Text)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=_now)

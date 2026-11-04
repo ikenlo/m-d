@@ -113,3 +113,18 @@ def test_api(client_api):
     tok = c.post("/api/auth/login", json={"username": "olena", "password": "Master123"}).json()["token"]
     assert c.get("/api/reports/declaration", params={"year": 2026},
                  headers={"Authorization": f"Bearer {tok}"}).status_code == 403
+
+
+def test_rates_by_date_override_settings(db, seed, profile):
+    from mds.services import taxes
+
+    d = seed["actors"]["director"]
+    with db.session() as s:
+        taxes.add_rate(s, d, key="min_wage", valid_from=date(2025, 1, 1), amount=800000)
+        taxes.add_rate(s, d, key="single_tax", valid_from=date(2025, 1, 1), amount=30280)
+        taxes.add_rate(s, d, key="min_wage", valid_from=date(2026, 1, 1), amount=864700)
+        d25 = tax_declaration.declaration_data(s, d, 2025)
+        d26 = tax_declaration.declaration_data(s, d, 2026)
+    assert (d25["min_wage"], d25["single_tax_month"], d25["esv_month"], d25["military_levy"]) == (800000, 30280, 176000, 960000)
+    assert d26["min_wage"] == 864700 and d26["single_tax_month"] == 30280  # ЄП 2025 діє, доки не задано нову ставку
+    assert d25["rates_source"] == "ставки з датами"

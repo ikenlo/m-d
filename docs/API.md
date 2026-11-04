@@ -52,3 +52,11 @@
 - Дохід = сума закритих замовлень на дату закриття (після виправлень — остання сума). Нічого не подає в ДПС.
 - `GET /api/reports/declaration?year=` — цифри декларації ФОП 1 групи і чого бракує в даних ФОП;
   `GET /api/reports/declaration.zip?year=` — ZIP з двома XML (річна F0103407 + Додаток 1 F0134107) для Електронного кабінету.
+
+## Податки і зарплата (директор) — docs/PAYROLL.md
+- Ставки: `GET/POST /api/taxes/rates`; податки ФОП: `GET /api/taxes/fop?year=`, `POST /api/taxes/fop/accrue`,
+  `POST /api/taxes/fop/{id}/correct`, `POST /api/taxes/payments`.
+- Працівники: `GET /api/employees`, `PUT /api/employees/{user_id}`.
+- Зарплата: `GET /api/payroll?month=`, `GET /api/payroll/calc?gross=&month=&user_id=`, `POST /api/payroll`,
+  `POST /api/payroll/{id}/correct`, `POST /api/payroll/payments`, `GET /api/payroll/history/{user_id}`,
+  `GET /api/payroll/quarter?year=&quarter=`, `GET /api/payroll/quarter.csv?year=&quarter=`.
