@@ -40,6 +40,8 @@
 | `GET /api/journal/feed?date_from&date_to&category&q` | директор | Журнал простими словами (стрічка подій, фільтр і пошук) |
 | `GET/POST /api/utilities/readings`, `PATCH /api/utilities/readings/{id}`, `POST …/{id}/confirm` | директор | Показники лічильника, тариф, оплата, підтвердження (витрата «Комунальні») |
 | `GET /api/generator`, `POST /api/generator/start`, `POST /api/generator/stop` | персонал | Стан і перемикач генератора (прогноз — лише директору) |
+| `POST /api/generator/hours` {on, current \| hours, note} | директор, адміністратор | Внести мотогодини: показник лічильника (різниця) або відпрацьовані години |
+| `GET /api/generator/history?months=6` | директор | Генератор по місяцях: мотогодини, літри, бензин, амортизація |
 | `GET/POST /api/generator/runs`, `PATCH /api/generator/runs/{id}`, `POST /api/generator/motohours` | директор (перегляд — і адміністратор) | Запуски, ручне додавання/коригування, звірка мотогодин |
 | `GET /api/utilities/summary`, `GET /api/utilities/allocation`, `POST /api/utilities/allocate`, `POST /api/utilities/reverse` | директор | Аналітика місяця, розподіл між майстрами, скасування (сторно) |
 | `GET /api/utilities/charges` | директор; майстер — свої | Списання з майстрів |

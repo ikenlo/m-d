@@ -681,3 +681,103 @@ tr.click { transition: background .12s; }
 .ord-master { display: flex; align-items: center; gap: 6px; min-width: 0; }
 .ord-master span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 @media (max-width: 760px) { .grid.kpi.kpi-6 .kpi-tile { padding: 10px 12px; gap: 4px; } .grid.kpi.kpi-6 .kpi-ico { width: 26px; height: 26px; } }
+
+/* ================================================================ 0.1.23 */
+/* клікабельні плитки «Огляду» */
+.kpi-link { font: inherit; text-align: left; cursor: pointer; width: 100%; }
+.kpi-link:not(.dark) { color: var(--ink); }
+.kpi-more { margin-left: auto; opacity: .45; transition: transform .15s, opacity .15s; }
+.kpi-link:hover .kpi-more { opacity: 1; transform: translateX(3px); }
+.sum-line.link { color: inherit; text-decoration: none; border-radius: 6px; }
+.sum-line.link:hover { background: var(--surface-2); }
+/* подробиці */
+.detail h3 { margin: 6px 0 0; font-size: 14px; }
+.detail-head .kpi-value.big { font-size: 30px; }
+.mini-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 8px; }
+.mini-stats > div { background: var(--surface-2); border-radius: 10px; padding: 10px 12px; display: flex; flex-direction: column; gap: 2px; animation: rise-in .3s both; }
+.mini-stats span { font-size: 11.5px; color: var(--ink-3); font-weight: 600; }
+.mini-stats b { font-size: 17px; }
+.bars { display: flex; flex-direction: column; gap: 10px; }
+.bar-row { display: flex; flex-direction: column; gap: 5px; color: inherit; text-decoration: none; }
+a.bar-row:hover .bar-track i { filter: brightness(1.1); }
+.bar-head { display: flex; align-items: baseline; gap: 8px; font-size: 13px; }
+.bar-head > span { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bar-head small { min-width: 42px; text-align: right; }
+.bar-track { height: 8px; border-radius: 6px; background: var(--surface-3); overflow: hidden; }
+.bar-track i { display: block; height: 100%; border-radius: 6px; background: linear-gradient(90deg, var(--brand-2), var(--gold)); transition: width .6s cubic-bezier(.2, .7, .3, 1); }
+.stack-bar { display: flex; height: 18px; border-radius: 9px; overflow: hidden; background: var(--surface-3); }
+.stack-bar i { display: block; height: 100%; animation: grow-x .7s cubic-bezier(.2, .7, .3, 1) both; transform-origin: left; }
+@keyframes grow-x { from { transform: scaleX(0); } }
+.c-masters { background: #6b8f71; } .c-mat { background: #c9a35b; } .c-exp { background: #c2453d; } .c-profit { background: var(--brand-2); }
+:root[data-theme="dark"] .c-profit { background: var(--gold); }
+.legend-list { display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
+.legend-list > div { display: flex; align-items: center; gap: 8px; }
+.legend-list small { min-width: 44px; text-align: right; }
+.dot { width: 10px; height: 10px; border-radius: 50%; flex: 0 0 auto; }
+
+/* генератор */
+.gen-card .gen-ico { width: 46px; height: 46px; border-radius: 12px; display: grid; place-items: center; background: var(--gold-tint); color: var(--gold); }
+.gen-card .gen-ico svg { width: 24px; height: 24px; }
+.gen-preview { box-shadow: none; background: var(--surface-2); }
+.gen-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; }
+.gen-stats > div { background: var(--surface-2); border-radius: 10px; padding: 10px 12px; display: flex; flex-direction: column; gap: 2px; }
+.gen-stats span { font-size: 11.5px; color: var(--ink-3); font-weight: 600; }
+.gen-stats b { font-size: 17px; }
+.gen-stats small { color: var(--ink-3); font-size: 12px; }
+.gen-bars { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; align-items: end; margin-top: 8px; }
+.gen-bar { display: flex; flex-direction: column; align-items: center; gap: 3px; font-size: 11px; }
+.gen-bar .v { font-size: 10.5px; color: var(--ink-3); white-space: nowrap; }
+.gen-bar .col { height: 110px; width: 100%; max-width: 46px; display: flex; flex-direction: column-reverse; border-radius: 6px 6px 2px 2px; background: var(--surface-2); overflow: hidden; }
+.gen-bar .col i { display: block; width: 100%; animation: grow-y .6s cubic-bezier(.2, .7, .3, 1) both; transform-origin: bottom; }
+@keyframes grow-y { from { transform: scaleY(0); } }
+.gen-bar .col .fuel, .lg.fuel::before { background: var(--gold); }
+.gen-bar .col .amort, .lg.amort::before { background: var(--brand-2); }
+.lg { display: inline-flex; align-items: center; gap: 5px; }
+.lg::before { content: ""; width: 10px; height: 10px; border-radius: 3px; }
+
+/* звіт для податкової: квартали з місяцями */
+.q-card { padding: 0; overflow: hidden; }
+.q-card .card-head { padding: 14px 16px 8px; margin: 0; }
+.q-group { border-top: 1px solid var(--line); }
+.q-group summary { list-style: none; cursor: pointer; display: flex; align-items: center; gap: 12px; padding: 12px 16px; transition: background .12s; }
+.q-group summary::-webkit-details-marker { display: none; }
+.q-group summary:hover { background: var(--surface-2); }
+.q-group .q-name { display: inline-flex; align-items: center; gap: 6px; min-width: 120px; font-weight: 700; }
+.q-group summary .q-name svg { transition: transform .2s; color: var(--ink-3); }
+.q-group[open] summary .q-name svg { transform: rotate(90deg); }
+.q-months { background: var(--surface-2); padding: 2px 0; animation: rise-in .25s both; }
+.q-month { display: flex; align-items: center; gap: 12px; padding: 9px 16px 9px 40px; border-top: 1px dashed var(--line); }
+.q-month .q-name { min-width: 104px; font-weight: 600; color: var(--ink-2); }
+.q-amounts { flex: 1; display: grid; grid-template-columns: repeat(auto-fit, minmax(90px, 1fr)); gap: 6px 12px; align-items: baseline; font-variant-numeric: tabular-nums; }
+.q-amounts span { display: flex; flex-direction: column; text-align: right; font-size: 13.5px; }
+.q-amounts small { font-size: 10.5px; color: var(--ink-3); font-weight: 600; text-transform: uppercase; letter-spacing: .02em; }
+.q-amounts .q-total b { font-size: 15px; }
+.q-sum { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-top: 2px solid var(--line-strong); background: var(--surface-2); }
+.q-sum .q-name { min-width: 120px; }
+@media (max-width: 640px) {
+  .q-group summary, .q-month, .q-sum { flex-direction: column; align-items: stretch; gap: 6px; }
+  .q-month { padding-left: 16px; }
+  .q-amounts { grid-template-columns: repeat(3, 1fr); }
+}
+
+/* замовлення: компактніші фільтри й плитки */
+.filters { gap: 8px; }
+.filters .seg { padding: 2px; border-radius: 8px; }
+.filters .seg button { padding: 4px 10px; font-size: 12.5px; border-radius: 6px; }
+.filters select, .filters input { min-height: 34px; padding: 5px 10px; font-size: 13.5px; border-radius: 8px; }
+.filters .search-box input { padding-left: 32px; }
+.grid.kpi.kpi-6 { gap: 8px; }
+.grid.kpi.kpi-6 .kpi-tile { padding: 10px 12px; gap: 3px; border-radius: 10px; }
+.grid.kpi.kpi-6 .kpi-ico { width: 24px; height: 24px; border-radius: 6px; }
+.grid.kpi.kpi-6 .kpi-ico svg { width: 14px; height: 14px; }
+.grid.kpi.kpi-6 .kpi-label { font-size: 11.5px; }
+.grid.kpi.kpi-6 .kpi-value { font-size: 18px; }
+@media (max-width: 760px) {
+  .grid.kpi.kpi-6 { grid-template-columns: repeat(3, 1fr); }
+  .grid.kpi.kpi-6 .kpi-ico { display: none; }
+  .grid.kpi.kpi-6 .kpi-value { font-size: 15px; }
+  .grid.kpi.kpi-6 .kpi-tile .row { display: none; }
+  .filters .seg button { padding: 4px 8px; }
+  .filters select, .filters input { font-size: 16px; min-height: 36px; }
+}
+@media (max-width: 600px) { .mini-stats { grid-template-columns: repeat(2, 1fr); } .gen-bars { gap: 4px; } .gen-bar .v { display: none; } }

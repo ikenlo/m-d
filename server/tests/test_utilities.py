@@ -246,3 +246,31 @@ def test_permissions(client_api):
     assert c.patch("/api/generator/runs/1", headers=m, json={"hours": 1, "reason": "x"}).status_code == 403
     # майстер бачить лише свої списання
     assert c.get("/api/utilities/charges", headers=m).status_code == 200
+
+
+def test_generator_hours_by_meter_and_by_hours(db, seed):
+    """Мотогодини вносяться, як показники: з лічильника (різниця) або кількістю годин; вартість — за налаштуваннями."""
+    d, adm, m1 = seed["actors"]["director"], seed["actors"]["admin"], seed["actors"]["m1"]
+    _gen_settings(db, seed)  # 1,5 л/год × 58 ₴ + 20 ₴ амортизації = 107 ₴ за мотогодину
+    clock.set_now(datetime(2026, 10, 20, 18, 0))
+    with db.session() as s:
+        update_settings(s, d, {"generator_hours_initial_milli": 100000})
+        g = u.record_hours(s, adm, on=date(2026, 10, 5), current="104,5")  # 100 → 104,5 = 4,5 мотогод.
+        assert (g.hours_milli, g.fuel_milli, g.fuel_cost, g.amort_cost, g.total_cost) == (4500, 6750, 39150, 9000, 48150)
+        assert g.power_outage is False and "100 → 104,5" in g.note
+        g2 = u.record_hours(s, d, on=date(2026, 10, 12), hours="2")
+        assert g2.total_cost == 21400
+        assert u.generator_state(s, d)["motohours"] == 106.5
+        with pytest.raises(ValidationError):
+            u.record_hours(s, d, on=date(2026, 10, 13), current="106")  # менше за попередній
+        with pytest.raises(ValidationError):
+            u.record_hours(s, d, on=date(2026, 10, 13))  # нічого не вказано
+        with pytest.raises(ValidationError):
+            u.record_hours(s, d, on=date(2026, 10, 21), hours="1")  # майбутня дата
+        with pytest.raises(Forbidden):
+            u.record_hours(s, m1, on=date(2026, 10, 13), hours="1")
+        hist = u.generator_history(s, d, 3)
+    clock.set_now(None)
+    assert [x["month"] for x in hist] == ["2026-08-01", "2026-09-01", "2026-10-01"]
+    assert hist[-1] == {"month": "2026-10-01", "runs": 2, "hours": 6.5, "fuel_l": 9.75, "fuel_cost": 56550,
+                        "amort_cost": 13000, "total": 69550}
