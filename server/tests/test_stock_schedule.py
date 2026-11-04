@@ -173,3 +173,38 @@ def test_material_units_packs_and_unit_change_guard(db, seed):
             catalog.update_material(s, d, a.id, {"unit": "мл"})
         catalog.update_material(s, d, a.id, {"pack_name": "флакон", "pack_size": 500})  # упаковку — можна
         assert stock.material_public(a)["stock_packs"] == 1.0
+
+
+def test_auto_writeoff_of_tiny_remainder(db, seed):
+    """Лишилось менше 0,1 упаковки (напр. 0,09 туби) — залишок списується автоматично; виправлення замовлення повертає його."""
+    from mds.services.common import update_settings
+
+    d, adm, m1 = seed["actors"]["director"], seed["actors"]["admin"], seed["actors"]["m1"]
+    with db.session() as s:
+        t = mk_dye(s, d, stock_g=125)  # туба 60 г; 125 г
+        a = bookings.create_appointment(s, adm, master_id=seed["m1"], service_id=seed["haircut"],
+                                        starts_at=datetime(2026, 11, 2, 10), client_name="К", client_phone="0500000000")
+        # 125 − 120 = 5 г = 0,083 туби < 0,1 → списується автоматично
+        o = orders.close_order(s, m1, a.id, amount=100000, payment_method="cash", materials=[{"material_id": t.id, "qty": 120}])
+    with db.session() as s:
+        assert s.get(Material, t.id).stock_milli == 0
+        auto = s.query(StockMove).filter_by(kind="writeoff").one()
+        assert auto.qty_milli == -5000 and auto.order_id == o.id and "Автоматичне списання" in auto.note
+        assert auto.cost == 2500  # 5 г × 300 ₴ / 60 г
+    with db.session() as s:
+        # виправили: насправді 60 г → повертаються 120 г і 5 г крихти, списується 60 г; лишається 65 г
+        orders.correct_order(s, d, o.id, {"materials": [{"material_id": t.id, "qty": 60}]}, "Насправді одна туба")
+    with db.session() as s:
+        assert s.get(Material, t.id).stock_milli == 65_000
+        orders.correct_order(s, d, o.id, {"materials": [{"material_id": t.id, "qty": 61}]}, "61 г")
+    with db.session() as s:
+        assert s.get(Material, t.id).stock_milli == 64_000  # крихту не повернуто вдруге
+        # ручне списання до 6 г (0,1 туби) — не крихта; до 5 г — списується
+        stock.writeoff(s, d, t.id, "58", "зіпсовано")
+        assert s.get(Material, t.id).stock_milli == 6_000
+        stock.writeoff(s, d, t.id, "1", "зіпсовано")
+        assert s.get(Material, t.id).stock_milli == 0
+        update_settings(s, d, {"stock_auto_writeoff_milli": 0})  # вимкнено
+        stock.receive(s, d, t.id, "10")
+        stock.writeoff(s, d, t.id, "8", "x")
+        assert s.get(Material, t.id).stock_milli == 2_000

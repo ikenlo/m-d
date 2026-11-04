@@ -1841,6 +1841,18 @@ function genRunsTable(runs, onEdit) {
       onEdit ? h("td", { class: "right" }, x.running ? null : h("button", { class: "btn sm ghost", "aria-label": "Виправити", onclick: () => onEdit(x) }, icon("edit", "sm"))) : null))))
     : emptyState("Цього місяця генератор не використовувався", "gauge");
 }
+function stockSettingsCard(st) {
+  const v = st.stock_auto_writeoff_milli ?? 100;
+  const opts = [[0, "вимкнено"], [50, "менше 0,05 упаковки"], [100, "менше 0,1 упаковки (напр. 0,09 туби)"], [200, "менше 0,2 упаковки"]];
+  if (!opts.some(([x]) => x === v)) opts.push([v, `менше ${String(v / 1000).replace(".", ",")} упаковки`]);
+  const sel = select(opts, v);
+  return h("div", { class: "card stack" }, h("h3", { class: "row", style: { gap: "8px" } }, icon("box"), "Склад"),
+    field("Автоматично списувати залишок", sel),
+    h("p", { class: "muted small", style: { margin: 0 } }, "Коли після замовлення чи списання лишається крихта (напр. 6 г з туби 60 г), вона списується сама — у «Русі складу» з приміткою «Автоматичне списання залишку». Якщо замовлення виправляють — повертається."),
+    h("button", { class: "btn primary", onclick: async () => {
+      state.settings = await run(() => api.put("/api/settings", { stock_auto_writeoff_milli: Number(sel.value) }), "Збережено"); reload();
+    } }, "Зберегти"));
+}
 function twofaSettingsCard(st) {
   const roles = st.twofa_roles || [];
   const dir = h("input", { type: "checkbox", checked: roles.includes("director") });
@@ -2787,6 +2799,7 @@ VIEWS.settings = async (main) => {
       h("label", { class: "row" }, takesCash, "Після зміни майстер бере заробіток з готівки в касі (решту доплачує директор)"),
       h("p", { class: "muted small" }, "Індивідуальні умови задаються в картці майстра (розділ «Персонал»). Зміни діють для нових замовлень; закриті замовлення зберігають умови на момент закриття.")),
     twofaSettingsCard(s),
+    stockSettingsCard(s),
     generatorSettingsCard(s),
     h("div", { class: "card stack" }, h("h3", {}, "Запис клієнтів"), field("Назва салону", name),
       h("div", { class: "form-grid" }, field("Крок слотів, хв", step), field("Запис наперед, днів", horizon), field("Мін. хв до запису (бот)", lead)),
