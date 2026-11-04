@@ -250,3 +250,17 @@ def test_sync_reports_new_bookings_to_others(client):
     client.post("/api/settings", headers=d, json={})
     assert client.get(f"/api/sync?since={rev2}", headers=d).json()["new"] == []
     clock.set_now(None)
+
+
+def test_availability_with_custom_duration(client):
+    from datetime import datetime
+
+    from mds import clock
+
+    clock.set_now(datetime(2026, 11, 2, 8))
+    d = login(client, "director", "Director123")
+    url = f"/api/availability?master_id={client.ids['m1']}&service_id={client.ids['haircut']}&day=2026-11-02"
+    base = client.get(url, headers=d).json()
+    long = client.get(url + "&duration_min=180", headers=d).json()
+    assert base and long and len(long) < len(base) and long[-1] < base[-1]  # 3 год не влазять наприкінці дня
+    clock.set_now(None)

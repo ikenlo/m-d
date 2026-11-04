@@ -91,7 +91,7 @@ def _lock_master(s: Session, master_id: int) -> None:
 
 
 def free_slots(
-    s: Session, master_id: int, service_id: int, day: date, *, for_client: bool = False
+    s: Session, master_id: int, service_id: int, day: date, *, for_client: bool = False, duration_min: int | None = None
 ) -> list[datetime]:
     """Вільні часи початку для послуги в майстра на дату."""
     master: User = get_or_404(s, User, master_id, "Майстра")
@@ -101,7 +101,7 @@ def free_slots(
         return []
     start, end = hours
     step = timedelta(minutes=int(get_setting(s, "slot_step_min")))
-    dur = timedelta(minutes=service.duration_min)
+    dur = timedelta(minutes=duration_min or service.duration_min)
     earliest = clock.now()
     if for_client:
         earliest += timedelta(minutes=int(get_setting(s, "booking_min_lead_min")))
