@@ -44,3 +44,24 @@ def test_demo_year_adds_only_and_is_idempotent(db, seed):
     with db.session() as s:
         assert s.scalar(select(func.count(Order.id))) == n_orders
     assert clock._fixed is None  # годинник повернуто
+
+
+def test_demo_extra_fills_stock_clients_future(db, seed):
+    from mds.demo import seed_extra
+    from mds.models import Appointment, Client, Material, MeterReading, StockMove
+
+    seed_year(db, date(2026, 1, 1), date(2026, 2, 28), clients=60)
+    st = seed_extra(db, date(2026, 1, 1), date(2026, 2, 28), future_days=7)
+    assert st["materials"] == 19 and st["stock_moves"] > 100 and st["readings"] == 2
+    assert st["client_notes"] > 10 and st["future"] > 5 and st["corrections"] == 10
+    with db.session() as s:
+        assert all(m.stock_milli >= 0 for m in s.scalars(select(Material)))
+        assert s.scalar(select(func.count(StockMove.id))) > 100
+        assert s.scalar(select(func.count(MeterReading.id))) == 2
+        assert s.scalar(select(func.count(Client.id)).where(Client.notes.like("%(демо)%"))) > 10
+        assert s.scalar(select(func.count(Appointment.id)).where(Appointment.starts_at > datetime.now())) > 5
+        bad = s.scalar(select(func.count(Order.id)).where(Order.amount != Order.master_earning + Order.materials_cost + Order.salon_earning))
+        assert bad == 0
+        assert s.scalar(select(func.count(Notification.id))) == 0
+    assert seed_extra(db) == {"skipped": True}
+    assert clock._fixed is None
