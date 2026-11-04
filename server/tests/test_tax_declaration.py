@@ -1,4 +1,4 @@
-"""XML-декларація ФОП 1 групи (F0103309 + Додаток 1 F0133109): точні суми й перевірка офіційними схемами ДПС."""
+"""Річна XML-декларація ФОП 1 групи (F0103407 + Додаток 1 F0134107): точні суми й перевірка офіційними схемами ДПС."""
 
 import io
 import zipfile
@@ -58,9 +58,9 @@ def test_xml_valid_against_official_xsd(db, seed, profile):
     with db.session() as s:
         files = tax_declaration.declaration_files(s, seed["actors"]["director"], 2026, date(2027, 2, 10))
     (main_name, main), (app_name, app) = files
-    assert main_name == "26501234567890F0103309100000000151220262650.xml"
-    assert app_name == "26501234567890F0133109100000000151220262650.xml"
-    for data, xsd in ((main, "F0103309.xsd"), (app, "F0133109.xsd")):
+    assert main_name == "26501234567890F0103407100000000151220262650.xml"
+    assert app_name == "26501234567890F0134107100000000151220262650.xml"
+    for data, xsd in ((main, "F0103407.xsd"), (app, "F0134107.xsd")):
         doc = etree.fromstring(data)
         schema = _schema(xsd)
         assert schema.validate(doc), schema.error_log
@@ -83,7 +83,7 @@ def test_zip_and_escaping(db, seed, profile):
     with zipfile.ZipFile(io.BytesIO(body)) as z:
         names = z.namelist()
         main = z.read(names[0])
-    assert len(names) == 2 and _schema("F0103309.xsd").validate(etree.fromstring(main))
+    assert len(names) == 2 and _schema("F0103407.xsd").validate(etree.fromstring(main))
     assert etree.fromstring(main).findtext(".//HLOC") == "вул. Ш & К <1>"
 
 

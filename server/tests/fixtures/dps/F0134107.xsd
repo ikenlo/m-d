@@ -2,7 +2,7 @@
 <xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema">
 	<xs:annotation>
 		<xs:documentation>Відомості про суми нарахованого доходу застрахованих осіб та суми нарахованого єдиного внеску. 
-Додаток 1 до податкової декларації платника єдиного податку - фізичної особи - підприємця, у якого податковий (звітний) період квартал. 
+Додаток 1 до податкової декларації платника єдиного податку - фізичної особи - підприємця, у якого податковий (звітний) період рік. 
 Наказ Міністерства фінансів України 19 червня 2015 року № 578 (у редакції наказу Міністерства фінансів України  від 31 січня 2025 року № 57)</xs:documentation>
 	</xs:annotation>
 	<xs:include schemaLocation="common_types.xsd"/>
@@ -17,8 +17,8 @@
 		<xs:sequence>
 			<xs:element name="TIN" type="DGLong"/>
 			<xs:element name="C_DOC" type="xs:string" fixed="F01"/>
-			<xs:element name="C_DOC_SUB" type="xs:string" fixed="331"/>
-			<xs:element name="C_DOC_VER" type="xs:string" fixed="9"/>
+			<xs:element name="C_DOC_SUB" type="xs:string" fixed="341"/>
+			<xs:element name="C_DOC_VER" type="xs:string" fixed="7"/>
 			<xs:element name="C_DOC_TYPE" type="xs:nonNegativeInteger"/>
 			<xs:element name="C_DOC_CNT" type="xs:nonNegativeInteger"/>
 			<xs:element name="C_REG" type="DGsti"/>
@@ -69,9 +69,6 @@
 			<xs:element name="HTINPF" type="DGNUMZO" nillable="true" minOccurs="0"/>
 			<xs:element name="HNAME" type="DGHNAME"/>
 			<xs:choice>
-				<xs:element name="H1KV" type="DGchk"/>
-				<xs:element name="HHY" type="DGchk"/>
-				<xs:element name="H3KV" type="DGchk"/>
 				<xs:element name="HY" type="DGchk"/>
 				<xs:sequence>
 					<xs:element name="HZM" type="DGMonth"/>
@@ -79,12 +76,7 @@
 				</xs:sequence>
 			</xs:choice>
 			<xs:element name="HZY" type="DGYear"/>
-			<xs:choice minOccurs="0">
-				<xs:element name="H1KVP" type="DGchk"/>
-				<xs:element name="HHYP" type="DGchk"/>
-				<xs:element name="H3KVP" type="DGchk"/>
-				<xs:element name="HYP" type="DGchk"/>
-			</xs:choice>
+			<xs:element name="HYP" type="DGchk" nillable="true" minOccurs="0"/>
 			<xs:element name="HZYP" type="DGYear" nillable="true" minOccurs="0"/>
 			<xs:choice minOccurs="0">
 				<xs:element name="H01" type="DGchk"/>
