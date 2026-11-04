@@ -1043,7 +1043,7 @@ function quickBook({ master_id = null, date = today(), time = null } = {}, onCha
   const services = state.services.filter((s) => s.is_active);
   let recent = [];
   try { recent = JSON.parse(store.get(RECENT_SVC()) || "[]"); } catch (_) { recent = []; }
-  const st = { master: master_id || masters[0]?.id, service: services.find((s) => s.id === recent[0])?.id || null, date, time, clientId: null, preset: null, duration: null };
+  const st = { master: master_id || masters[0]?.id, service: null, date, time, clientId: null, preset: null, duration: null };
   // шаблони: типова послуга й тривалість одним дотиком (послуга — найближча за тривалістю у відповідному розділі)
   const PRESETS = [
     // розділ «Чоловічі/Жіночі» може бути не заповнений — тоді за категорією й назвою
@@ -1054,6 +1054,7 @@ function quickBook({ master_id = null, date = today(), time = null } = {}, onCha
     { key: "color", label: "Фарбування", min: 120, ico: "zap", match: (s) => s.needs_materials || /фарб/i.test(`${s.category} ${s.subcategory} ${s.name}`) },
   ].map((p) => ({ ...p, service: services.filter(p.match).sort((a, b) => Math.abs(a.duration_min - p.min) - Math.abs(b.duration_min - p.min))[0] }))
     .filter((p) => p.service);
+  if (!PRESETS.length) st.service = services.find((s) => s.id === recent[0])?.id || null;
   const durText = (m) => (m % 60 ? `${m} хв` : `${m / 60} год`);
   const pBox = h("div", { class: "qb-presets" });
   const drawPresets = () => pBox.replaceChildren(...PRESETS.map((p) => h("button", { type: "button", class: "qb-preset" + (st.preset === p.key ? " on" : ""),
@@ -1096,7 +1097,7 @@ function quickBook({ master_id = null, date = today(), time = null } = {}, onCha
   let req = 0;
   async function loadTimes() {
     summary();
-    if (!st.service || !st.master) { tBox.replaceChildren(h("span", { class: "muted small" }, "Оберіть послугу")); return; }
+    if (!st.service || !st.master) { tBox.replaceChildren(h("span", { class: "muted small" }, PRESETS.length ? "Оберіть стрижку чи фарбування вгорі" : "Оберіть послугу")); return; }
     const my = ++req;
     tBox.replaceChildren(h("span", { class: "muted small" }, "Шукаю вільний час…"));
     let list = await api.get(`/api/availability?master_id=${st.master}&service_id=${st.service}&day=${st.date}${st.duration ? "&duration_min=" + st.duration : ""}`).catch(() => []);
@@ -1144,13 +1145,12 @@ function quickBook({ master_id = null, date = today(), time = null } = {}, onCha
   drawMasters(); drawPresets(); drawServices(); drawDays();
   openSheet("Швидкий запис", h("div", { class: "stack qb" },
     masters.length > 1 ? h("div", {}, h("div", { class: "qb-label" }, "Майстер"), mBox) : null,
-    PRESETS.length ? pBox : null,
-    h("div", {}, h("div", { class: "qb-label" }, PRESETS.length ? "Або конкретна послуга" : "Послуга"), sBox, sSearch, sFound),
+    PRESETS.length ? pBox : h("div", {}, h("div", { class: "qb-label" }, "Послуга"), sBox, sSearch, sFound),
     h("div", {}, h("div", { class: "qb-label" }, "День"), dBox),
     h("div", {}, h("div", { class: "qb-label" }, "Час"), tBox),
     h("div", {}, h("div", { class: "qb-label" }, "Клієнт"), h("div", { class: "form-grid" }, name, phone)), found,
     save,
-    h("button", { type: "button", class: "btn ghost", onclick: () => { closeSheet(); apptForm({ master_id: st.master, date: st.date, time: st.time || "10:00" }, onChange); } }, "Повна форма: тривалість, ціна, коментар")));
+    h("button", { type: "button", class: "btn ghost", onclick: () => { closeSheet(); apptForm({ master_id: st.master, date: st.date, time: st.time || "10:00" }, onChange); } }, "Інша послуга з прайсу — повна форма")));
   loadTimes();
 }
 

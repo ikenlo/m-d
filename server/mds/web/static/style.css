@@ -963,11 +963,12 @@ tr.no-mat td { background: var(--danger-bg); }
 :root[data-theme="dark"] .fab { background: var(--gold); color: #17120a; }
 @media (max-width: 900px) {
   .fab { display: none; }
-  .tab-plus { display: flex; flex: 0 0 auto; align-items: center; justify-content: center; border: 0; background: none; padding: 0 6px; cursor: pointer; }
-  .tab-plus span { width: 54px; height: 40px; border-radius: 14px; display: grid; place-items: center; color: #fff; position: relative;
-    background: var(--brand); box-shadow: -4px 0 0 var(--gold), 4px 0 0 #c2453d; transform: translateY(-2px); transition: transform .12s; }
-  .tab-plus:active span { transform: translateY(-2px) scale(.92); }
-  .tab-plus svg { width: 26px; height: 26px; stroke-width: 2.6; }
+  /* кругла «+» по центру меню, виступає над лінією — щоб легко натиснути великим пальцем */
+  .tab-plus { display: flex; flex: 0 0 72px; align-items: flex-start; justify-content: center; border: 0; background: none; padding: 0; cursor: pointer; position: relative; }
+  .tab-plus span { width: 62px; height: 62px; border-radius: 50%; display: grid; place-items: center; color: #fff; margin-top: -26px;
+    background: var(--brand); border: 4px solid var(--surface); box-shadow: 0 6px 18px rgba(20, 57, 44, .35); transition: transform .12s; }
+  .tab-plus:active span { transform: scale(.92); }
+  .tab-plus svg { width: 30px; height: 30px; stroke-width: 2.6; }
   :root[data-theme="dark"] .tab-plus span { background: var(--gold); color: #17120a; }
 }
 .qb-presets { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
