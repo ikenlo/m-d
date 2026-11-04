@@ -15,7 +15,6 @@ from mds import clock
 from mds.errors import Conflict, Forbidden, ValidationError
 from mds.models import FiscalReceipt, FiscalReport, LedgerEntry, Notification, Order, User
 from mds.services import bookings, fiscal, orders
-from mds.services.common import update_settings
 from mds.services.fiscal_providers import (
     CheckboxProvider,
     FakePRROProvider,
@@ -33,7 +32,7 @@ def fp(db, seed):
     p = FakePRROProvider()
     set_provider(p)
     with db.session() as s:
-        update_settings(s, seed["actors"]["director"], {"fiscal_enabled": True})
+        fiscal.update_config(s, seed["actors"]["director"], {"enabled": True})
         s.get(User, seed["director"]).telegram_chat_id = 9001
     yield p
     set_provider(None)
@@ -94,7 +93,7 @@ def test_auto_open_shift_or_reject(db, seed, fp):
     # без автовідкриття — відмова і сповіщення директору
     fiscal.close_shift(db, seed["actors"]["director"], provider=fp)
     with db.session() as s:
-        update_settings(s, seed["actors"]["director"], {"fiscal_auto_open_shift": False})
+        fiscal.update_config(s, seed["actors"]["director"], {"auto_open_shift": False})
     o2 = close(db, seed, hour=13)
     fiscal.process_pending(db, fp)
     assert receipt(db, o2)["status"] == "rejected"
@@ -277,10 +276,10 @@ def test_fiscal_shift_x_z_reports(db, seed, fp):
 def test_reconcile_finds_missing_not_done_and_mismatch(db, seed, fp):
     d = seed["actors"]["director"]
     with db.session() as s:
-        update_settings(s, d, {"fiscal_enabled": False})
+        fiscal.update_config(s, d, {"enabled": False})
     o_missing = close(db, seed, hour=9)  # закрито, коли ПРРО було вимкнено
     with db.session() as s:
-        update_settings(s, d, {"fiscal_enabled": True})
+        fiscal.update_config(s, d, {"enabled": True})
     open_shift(db, seed, fp)
     o_ok = close(db, seed, hour=10)
     o_mis = close(db, seed, hour=11)

@@ -458,9 +458,30 @@ class FiscalReceipt(Base):
     tax_url: Mapped[str | None] = mapped_column(Text)
     fiscal_shift_id: Mapped[int | None] = mapped_column(ForeignKey("fiscal_shifts.id", name="fk_fiscal_receipts_shift_id"))
     reason: Mapped[str | None] = mapped_column(Text)
+    # True — чек створено в імітації або на тестовій касі: НЕ фіскальний документ
+    nonfiscal: Mapped[bool] = mapped_column(Boolean, default=True, server_default="1")
     created_by: Mapped[int | None] = mapped_column(Integer)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
     done_at: Mapped[datetime | None] = mapped_column(DateTime)
+
+
+class FiscalOperation(Base):
+    """Журнал кожного звернення до провайдера ПРРО (успіх/помилка, тривалість). Секрети маскуються."""
+
+    __tablename__ = "fiscal_operations"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_now, index=True)
+    mode: Mapped[str] = mapped_column(String(12))  # mock | test | production
+    op: Mapped[str] = mapped_column(String(24))  # sell | return | get | open_shift | close_shift | x_report | ping | selftest
+    ok: Mapped[bool] = mapped_column(Boolean)
+    result: Mapped[str | None] = mapped_column(String(24))
+    error: Mapped[str | None] = mapped_column(Text)
+    duration_ms: Mapped[int] = mapped_column(Integer, default=0)
+    receipt_id: Mapped[int | None] = mapped_column(Integer, index=True)
+    shift_id: Mapped[int | None] = mapped_column(Integer)
+    nonfiscal: Mapped[bool] = mapped_column(Boolean, default=True)
+    user_id: Mapped[int | None] = mapped_column(Integer)
 
 
 class FiscalReport(Base):
@@ -663,6 +684,7 @@ __all__ = [
     "ScheduleDay",
     "StockMove",
     "MaterialsMode",
+    "FiscalOperation",
     "FiscalReceipt",
     "FiscalReport",
     "FiscalShift",

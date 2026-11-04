@@ -152,7 +152,10 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "utilities_fixed_per": "shift",  # fixed: shift (за зміну) | month (за місяць)
     # ---- фіскалізація (ПРРО). Вимкнено, доки директор не підключить провайдера.
     "fiscal_enabled": False,
-    "fiscal_provider": "fake",  # fake (імітація, без справжніх чеків) | checkbox
+    # mock — імітація (НЕФІСКАЛЬНІ чеки); test — тестова каса Checkbox (НЕФІСКАЛЬНІ);
+    # production — бойовий, лише з дозволом сервера MDS_FISCAL_PRODUCTION_ALLOWED. Змінюється через /api/fiscal/config.
+    "fiscal_mode": "mock",
+    "fiscal_selftest_last": None,  # результат останньої самоперевірки (панель ПРРО)
     "fiscal_auto_open_shift": True,  # відкривати фіскальну зміну автоматично при першому чеку
     "salon_address": "",
     "salon_phone": "",
@@ -232,10 +235,8 @@ def update_settings(s: Session, actor: Actor, data: dict[str, Any]) -> dict[str,
             raise ValidationError("Розподіл: пропорційно виручці або порівну")
         if key == "utilities_fixed_per" and value not in ("shift", "month"):
             raise ValidationError("Фіксована ставка: за зміну або за місяць")
-        if key in ("fiscal_enabled", "fiscal_auto_open_shift") and not isinstance(value, bool):
-            raise ValidationError(f"{key}: так або ні")
-        if key == "fiscal_provider" and value not in ("fake", "checkbox"):
-            raise ValidationError("Провайдер ПРРО: fake (імітація) або checkbox")
+        if key.startswith("fiscal_"):
+            raise ValidationError("Налаштування ПРРО змінюються в розділі «Фіскалізація» (окремий доступ)")
         if key == "slot_step_min" and value < 5:
             raise ValidationError("Крок слотів — щонайменше 5 хвилин")
         set_setting(s, actor, key, value)

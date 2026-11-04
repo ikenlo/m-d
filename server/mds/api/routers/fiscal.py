@@ -78,7 +78,51 @@ class SalaryPayIn(BaseModel):
     note: str | None = None
 
 
+class FiscalConfigIn(BaseModel):
+    enabled: bool | None = None
+    mode: str | None = None
+    auto_open_shift: bool | None = None
+
+
+class TestReceiptIn(BaseModel):
+    amount: int = Field(gt=0, le=10_000_000)
+    payment_method: str = "cash"
+
+
 # ------------------------------------------------------------ фіскалізація
+@router.get("/fiscal/config")
+def fiscal_config(actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
+    return fiscal.config(s, actor)
+
+
+@router.put("/fiscal/config")
+def fiscal_update_config(body: FiscalConfigIn, actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
+    """Окреме сховище налаштувань ПРРО (лише директор; бойовий режим — лише з дозволом сервера)."""
+    return fiscal.update_config(s, actor, body.model_dump(exclude_none=True))
+
+
+@router.post("/fiscal/check")
+def fiscal_check(request: Request, actor: Actor = Depends(get_actor)):
+    return fiscal.check_connection(request.app.state.db, actor)
+
+
+@router.post("/fiscal/test-receipt")
+def fiscal_test_receipt(body: TestReceiptIn, request: Request, actor: Actor = Depends(get_actor)):
+    """Тестовий НЕФІСКАЛЬНИЙ чек (лише режими mock/test)."""
+    return fiscal.test_receipt(request.app.state.db, actor, body.amount, body.payment_method)
+
+
+@router.post("/fiscal/selftest")
+def fiscal_selftest(request: Request, actor: Actor = Depends(get_actor)):
+    """Самоперевірка на окремій тимчасовій базі з імітацією — робочі дані не змінюються."""
+    return fiscal.selftest(request.app.state.db, actor)
+
+
+@router.get("/fiscal/operations")
+def fiscal_operations(limit: int = 100, actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
+    return fiscal.operations(s, actor, limit)
+
+
 @router.get("/fiscal/status")
 def fiscal_status(actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
     return fiscal.status_summary(s, actor)

@@ -1591,7 +1591,7 @@ const FISCAL_ST = { queued: ["у черзі", "st-pending"], sending: ["надс
   done: ["фіскалізовано", "st-completed"], error: ["повтор", "st-pending"], rejected: ["відхилено", "st-cancelled"] };
 function fiscalChip(f) {
   const [label, cls] = FISCAL_ST[f.status] || [f.status, "plain"];
-  const chip = h("span", { class: "chip " + cls, title: f.fiscal_code ? "Фіскальний номер " + f.fiscal_code : "" }, "🧾 " + label);
+  const chip = h("span", { class: "chip " + cls, title: f.fiscal_code ? "Номер " + f.fiscal_code : "" }, "🧾 " + label + (f.nonfiscal ? " · НЕФІСКАЛЬНИЙ" : ""));
   const canRetry = f.status === "rejected" || f.status === "error";
   return h("span", { class: "row", style: { gap: "6px", justifyContent: "flex-end" } }, chip,
     f.tax_url ? h("a", { href: f.tax_url, target: "_blank", rel: "noopener", class: "small" }, "чек") : null,
@@ -1603,7 +1603,12 @@ VIEWS.fiscal = async (main) => {
   const params = new URLSearchParams(location.hash.split("?")[1] || "");
   const day = params.get("d") || today();
   const [st, list] = await Promise.all([api.get("/api/fiscal/status"), api.get(`/api/fiscal/receipts?date_from=${day}&date_to=${day}`)]);
-  main.append(topbar("Фіскалізація (ПРРО)", st.enabled ? `Провайдер: ${st.provider === "fake" ? "імітація (тест, без справжніх чеків)" : st.provider}` : "Вимкнено — чеки не створюються"));
+  const MODE_UA = { mock: "Імітація (Mock)", test: "Тестова каса Checkbox", production: "Бойовий режим" };
+  main.append(topbar("Фіскалізація (ПРРО)", `${MODE_UA[st.mode] || st.mode} · ${st.enabled ? "увімкнено" : "вимкнено — чеки не створюються"}`));
+  if (st.nonfiscal) {
+    main.append(h("div", { class: "callout nonfiscal-banner" }, icon("alert"),
+      h("div", {}, h("b", {}, "ТЕСТОВЕ СЕРЕДОВИЩЕ — ЧЕКИ НЕФІСКАЛЬНІ. "), "Жоден чек у цьому режимі не є фіскальним документом і не передається до ДПС як справжній.")));
+  }
   const sh = st.shift;
   const shiftCard = h("div", { class: "card stack" },
     h("div", { class: "card-head" }, h("h3", {}, "Касова зміна"), h("span", { class: "chip " + (sh ? "st-completed" : "plain") }, sh ? "відкрита" : "закрита")),
@@ -1625,19 +1630,62 @@ VIEWS.fiscal = async (main) => {
   let settingsCard = null;
   if (isDir) {
     const en = h("input", { type: "checkbox", checked: !!st.enabled });
-    const prov = select([["fake", "Імітація (тест, без справжніх чеків)"], ["checkbox", "Checkbox"]], st.provider || "fake");
-    settingsCard = h("div", { class: "card stack" }, h("h3", {}, "Налаштування"),
-      h("label", { class: "row" }, en, "Фіскалізувати замовлення автоматично при закритті"), field("Провайдер ПРРО", prov),
-      h("p", { class: "muted small" }, "Checkbox: ключ ліцензії й PIN касира задаються змінними сервера MDS_CHECKBOX_LICENSE_KEY і MDS_CHECKBOX_PIN (не зберігаються в базі). Перед реальним запуском — перевірка на тестовій касі Checkbox."),
-      h("button", { class: "btn primary", onclick: async () => { state.settings = await run(() => api.put("/api/settings", { fiscal_enabled: en.checked, fiscal_provider: prov.value }), "Збережено"); reload(); } }, "Зберегти"));
+    const modeSel = select([["mock", "Імітація (Mock) — без Checkbox"], ["test", "Тестова каса Checkbox"],
+      ["production", st.production_allowed ? "Бойовий режим" : "Бойовий режим 🔒 (заблоковано)"]], st.mode);
+    if (!st.production_allowed) modeSel.querySelector('option[value="production"]').disabled = true;
+    settingsCard = h("div", { class: "card stack" }, h("h3", {}, "Режим і налаштування"),
+      field("Режим", modeSel),
+      h("label", { class: "row" }, en, "Фіскалізувати замовлення автоматично при закритті"),
+      h("p", { class: "muted small" }, "Тестова каса: змінні сервера MDS_CHECKBOX_TEST_LICENSE_KEY і MDS_CHECKBOX_TEST_PIN. Бойовий режим заблоковано, доки власник сервера окремо не дозволить його (MDS_FISCAL_PRODUCTION_ALLOWED). Ключі не зберігаються в базі й не показуються."),
+      h("button", { class: "btn primary", onclick: async () => { await run(() => api.put("/api/fiscal/config", { enabled: en.checked, mode: modeSel.value }), "Збережено"); reload(); } }, "Зберегти"));
   }
+  // ---- тестова панель
+  const result = h("div", { class: "stack" });
+  const showReceipt = (r) => result.replaceChildren(h("div", { class: "card test-receipt" + (r.nonfiscal ? " nonfiscal" : "") },
+    r.nonfiscal ? h("div", { class: "nf-stamp" }, "НЕФІСКАЛЬНИЙ") : null,
+    h("div", { class: "sum-line" }, h("span", {}, "Статус"), fiscalChip(r)),
+    h("div", { class: "sum-line" }, h("span", {}, "Сума"), h("b", {}, money(r.amount))),
+    h("div", { class: "sum-line" }, h("span", {}, "Номер (тестовий)"), h("span", {}, r.fiscal_code || "—")),
+    r.last_error ? h("p", { class: "small neg" }, r.last_error) : null));
+  const tAmount = h("input", { inputmode: "decimal", value: "1" });
+  const tPay = select([["cash", "Готівка"], ["card", "Картка"]], "cash");
+  const st2 = st.selftest;
+  const testPanel = h("div", { class: "card stack" }, h("div", { class: "card-head" }, h("h3", {}, "Тестова панель"),
+      h("span", { class: "chip st-pending" }, "НЕФІСКАЛЬНІ ОПЕРАЦІЇ")),
+    h("div", { class: "row", style: { flexWrap: "wrap" } },
+      h("button", { class: "btn", onclick: async () => {
+        const c = await run(() => api.post("/api/fiscal/check"));
+        toast(c.ok ? "З'єднання є" : "Немає з'єднання: " + c.error, !c.ok); reload();
+      } }, "Перевірити з'єднання"),
+      h("button", { class: "btn", onclick: async () => {
+        const r = await run(() => api.post("/api/fiscal/selftest"), "Самоперевірку завершено"); reload();
+        return r;
+      } }, "Запустити самоперевірку")),
+    st.mode !== "production" ? h("div", { class: "form-grid" }, field("Тестовий чек, ₴", tAmount), field("Оплата", tPay),
+      h("button", { class: "btn primary", style: { alignSelf: "end" }, onclick: async () => {
+        const r = await run(() => api.post("/api/fiscal/test-receipt", { amount: toKop(tAmount.value), payment_method: tPay.value }));
+        showReceipt(r);
+      } }, "Створити тестовий чек")) : h("p", { class: "muted small" }, "У бойовому режимі тестові чеки заборонені."),
+    result,
+    st2 ? h("div", { class: "stack" }, h("b", {}, `Остання самоперевірка: ${st2.passed}/${st2.passed + st2.failed} · ${dm(st2.at)} ${hm(st2.at)} (окрема тимчасова база)`),
+      st2.results.map((x) => h("div", { class: "sum-line small" }, h("span", {}, (x.ok ? "✅ " : "❌ ") + x.name), h("span", { class: "muted" }, x.detail || "")))) :
+      h("p", { class: "muted small" }, "Самоперевірку ще не запускали."));
+  const ops = await api.get("/api/fiscal/operations?limit=30").catch(() => []);
+  const journal = h("div", { class: "card" }, h("div", { class: "card-head" }, h("h3", {}, "Журнал операцій з ПРРО")),
+    ops.length ? h("div", { class: "table-wrap" }, h("table", {},
+      h("tr", {}, h("th", {}, "Час"), h("th", {}, "Режим"), h("th", {}, "Операція"), h("th", {}, "Результат"), h("th", { class: "num" }, "мс")),
+      ops.map((o) => h("tr", {}, h("td", {}, `${dm(o.created_at)} ${hm(o.created_at)}`),
+        h("td", {}, MODE_UA[o.mode] || o.mode, o.nonfiscal ? h("span", { class: "chip plain", style: { marginLeft: "6px" } }, "нефіскальна") : null),
+        h("td", {}, o.op + (o.receipt_id ? ` · чек #${o.receipt_id}` : "")),
+        h("td", { class: o.ok ? "" : "neg" }, o.ok ? (o.result || "ok") : (o.error || "помилка")), h("td", { class: "num" }, String(o.duration_ms))))))
+      : emptyState("Операцій ще не було", "history"));
   const dayNav = h("div", { class: "row" },
     h("button", { class: "btn sm", onclick: () => { location.hash = "#/fiscal?d=" + addDays(day, -1); } }, icon("left", "sm")),
     h("b", {}, dmy(day)),
     h("button", { class: "btn sm", onclick: () => { location.hash = "#/fiscal?d=" + addDays(day, 1); } }, icon("right", "sm")));
   const table = list.length ? h("div", { class: "table-wrap" }, h("table", {},
     h("tr", {}, h("th", {}, "Час"), h("th", {}, "Чек"), h("th", { class: "num" }, "Сума"), h("th", {}, "Оплата"), h("th", {}, "Статус"), h("th", {}, "")),
-    list.map((r) => h("tr", {}, h("td", {}, hm(r.created_at)), h("td", {}, (r.kind === "return" ? "Повернення · " : "Продаж · ") + "замовл. #" + r.order_id,
+    list.map((r) => h("tr", {}, h("td", {}, hm(r.created_at)), h("td", {}, r.order_id ? (r.kind === "return" ? "Повернення · " : "Продаж · ") + "замовл. #" + r.order_id : "Тестовий чек (панель)",
       r.last_error && r.status !== "done" ? h("div", { class: "muted small" }, r.last_error) : null),
       h("td", { class: "num" }, (r.kind === "return" ? "− " : "") + money(r.amount)), h("td", {}, PAY[r.payment_method] || r.payment_method),
       h("td", {}, fiscalChip(r)),
@@ -1672,6 +1720,7 @@ VIEWS.fiscal = async (main) => {
       } }, "Звірити день")), box);
   }
   main.append(h("div", { class: "grid two" }, shiftCard, settingsCard || h("div")), h("div", { style: { marginTop: "12px" } }, stats),
+    h("div", { class: "grid two", style: { marginTop: "12px" } }, testPanel, journal),
     h("div", { class: "card", style: { marginTop: "12px" } }, h("div", { class: "card-head" }, h("h3", {}, "Чеки"), dayNav), table),
     recon ? h("div", { style: { marginTop: "12px" } }, recon) : null);
 };

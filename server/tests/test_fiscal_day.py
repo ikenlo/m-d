@@ -16,7 +16,7 @@ from mds import clock
 from mds.errors import Conflict
 from mds.models import FiscalReceipt, LedgerEntry, Material, Order, Payout, Role
 from mds.services import analytics, bookings, fiscal, orders, users
-from mds.services.common import Actor, update_settings
+from mds.services.common import Actor
 from mds.services.fiscal_providers import FakePRROProvider, set_provider
 
 DAY = date(2026, 11, 3)
@@ -58,7 +58,7 @@ def test_full_workday_with_fiscalization(db, seed, n_masters):
     set_provider(fp)
     try:
         with db.session() as s:
-            update_settings(s, d, {"fiscal_enabled": True})
+            fiscal.update_config(s, d, {"enabled": True})
             ids = [seed["m1"], seed["m2"]]
             for i in range(n_masters - 2):
                 ids.append(users.create_user(s, Actor.system(), username=f"mx{i}", password="Master123",
@@ -190,7 +190,7 @@ def test_parallel_close_same_order_one_receipt(db, seed):
     try:
         d = seed["actors"]["director"]
         with db.session() as s:
-            update_settings(s, d, {"fiscal_enabled": True})
+            fiscal.update_config(s, d, {"enabled": True})
         clock.set_now(datetime(2026, 11, 2, 9))
         with db.session() as s:
             aid = bookings.create_appointment(s, d, master_id=seed["m1"], service_id=seed["haircut"],
@@ -226,7 +226,7 @@ def test_db_error_during_close_does_not_leave_receipt(db, seed, monkeypatch):
     """Помилка БД під час закриття замовлення: транзакція відкочується — немає ні замовлення, ні чека."""
     d = seed["actors"]["director"]
     with db.session() as s:
-        update_settings(s, d, {"fiscal_enabled": True})
+        fiscal.update_config(s, d, {"enabled": True})
     clock.set_now(datetime(2026, 11, 2, 9))
     with db.session() as s:
         aid = bookings.create_appointment(s, d, master_id=seed["m1"], service_id=seed["haircut"],

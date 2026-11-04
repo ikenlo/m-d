@@ -45,6 +45,8 @@
 | `GET /api/utilities/charges` | директор; майстер — свої | Списання з майстрів |
 | `GET /api/fiscal/status`, `GET /api/fiscal/receipts`, `POST /api/fiscal/receipts/{id}/retry` | директор, адміністратор; майстер — свої чеки | Стан ПРРО, чеки, повтор |
 | `POST /api/fiscal/shift/open`, `POST /api/fiscal/shift/close`, `POST /api/fiscal/x-report`, `POST /api/fiscal/process` | директор, адміністратор | Касова зміна, Z/X-звіти, надіслати чергу |
+| `GET/PUT /api/fiscal/config` | перегляд — директор, адміністратор; зміна — директор | Режим mock/test/production (бойовий — лише з дозволом сервера), увімкнення |
+| `POST /api/fiscal/check`, `POST /api/fiscal/test-receipt`, `POST /api/fiscal/selftest`, `GET /api/fiscal/operations` | директор, адміністратор | Тестова панель: з'єднання, тестовий НЕФІСКАЛЬНИЙ чек, самоперевірка, журнал |
 | `POST /api/fiscal/orders/{id}/refund`, `GET /api/fiscal/reconcile` | директор | Повернення (чек + виправлення замовлення), звірка |
 | `GET/POST /api/taxes/rates`, `GET /api/taxes/fop`, `POST /api/taxes/fop/accrue`, `POST /api/taxes/fop/{id}/correct`, `POST /api/taxes/payments` | директор | Ставки з датами, податки ФОП |
 | `GET/POST /api/payroll`, `GET /api/payroll/calc`, `POST /api/payroll/{id}/correct`, `POST /api/payroll/payments`, `GET /api/payroll/history/{user}` | директор | Офіційна зарплата |

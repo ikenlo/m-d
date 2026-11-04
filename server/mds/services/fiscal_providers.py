@@ -75,7 +75,11 @@ class Provider:
         raise NotImplementedError
 
     def sell(self, receipt_uuid: str, goods: list[dict], payment_method: str, amount: int, *,
-             is_return: bool = False, related_provider_id: str | None = None) -> ReceiptResult:
+             is_return: bool = False, related_provider_id: str | None = None, order_ref: str | None = None) -> ReceiptResult:
+        raise NotImplementedError
+
+    def ping(self) -> dict:
+        """Перевірка з'єднання (без створення документів)."""
         raise NotImplementedError
 
     def get_receipt(self, receipt_uuid: str) -> ReceiptResult | None:
@@ -155,13 +159,24 @@ class FakePRROProvider(Provider):
             raise ProviderRejected("Немає відкритої зміни")
         return {"is_z_report": False, **{k: sh[k] for k in ("sales", "returns", "cash", "card", "sell_count", "return_count")}}
 
-    def sell(self, receipt_uuid, goods, payment_method, amount, *, is_return=False, related_provider_id=None):
+    def ping(self):
+        if self.down:
+            raise ProviderUnavailable("ПРРО недоступний")
+        return {"ok": True, "provider": "mock", "shift": self.shift_status()}
+
+    def sell(self, receipt_uuid, goods, payment_method, amount, *, is_return=False, related_provider_id=None, order_ref=None):
         self.calls.append(("sell", receipt_uuid, amount, is_return))
+        self.last_payload = {"id": receipt_uuid, "goods": goods, "payment_method": payment_method, "amount": amount,
+                             "is_return": is_return, "related": related_provider_id, "order_ref": order_ref}
         if self.delay:
             time.sleep(self.delay)
         mode = self._mode()
         if mode == "unavailable":
             raise ProviderUnavailable("ПРРО недоступний")
+        if mode == "auth":
+            raise ProviderRejected("Помилка авторизації касира")
+        if mode == "timeout":
+            raise ProviderUnavailable("Тайм-аут: ПРРО не відповів")
         if mode == "reject":
             raise ProviderRejected("Невірні дані чека")
         with self.state.lock:
@@ -236,18 +251,26 @@ class CheckboxProvider(Provider):
     name = "checkbox"
     STATUS = {"DONE": "done", "CREATED": "pending", "ERROR": "error", "CANCELLATION": "error", "CANCELLED": "error"}
 
-    def __init__(self, *, base_url: str | None = None, license_key: str | None = None, pin_code: str | None = None,
-                 access_key: str | None = None, http: Callable | None = None, timeout: float = 30.0):
-        self.base = (base_url or os.getenv("MDS_CHECKBOX_BASE_URL") or "https://api.checkbox.ua").rstrip("/")
-        self._license = license_key if license_key is not None else os.getenv("MDS_CHECKBOX_LICENSE_KEY", "")
-        self._pin = pin_code if pin_code is not None else os.getenv("MDS_CHECKBOX_PIN", "")
-        self._access = access_key if access_key is not None else os.getenv("MDS_CHECKBOX_ACCESS_KEY", "")
+    def __init__(self, *, mode: str = "test", base_url: str | None = None, license_key: str | None = None,
+                 pin_code: str | None = None, access_key: str | None = None, http: Callable | None = None,
+                 timeout: float = 30.0):
+        # тестові й бойові ключі — РІЗНІ змінні оточення (ізоляція); у коді й БД ключів немає
+        pfx = "MDS_CHECKBOX_TEST_" if mode == "test" else "MDS_CHECKBOX_"
+        self.mode = mode
+        self.base = (base_url or os.getenv(pfx + "BASE_URL") or "https://api.checkbox.ua").rstrip("/")
+        self._license = license_key if license_key is not None else os.getenv(pfx + "LICENSE_KEY", "")
+        self._pin = pin_code if pin_code is not None else os.getenv(pfx + "PIN", "")
+        self._access = access_key if access_key is not None else os.getenv(pfx + "ACCESS_KEY", "")
         self._http = http or _urllib
         self.timeout = timeout
         self._token: str | None = None
 
     def __repr__(self) -> str:  # без секретів
-        return f"CheckboxProvider(base={self.base!r}, configured={bool(self._license and self._pin)})"
+        return f"CheckboxProvider(mode={self.mode!r}, base={self.base!r}, configured={bool(self._license and self._pin)})"
+
+    def secrets(self) -> list[str]:
+        """Значення, які не можна показувати в журналах (для маскування)."""
+        return [x for x in (self._license, self._pin, self._access, self._token) if x]
 
     def configured(self) -> bool:
         return bool(self._license and self._pin)
@@ -285,10 +308,11 @@ class CheckboxProvider(Provider):
         if self._token:
             return self._token
         if not self.configured():
-            raise ProviderRejected("Checkbox не налаштовано: MDS_CHECKBOX_LICENSE_KEY і MDS_CHECKBOX_PIN")
+            pfx = "MDS_CHECKBOX_TEST_" if self.mode == "test" else "MDS_CHECKBOX_"
+            raise ProviderRejected(f"Checkbox не налаштовано: {pfx}LICENSE_KEY і {pfx}PIN")
         r = self._call("POST", "/api/v1/cashier/signinPinCode", {"pin_code": self._pin}, license=True, auth=False)
         if r.status >= 400:
-            raise ProviderRejected(f"Checkbox: вхід касира не вдався ({r.status})")
+            raise ProviderRejected(f"Помилка авторизації касира Checkbox ({r.status})")
         self._token = r.json().get("access_token")
         if not self._token:
             raise ProviderRejected("Checkbox: не отримано токен касира")
@@ -322,7 +346,12 @@ class CheckboxProvider(Provider):
             raise ProviderRejected(f"Checkbox: X-звіт не створено ({r.status})")
         return r.json()
 
-    def sell(self, receipt_uuid, goods, payment_method, amount, *, is_return=False, related_provider_id=None):
+    def ping(self):
+        self._token = None
+        self._login()  # перевірка ключа ліцензії й PIN
+        return {"ok": True, "provider": f"checkbox-{self.mode}", "shift": self.shift_status()}
+
+    def sell(self, receipt_uuid, goods, payment_method, amount, *, is_return=False, related_provider_id=None, order_ref=None):
         body = {
             "id": receipt_uuid,
             "goods": [{"good": {"code": str(g["code"]), "name": g["name"][:256], "price": int(g["price"])},
@@ -331,6 +360,8 @@ class CheckboxProvider(Provider):
         }
         if related_provider_id:
             body["related_receipt_id"] = related_provider_id
+        if order_ref:
+            body["order_id"] = order_ref  # зв'язок чека з замовленням MDS (поле order_id у ReceiptSellPayload)
         r = self._call("POST", "/api/v1/receipts/sell", body, idempotent_write=True)
         if r.status >= 400:
             raise ProviderRejected(f"Checkbox: чек відхилено ({r.status}): {json.dumps(r.json(), ensure_ascii=False)[:300]}")
@@ -346,15 +377,26 @@ class CheckboxProvider(Provider):
 
 
 # ---------------------------------------------------------------------------- реєстр
+MODES = ("mock", "test", "production")
 _FAKE = FakePRROProvider(auto_shift=False)
 _override: Provider | None = None
 
 
-def get_provider(name: str) -> Provider:
+def production_allowed() -> bool:
+    """Бойовий режим дозволяє лише власник сервера змінною MDS_FISCAL_PRODUCTION_ALLOWED=yes
+    (окремо від налаштувань у панелі) — без неї бойові запити неможливі навіть директору."""
+    return os.getenv("MDS_FISCAL_PRODUCTION_ALLOWED", "").strip().lower() == "yes"
+
+
+def get_provider(mode: str) -> Provider:
     if _override is not None:
         return _override
-    if name == "checkbox":
-        return CheckboxProvider()
+    if mode == "test":
+        return CheckboxProvider(mode="test")
+    if mode == "production":
+        if not production_allowed():
+            raise ProviderRejected("Бойовий режим заблоковано: потрібен окремий дозвіл (MDS_FISCAL_PRODUCTION_ALLOWED)")
+        return CheckboxProvider(mode="production")
     return _FAKE
 
 

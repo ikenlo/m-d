@@ -540,3 +540,10 @@ body::before {
 .gen-switch.on { background: var(--ok); color: #fff; justify-content: flex-start; }
 .gen-switch.on .knob { left: 57px; }
 .gen-switch b { font-size: 15px; letter-spacing: .06em; }
+
+/* Фіскалізація: тестове середовище */
+.nonfiscal-banner { background: var(--warn-bg); border: 1.5px dashed var(--warn); margin-bottom: 12px; }
+.test-receipt { position: relative; }
+.test-receipt.nonfiscal { border: 2px dashed var(--warn); }
+.nf-stamp { position: absolute; top: 10px; right: 12px; transform: rotate(-6deg); border: 2px solid var(--danger, #c0392b);
+  color: var(--danger, #c0392b); font-weight: 800; letter-spacing: .08em; padding: 2px 8px; border-radius: 6px; font-size: 13px; }

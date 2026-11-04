@@ -26,16 +26,18 @@ from sqlalchemy.orm import Session
 from .. import clock
 from ..db import Database
 from ..errors import Conflict, Forbidden, NotFound, ValidationError
-from ..models import FiscalReceipt, FiscalReport, FiscalShift, Order, Role
+from ..models import FiscalOperation, FiscalReceipt, FiscalReport, FiscalShift, Order, Role
 from . import notifications
 from .common import Actor, audit, get_setting
 from .fiscal_providers import (
+    MODES,
     Provider,
     ProviderLost,
     ProviderRejected,
     ProviderUnavailable,
     ReceiptResult,
     get_provider,
+    production_allowed,
 )
 
 STALE_SECONDS = 120
@@ -48,8 +50,88 @@ def enabled(s: Session) -> bool:
     return bool(get_setting(s, "fiscal_enabled"))
 
 
+def mode(s: Session) -> str:
+    """mock — імітація; test — тестова каса Checkbox; production — бойовий (лише з окремим дозволом сервера)."""
+    m = get_setting(s, "fiscal_mode") or "mock"
+    return m if m in MODES else "mock"
+
+
+def is_nonfiscal(m: str) -> bool:
+    return m != "production"
+
+
 def provider_for(s: Session) -> Provider:
-    return get_provider(get_setting(s, "fiscal_provider") or "fake")
+    return get_provider(mode(s))
+
+
+# ------------------------------------------------------------------- налаштування (окремо від загальних)
+FISCAL_KEYS = ("fiscal_enabled", "fiscal_mode", "fiscal_auto_open_shift")
+
+
+def config(s: Session, actor: Actor) -> dict:
+    actor.require(Role.DIRECTOR, Role.ADMIN)
+    return {"enabled": enabled(s), "mode": mode(s), "auto_open_shift": bool(get_setting(s, "fiscal_auto_open_shift")),
+            "production_allowed": production_allowed(), "nonfiscal": is_nonfiscal(mode(s))}
+
+
+def update_config(s: Session, actor: Actor, data: dict) -> dict:
+    """Налаштування ПРРО — лише директор. Бойовий режим — лише якщо власник сервера дозволив його окремо."""
+    from .common import set_setting
+
+    actor.require(Role.DIRECTOR)
+    if "mode" in data:
+        if data["mode"] not in MODES:
+            raise ValidationError("Режим: mock (імітація), test (тестова каса) або production (бойовий)")
+        if data["mode"] == "production" and not production_allowed():
+            raise Forbidden("Бойовий режим заблоковано до окремого дозволу (MDS_FISCAL_PRODUCTION_ALLOWED на сервері)")
+        if data["mode"] != mode(s):
+            waiting = int(s.scalar(select(func.count(FiscalReceipt.id)).where(FiscalReceipt.status.in_(OPEN))) or 0)
+            if waiting:
+                raise Conflict(f"Є чеки в обробці ({waiting}) — перемкніть режим після їх завершення")
+        set_setting(s, actor, "fiscal_mode", data["mode"])
+    for k, key in (("enabled", "fiscal_enabled"), ("auto_open_shift", "fiscal_auto_open_shift")):
+        if k in data:
+            if not isinstance(data[k], bool):
+                raise ValidationError(f"{k}: так або ні")
+            set_setting(s, actor, key, data[k])
+    return config(s, actor)
+
+
+# ------------------------------------------------------------------- журнал операцій
+def _secrets(provider: Provider | None) -> list[str]:
+    import os
+
+    vals = [v for k, v in os.environ.items() if k.startswith(("MDS_CHECKBOX", "MDS_FISCAL")) and len(v) >= 4]
+    if provider is not None and hasattr(provider, "secrets"):
+        vals += provider.secrets()
+    return vals
+
+
+def redact(text: str | None, provider: Provider | None = None) -> str | None:
+    """Прибрати з тексту ключі/PIN/токени (журнали й повідомлення не містять секретів)."""
+    if not text:
+        return text
+    for v in sorted(set(_secrets(provider)), key=len, reverse=True):
+        text = text.replace(v, "***")
+    return text[:500]
+
+
+def log_op(db: Database, m: str, op: str, *, ok: bool, result: str | None = None, error: str | None = None,
+           started: float | None = None, receipt_id: int | None = None, shift_id: int | None = None,
+           user_id: int | None = None, provider: Provider | None = None) -> None:
+    import time as _t
+
+    ms = int((_t.monotonic() - started) * 1000) if started else 0
+    with db.session() as s:
+        s.add(FiscalOperation(mode=m, op=op, ok=ok, result=result, error=redact(error, provider), duration_ms=ms,
+                              receipt_id=receipt_id, shift_id=shift_id, nonfiscal=is_nonfiscal(m), user_id=user_id))
+
+
+def operations(s: Session, actor: Actor, limit: int = 100) -> list[dict]:
+    actor.require(Role.DIRECTOR, Role.ADMIN)
+    return [{"id": o.id, "created_at": o.created_at.isoformat(), "mode": o.mode, "op": o.op, "ok": o.ok, "result": o.result,
+             "error": o.error, "duration_ms": o.duration_ms, "receipt_id": o.receipt_id, "nonfiscal": o.nonfiscal}
+            for o in s.scalars(select(FiscalOperation).order_by(FiscalOperation.id.desc()).limit(min(limit, 500)))]
 
 
 def receipt_public(r: FiscalReceipt) -> dict:
@@ -57,7 +139,8 @@ def receipt_public(r: FiscalReceipt) -> dict:
         "id": r.id, "uuid": r.uuid, "kind": r.kind, "order_id": r.order_id, "master_id": r.master_id,
         "amount": r.amount, "payment_method": r.payment_method, "status": r.status, "attempts": r.attempts,
         "last_error": r.last_error, "fiscal_code": r.fiscal_code, "fiscal_date": r.fiscal_date, "tax_url": r.tax_url,
-        "provider": r.provider, "related_id": r.related_id, "reason": r.reason,
+        "provider": r.provider, "related_id": r.related_id, "reason": r.reason, "nonfiscal": r.nonfiscal,
+        "goods": r.goods,
         "created_at": r.created_at.isoformat(), "done_at": r.done_at.isoformat() if r.done_at else None,
         "next_attempt_at": r.next_attempt_at.isoformat() if r.next_attempt_at else None,
     }
@@ -78,7 +161,7 @@ def enqueue_sell(s: Session, actor: Actor, o: Order) -> FiscalReceipt | None:
         return existing
     r = FiscalReceipt(uuid=str(uuidlib.uuid4()), dedupe_key=key, kind="sell", order_id=o.id, master_id=o.master_id,
                       amount=o.amount, payment_method="cash" if o.payment_method == "cash" else "card",
-                      goods=_goods(o, o.amount), status="queued", provider=get_setting(s, "fiscal_provider") or "fake",
+                      goods=_goods(o, o.amount), status="queued", provider=mode(s), nonfiscal=is_nonfiscal(mode(s)),
                       next_attempt_at=clock.now(), created_by=actor.user_id)
     s.add(r)
     s.flush()
@@ -114,13 +197,24 @@ def process_receipt(db: Database, receipt_id: int, provider: Provider | None = N
             return None
         r = s.get(FiscalReceipt, receipt_id)
         s.refresh(r)
-        provider = provider or provider_for(s)
+        m = r.provider if r.provider in MODES else mode(s)
         auto_open = bool(get_setting(s, "fiscal_auto_open_shift"))
         job = {"uuid": r.uuid, "goods": r.goods, "pm": r.payment_method, "amount": r.amount, "ret": r.kind == "return",
                "rel": s.get(FiscalReceipt, r.related_id).provider_receipt_id if r.related_id else None,
-               "check_first": r.attempts > 1}
-    outcome, result, error = _send(db, provider, job, auto_open)
-    return _apply(db, receipt_id, outcome, result, error)
+               "check_first": r.attempts > 1, "order_ref": f"MDS-{r.order_id}" if r.order_id else f"MDS-TEST-{r.id}"}
+    import time as _t
+
+    started = _t.monotonic()
+    try:
+        provider = provider or get_provider(m)
+    except ProviderRejected as e:  # напр. бойовий режим заблоковано
+        provider = None
+        outcome, result, error = "rejected", None, str(e)
+    else:
+        outcome, result, error = _send(db, provider, job, auto_open)
+    log_op(db, m, "return" if job["ret"] else "sell", ok=outcome in ("done", "pending"), result=outcome, error=error,
+           started=started, receipt_id=receipt_id, provider=provider)
+    return _apply(db, receipt_id, outcome, result, redact(error, provider))
 
 
 def _send(db: Database, provider: Provider, job: dict, auto_open: bool):
@@ -128,7 +222,7 @@ def _send(db: Database, provider: Provider, job: dict, auto_open: bool):
         result = provider.get_receipt(job["uuid"]) if job["check_first"] else None
         if result is None:
             result = provider.sell(job["uuid"], job["goods"], job["pm"], job["amount"], is_return=job["ret"],
-                                   related_provider_id=job["rel"])
+                                   related_provider_id=job["rel"], order_ref=job["order_ref"])
         return ("done" if result.status == "done" else "pending" if result.status == "pending" else "rejected"), result, result.error
     except ProviderLost as e:
         return "error", None, f"{e} — наступна спроба спершу перевірить чек"
@@ -137,11 +231,23 @@ def _send(db: Database, provider: Provider, job: dict, auto_open: bool):
     except ProviderRejected as e:
         if auto_open and "зміну не відкрито" in str(e).lower():
             try:
+                _resync_closed_shift(db)
                 open_shift(db, Actor.system(), provider=provider)
                 return "error_now", None, "Фіскальну зміну відкрито автоматично — повтор"
             except (ProviderUnavailable, ProviderRejected, Conflict) as e2:
                 return "error", None, f"Не вдалося відкрити зміну: {e2}"
         return "rejected", None, str(e)
+
+
+def _resync_closed_shift(db: Database) -> None:
+    """ПРРО повідомив «зміну не відкрито», а в MDS вона ще активна (автозакриття/закриття поза MDS) —
+    позначаємо нашу зміну закритою на боці ПРРО, щоб можна було відкрити нову."""
+    with db.session() as s:
+        sh = current_shift(s)
+        if sh is not None:
+            sh.status, sh.active, sh.closed_at = "closed", None, clock.now()
+            sh.last_error = "Зміну закрито на боці ПРРО (розсинхрон) — відкрито нову"
+            audit(s, Actor.system(), "fiscal_shift", sh.id, "resync_closed", None, {"reason": sh.last_error})
 
 
 def _apply(db: Database, receipt_id: int, outcome: str, result: ReceiptResult | None, error: str | None) -> str:
@@ -162,7 +268,8 @@ def _apply(db: Database, receipt_id: int, outcome: str, result: ReceiptResult | 
             r.next_attempt_at = now + timedelta(seconds=30)
         elif outcome == "rejected":
             r.status, r.last_error = "rejected", error or "Відмова провайдера"
-            notifications.notify_directors(s, f"🧾 ПРРО відхилив чек #{r.id} (замовлення #{r.order_id}, {r.amount / 100:.2f} ₴): "
+            if r.order_id:
+                notifications.notify_directors(s, f"🧾 ПРРО відхилив чек #{r.id} (замовлення #{r.order_id}, {r.amount / 100:.2f} ₴): "
                                               f"{r.last_error[:200]}. Перевірте розділ «Фіскалізація».")
             audit(s, Actor.system(), "fiscal_receipt", r.id, "rejected", None, {"error": r.last_error})
         else:  # error / error_now
@@ -266,7 +373,7 @@ def refund(db: Database, actor: Actor, order_id: int, amount: int, reason: str, 
         n = int(s.scalar(select(func.count(FiscalReceipt.id)).where(FiscalReceipt.related_id == sell.id)) or 0) + 1
         r = FiscalReceipt(uuid=str(uuidlib.uuid4()), dedupe_key=f"return:{o.id}:{n}", kind="return", order_id=o.id,
                           related_id=sell.id, master_id=o.master_id, amount=amount, payment_method=sell.payment_method,
-                          goods=_goods(o, amount), status="queued", provider=sell.provider, reason=reason,
+                          goods=_goods(o, amount), status="queued", provider=sell.provider, nonfiscal=sell.nonfiscal, reason=reason,
                           next_attempt_at=clock.now(), created_by=actor.user_id)
         s.add(r)
         try:
@@ -310,13 +417,21 @@ def open_shift(db: Database, actor: Actor, *, provider: Provider | None = None) 
         except IntegrityError:
             raise Conflict("Фіскальну зміну вже відкрито") from None
         sid, su = sh.id, sh.uuid
+    import time as _t
+
+    started = _t.monotonic()
     try:
         res = provider.open_shift(su)
     except (ProviderUnavailable, ProviderLost, ProviderRejected) as e:
         with db.session() as s:
             sh = s.get(FiscalShift, sid)
-            sh.status, sh.active, sh.last_error = "error", None, str(e)
+            sh.status, sh.active, sh.last_error = "error", None, redact(str(e), provider)
+            m = mode(s)
+        log_op(db, m, "open_shift", ok=False, error=str(e), started=started, shift_id=sid, user_id=actor.user_id, provider=provider)
         raise
+    with db.session() as s:
+        m = mode(s)
+    log_op(db, m, "open_shift", ok=True, result="opened", started=started, shift_id=sid, user_id=actor.user_id)
     with db.session() as s:
         sh = s.get(FiscalShift, sid)
         sh.status, sh.provider_shift_id = "opened", str(res.get("id") or su)
@@ -339,13 +454,21 @@ def close_shift(db: Database, actor: Actor, *, force: bool = False, provider: Pr
         provider = provider or provider_for(s)
         sid = sh.id
         sh.status = "closing"
+    import time as _t
+
+    started = _t.monotonic()
     try:
         res = provider.close_shift()
     except (ProviderUnavailable, ProviderLost, ProviderRejected) as e:
         with db.session() as s:
             sh = s.get(FiscalShift, sid)
-            sh.status, sh.last_error = "opened", str(e)
+            sh.status, sh.last_error = "opened", redact(str(e), provider)
+            m = mode(s)
+        log_op(db, m, "close_shift", ok=False, error=str(e), started=started, shift_id=sid, user_id=actor.user_id, provider=provider)
         raise
+    with db.session() as s:
+        m = mode(s)
+    log_op(db, m, "close_shift", ok=True, result="closed", started=started, shift_id=sid, user_id=actor.user_id)
     with db.session() as s:
         sh = s.get(FiscalShift, sid)
         z = res.get("z_report") or res
@@ -363,8 +486,18 @@ def x_report(db: Database, actor: Actor, *, provider: Provider | None = None) ->
             raise Conflict("Фіскальну зміну не відкрито")
         provider = provider or provider_for(s)
         sid = sh.id
-    data = provider.x_report()
+    import time as _t
+
+    started = _t.monotonic()
+    try:
+        data = provider.x_report()
+    except (ProviderUnavailable, ProviderLost, ProviderRejected) as e:
+        with db.session() as s:
+            m = mode(s)
+        log_op(db, m, "x_report", ok=False, error=str(e), started=started, shift_id=sid, user_id=actor.user_id, provider=provider)
+        raise
     with db.session() as s:
+        log_op(db, mode(s), "x_report", ok=True, result="ok", started=started, shift_id=sid, user_id=actor.user_id)
         s.add(FiscalReport(kind="X", fiscal_shift_id=sid, data=data, created_by=actor.user_id))
         audit(s, actor, "fiscal_shift", sid, "x_report", None, None)
     return data
@@ -395,14 +528,17 @@ def order_statuses(s: Session, order_ids: list[int]) -> dict[int, dict]:
         return {}
     out: dict[int, dict] = {}
     for r in s.scalars(select(FiscalReceipt).where(FiscalReceipt.order_id.in_(order_ids), FiscalReceipt.kind == "sell")):
-        out[r.order_id] = {"receipt_id": r.id, "status": r.status, "fiscal_code": r.fiscal_code, "tax_url": r.tax_url}
+        out[r.order_id] = {"receipt_id": r.id, "status": r.status, "fiscal_code": r.fiscal_code, "tax_url": r.tax_url,
+                           "nonfiscal": r.nonfiscal}
     return out
 
 
 def status_summary(s: Session, actor: Actor) -> dict:
     actor.require(Role.DIRECTOR, Role.ADMIN)
     counts = dict(s.execute(select(FiscalReceipt.status, func.count(FiscalReceipt.id)).group_by(FiscalReceipt.status)).all())
-    return {"enabled": enabled(s), "provider": get_setting(s, "fiscal_provider"), "shift": shift_public(current_shift(s)),
+    last = get_setting(s, "fiscal_selftest_last")
+    return {"enabled": enabled(s), "mode": mode(s), "nonfiscal": is_nonfiscal(mode(s)), "production_allowed": production_allowed(),
+            "provider": mode(s), "shift": shift_public(current_shift(s)), "selftest": last,
             "counts": {k: int(v) for k, v in counts.items()},
             "attention": int(counts.get("rejected", 0)) + int(counts.get("error", 0))}
 
@@ -463,3 +599,203 @@ def reconcile(s: Session, actor: Actor, d_from: date, d_to: date, *, provider: P
     tot["fiscal_net"] = tot["fiscal_sales"] - tot["fiscal_returns"]
     return {"from": d_from.isoformat(), "to": d_to.isoformat(), "totals": tot, "issues": issues,
             "provider_issues": provider_missing, "ok": not issues and not provider_missing}
+
+
+# =================================================================== тестова панель
+def check_connection(db: Database, actor: Actor) -> dict:
+    """Перевірка з'єднання з провайдером поточного режиму (без створення документів)."""
+    import time as _t
+
+    actor.require(Role.DIRECTOR, Role.ADMIN)
+    with db.session() as s:
+        m = mode(s)
+    started = _t.monotonic()
+    provider = None
+    try:
+        provider = get_provider(m)
+        info = provider.ping()
+        log_op(db, m, "ping", ok=True, result="ok", started=started, user_id=actor.user_id)
+        return {"ok": True, "mode": m, "nonfiscal": is_nonfiscal(m), "shift": info.get("shift")}
+    except (ProviderUnavailable, ProviderLost, ProviderRejected) as e:
+        log_op(db, m, "ping", ok=False, error=str(e), started=started, user_id=actor.user_id, provider=provider)
+        return {"ok": False, "mode": m, "nonfiscal": is_nonfiscal(m), "error": redact(str(e), provider)}
+
+
+def test_receipt(db: Database, actor: Actor, amount: int, payment_method: str = "cash") -> dict:
+    """Тестовий чек без замовлення — лише в режимах mock/test. Позначається як НЕФІСКАЛЬНИЙ."""
+    actor.require(Role.DIRECTOR, Role.ADMIN)
+    if amount is None or amount <= 0 or amount > 10_000_000:
+        raise ValidationError("Сума тестового чека — від 0,01 до 100 000 ₴")
+    if payment_method not in ("cash", "card"):
+        raise ValidationError("Оплата: готівка або картка")
+    with db.session() as s:
+        m = mode(s)
+        if not is_nonfiscal(m):
+            raise Forbidden("У бойовому режимі тестові чеки заборонені")
+        u = str(uuidlib.uuid4())
+        r = FiscalReceipt(uuid=u, dedupe_key=f"test:{u}", kind="sell", order_id=None, master_id=None, amount=amount,
+                          payment_method=payment_method, status="queued", provider=m, nonfiscal=True,
+                          goods=[{"code": "TEST", "name": "ТЕСТОВИЙ ЧЕК — НЕФІСКАЛЬНИЙ", "price": amount, "quantity": 1000}],
+                          reason="Тестовий чек (панель)", next_attempt_at=clock.now(), created_by=actor.user_id)
+        s.add(r)
+        s.flush()
+        audit(s, actor, "fiscal_receipt", r.id, "test", None, {"amount": amount, "mode": m})
+        rid = r.id
+    # одразу, без фонового циклу (працює й коли автоматичну фіскалізацію вимкнено); повтор — якщо щойно відкрито зміну
+    for _ in range(2):
+        st = process_receipt(db, rid)
+        with db.session() as s:
+            r = s.get(FiscalReceipt, rid)
+            if st != "error" or (r.next_attempt_at and r.next_attempt_at > clock.now()):
+                break
+    with db.session() as s:
+        return receipt_public(s.get(FiscalReceipt, rid))
+
+
+def selftest(db: Database, actor: Actor) -> dict:
+    """Самоперевірка модуля на ОКРЕМІЙ тимчасовій базі з імітацією ПРРО — робочі дані не змінюються.
+    Результат зберігається для панелі (fiscal_selftest_last)."""
+    import tempfile
+    import time as _t
+    from pathlib import Path
+
+    from ..models import User
+    from .catalog import create_service
+    from .common import set_setting
+    from .fiscal_providers import FakePRROProvider
+    from .orders import close_order
+    from .users import create_user
+
+    actor.require(Role.DIRECTOR, Role.ADMIN)
+    results: list[dict] = []
+    t0 = _t.monotonic()
+    with tempfile.TemporaryDirectory() as tmp:
+        tdb = Database(f"sqlite:///{Path(tmp) / 'selftest.db'}")
+        tdb.create_all()
+        fp = FakePRROProvider()
+        sys_ = Actor.system()
+        with tdb.session() as s:
+            d = create_user(s, sys_, username="st_dir", password="Selftest123", full_name="Тест Директор", role=Role.DIRECTOR)
+            mst = create_user(s, sys_, username="st_master", password="Selftest123", full_name="Тест Майстер", role=Role.MASTER)
+            da = Actor.of(d)
+            svc = create_service(s, da, {"name": "Тестова послуга", "duration_min": 60, "price": 50000})
+            set_setting(s, da, "fiscal_enabled", True)
+            ids = {"d": d.id, "m": mst.id, "svc": svc.id}
+        with tdb.session() as s:
+            da, ma = Actor.of(s.get(User, ids["d"])), Actor.of(s.get(User, ids["m"]))
+
+        def check(name, fn):
+            try:
+                detail = fn()
+                results.append({"name": name, "ok": True, "detail": detail or ""})
+            except Exception as e:  # noqa: BLE001 — самоперевірка фіксує будь-який збій
+                results.append({"name": name, "ok": False, "detail": f"{type(e).__name__}: {e}"[:300]})
+
+        def make_order(amount, pm, hour, key=None):
+            from datetime import datetime as dt
+
+            from .bookings import create_appointment
+
+            now = clock.now()
+            start = dt(now.year, now.month, now.day, 0, 0) + timedelta(days=1, hours=hour)
+            with tdb.session() as s:
+                a = create_appointment(s, da, master_id=ids["m"], service_id=ids["svc"], starts_at=start,
+                                       client_name="Тестовий клієнт", client_phone=f"0670000{hour:03d}")
+                aid = a.id
+            with tdb.session() as s:
+                return close_order(s, ma, aid, amount=amount, payment_method=pm, idempotency_key=key).id
+
+        def receipt_of(oid, kind="sell"):
+            with tdb.session() as s:
+                return s.scalar(select(FiscalReceipt).where(FiscalReceipt.order_id == oid, FiscalReceipt.kind == kind)
+                                .order_by(FiscalReceipt.id.desc()))
+
+        def t_open():
+            open_shift(tdb, da, provider=fp)
+            assert fp.state.shift["status"] == "OPENED"
+        check("Відкриття касової зміни", t_open)
+        orders_: dict = {}
+
+        def t_sell():
+            orders_["cash"] = make_order(60000, "cash", 1)
+            orders_["card"] = make_order(45000, "card", 3)
+            process_pending(tdb, fp)
+            rc, rk = receipt_of(orders_["cash"]), receipt_of(orders_["card"])
+            assert rc.status == "done" and rk.status == "done" and rc.fiscal_code and rc.tax_url
+            assert rc.amount == 60000 and rk.payment_method == "card" and rc.goods[0]["name"] == "Тестова послуга"
+            assert fp.last_payload["order_ref"] == f"MDS-{orders_['card']}"
+            return f"чеки {rc.fiscal_code}, {rk.fiscal_code} (НЕФІСКАЛЬНІ)"
+        check("Чеки за готівку і картку, сума й назва послуги", t_sell)
+
+        def t_reject():
+            o = make_order(1000, "cash", 5)
+            fp.fail_next = ["reject"]
+            process_pending(tdb, fp)
+            assert receipt_of(o).status == "rejected"
+            assert retry(tdb, da, receipt_of(o).id, fp) == "done"
+        check("Відхилення і повтор", t_reject)
+
+        def t_unavailable():
+            fp.down = True
+            o = make_order(2000, "card", 7)
+            process_pending(tdb, fp)
+            r = receipt_of(o)
+            assert r.status == "error"
+            fp.down = False
+            with tdb.session() as s:
+                s.get(FiscalReceipt, r.id).next_attempt_at = clock.now()
+            process_pending(tdb, fp)
+            assert receipt_of(o).status == "done"
+        check("Недоступність ПРРО і відновлення", t_unavailable)
+
+        def t_lost():
+            o = make_order(3000, "cash", 9)
+            fp.fail_next = ["lost"]
+            process_pending(tdb, fp)
+            r = receipt_of(o)
+            with tdb.session() as s:
+                s.get(FiscalReceipt, r.id).next_attempt_at = clock.now()
+            process_pending(tdb, fp)
+            assert receipt_of(o).status == "done"
+            assert sum(1 for c in fp.calls if c[0] == "sell" and c[1] == r.uuid) == 1
+        check("Втрата відповіді — без дубліката", t_lost)
+
+        def t_double():
+            o = make_order(4000, "cash", 11, key="st-double")
+            with tdb.session() as s:
+                aid = s.get(Order, o).appointment_id
+            with tdb.session() as s:
+                assert close_order(s, ma, aid, amount=4000, payment_method="cash", idempotency_key="st-double").id == o
+            process_pending(tdb, fp)
+            with tdb.session() as s:
+                n = s.scalar(select(func.count(FiscalReceipt.id)).where(FiscalReceipt.order_id == o))
+            assert n == 1
+        check("Подвійне закриття замовлення — один чек", t_double)
+
+        def t_refund():
+            res = refund(tdb, da, orders_["cash"], 10000, "самоперевірка", provider=fp)
+            assert res["status"] == "done"
+            with tdb.session() as s:
+                assert s.get(Order, orders_["cash"]).amount == 50000
+        check("Повернення (часткове)", t_refund)
+
+        def t_reconcile():
+            with tdb.session() as s:
+                today = clock.now().date()
+                rec = reconcile(s, da, today, today + timedelta(days=1), provider=fp)
+            assert rec["ok"], rec["issues"]
+            return f"облік {rec['totals']['orders_amount'] / 100:.2f} ₴ = чеки {rec['totals']['fiscal_net'] / 100:.2f} ₴"
+        check("Звірка сум MDS і чеків", t_reconcile)
+
+        def t_close():
+            z = close_shift(tdb, da, provider=fp)
+            assert z["status"] == "closed" and z["z_report"]["returns"] == 10000
+        check("Закриття зміни (Z-звіт)", t_close)
+    out = {"at": clock.now().isoformat(timespec="seconds"), "passed": sum(r["ok"] for r in results),
+           "failed": sum(not r["ok"] for r in results), "duration_ms": int((_t.monotonic() - t0) * 1000),
+           "results": results, "isolated": True}
+    with db.session() as s:
+        set_setting(s, actor, "fiscal_selftest_last", out)
+        m = mode(s)
+    log_op(db, m, "selftest", ok=out["failed"] == 0, result=f"{out['passed']}/{len(results)}", user_id=actor.user_id)
+    return out
