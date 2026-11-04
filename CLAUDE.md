@@ -69,3 +69,8 @@ alembic revision --autogenerate -m "опис"   # після зміни models.p
 
 - Замовлення з оплатою через «Термінал» закривається ЛИШЕ після перевірки сервером у банку (`check_payment`, response_code "00").
 - Ключі — лише `MDS_PRIVAT_TERMINAL_*` (змінні сервера). У тестах — `FakeTerminalProvider` (`card_terminal_providers.set_provider`).
+
+## Податки і зарплата (docs/PAYROLL.md)
+
+- Ставки, мінімальна зарплата, строки — лише записи `tax_rates` з датами (`services/taxes.py`), не в коді.
+- Офіційна зарплата ≠ управлінський поділ 50/50; нарахування лише через сторно + нове; кадрові дані — `employee_profiles`.

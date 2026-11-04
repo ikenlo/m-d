@@ -86,14 +86,31 @@ def validate_profile_value(key: str, value) -> object:
 def declaration_data(s, actor: Actor, year: int) -> dict:
     """Цифри декларації за рік (1 група, звітна, увесь рік на єдиному податку) + чого не вистачає в профілі."""
     actor.require(Role.DIRECTOR)
+    from . import taxes
+
     st = all_settings(s)
-    missing = [label for key, (label, req) in PROFILE.items() if req and not st.get(key)]
+    jan1 = date(year, 1, 1)
+    # ставки з датами дії («Податки і зарплата → Ставки») мають пріоритет над налаштуваннями — тоді для 2025
+    # беруться ставки 2025 року, для 2026 — 2026-го
+    r_mzp, r_ep = taxes.rate_for(s, "min_wage", jan1), taxes.rate_for(s, "single_tax", jan1)
+    r_vz, r_esv = taxes.rate_for(s, "military_fop", jan1), taxes.rate_for(s, "esv_fop", jan1)
+    mzp = r_mzp.amount if r_mzp else int(st.get("fop_min_wage") or 0)
+    if r_ep and r_ep.base == "min_wage":
+        tax_m = _pct(mzp, r_ep.rate_bp or 0)
+    elif r_ep:
+        tax_m = r_ep.amount if r_ep.rate_bp is None else _pct(r_ep.amount or 0, r_ep.rate_bp)
+    else:
+        tax_m = int(st.get("fop_single_tax_month") or 0)
+    skip = set()
+    if r_mzp:
+        skip.add("fop_min_wage")
+    if r_ep:
+        skip.add("fop_single_tax_month")
+    missing = [label for key, (label, req) in PROFILE.items() if req and key not in skip and not st.get(key)]
     income = tax_report.income_report(s, actor, year)["total"]["total"]
-    tax_m = int(st.get("fop_single_tax_month") or 0)
-    mzp = int(st.get("fop_min_wage") or 0)
     months = list(range(1, 13))
-    esv_m = _pct(mzp, 2200)  # ЄСВ 22% мінімальної зарплати (ч. 1 ст. 8 Закону про ЄСВ)
-    military_m = _pct(mzp, 1000)  # військовий збір 10% МЗП на 1 січня (рядок 22 декларації)
+    esv_m = _pct(mzp, r_esv.rate_bp if r_esv and r_esv.rate_bp is not None else 2200)  # ЄСВ 22% МЗП
+    military_m = _pct(mzp, r_vz.rate_bp if r_vz and r_vz.rate_bp is not None else 1000)  # ВЗ 10% МЗП на 1 січня
     return {
         "year": year,
         "group": 1,
@@ -108,6 +125,8 @@ def declaration_data(s, actor: Actor, year: int) -> dict:
         "missing": missing,
         "ready": not missing,
         "limit_note": "Перевірте, що дохід не перевищує ліміт 1 групи на цей рік.",
+        "rates_source": "ставки з датами" if (r_mzp or r_ep) else "налаштування",
+        "min_wage": mzp, "single_tax_month": tax_m,
     }
 
 
