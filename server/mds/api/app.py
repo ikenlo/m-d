@@ -17,7 +17,7 @@ from ..config import Config
 from ..db import Database
 from ..errors import DomainError
 from ..services import backup
-from .routers import auth, calendar, callbacks, catalog, money, staff, stock_schedule, system, utilities
+from .routers import auth, calendar, callbacks, catalog, fiscal, money, staff, stock_schedule, system, utilities
 
 log = logging.getLogger("mds")
 STATIC = Path(__file__).resolve().parent.parent / "web" / "static"
@@ -51,6 +51,23 @@ async def _reminders_loop(db: Database) -> None:
         await asyncio.sleep(300)
 
 
+async def _fiscal_loop(db: Database) -> None:
+    """Черга ПРРО (кожні 5 с; відновлення після перезапуску) і нагадування про податки (щогодини)."""
+    from ..services import fiscal, taxes
+
+    tick = 0
+    while True:
+        try:
+            await asyncio.to_thread(fiscal.process_pending, db)
+            if tick % 720 == 0:
+                with db.session() as s:
+                    taxes.tax_reminders(s)
+        except Exception:  # noqa: BLE001 — збій однієї спроби не зупиняє цикл
+            log.exception("Помилка циклу фіскалізації")
+        tick += 1
+        await asyncio.sleep(5)
+
+
 def create_app(
     cfg: Config | None = None,
     db: Database | None = None,
@@ -69,6 +86,7 @@ def create_app(
         if background:
             tasks.append(asyncio.create_task(_backup_loop(cfg, db)))
             tasks.append(asyncio.create_task(_reminders_loop(db)))
+            tasks.append(asyncio.create_task(_fiscal_loop(db)))
         if with_bot:
             if cfg.telegram_token:
                 from ..bot.runner import run_bot
@@ -96,7 +114,7 @@ def create_app(
             {"error": "validation", "detail": f"Невірні дані: {field} — {first.get('msg', '')}"}, status_code=422
         )
 
-    for r in (auth, staff, catalog, calendar, callbacks, money, stock_schedule, system, utilities):
+    for r in (auth, staff, catalog, calendar, callbacks, money, stock_schedule, system, utilities, fiscal):
         app.include_router(r.router)
 
     app.mount("/static", StaticFiles(directory=STATIC), name="static")

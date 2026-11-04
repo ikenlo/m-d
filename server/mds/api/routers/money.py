@@ -26,7 +26,11 @@ def _range(period: str | None, date_from: date | None, date_to: date | None) -> 
 def list_orders(period: str | None = None, date_from: date | None = None, date_to: date | None = None,
                 master_id: int | None = None, actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
     a, b = _range(period, date_from, date_to)
-    return [orders.order_public(o) for o in orders.list_orders(s, actor, date_from=a, date_to=b, master_id=master_id)]
+    items = orders.list_orders(s, actor, date_from=a, date_to=b, master_id=master_id)
+    from ...services.fiscal import order_statuses
+
+    fs = order_statuses(s, [o.id for o in items])
+    return [{**orders.order_public(o), "fiscal": fs.get(o.id)} for o in items]
 
 
 @router.get("/orders/{order_id}")

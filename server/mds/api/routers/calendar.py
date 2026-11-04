@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import date
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, BackgroundTasks, Depends, Request
 from sqlalchemy.orm import Session
 
 from ...services import bookings, orders
@@ -79,11 +79,17 @@ def set_status(appt_id: int, body: StatusIn, actor: Actor = Depends(get_actor), 
 
 
 @router.post("/appointments/{appt_id}/close")
-def close_order(appt_id: int, body: CloseOrderIn, actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
+def close_order(appt_id: int, body: CloseOrderIn, background: BackgroundTasks, request: Request,
+                actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
     """Закрити замовлення. Передавайте idempotency_key — повтор не задвоїть оплату."""
     o = orders.close_order(
         s, actor, appt_id, amount=body.amount, payment_method=body.payment_method,
         materials=[m.model_dump() for m in body.materials], idempotency_key=body.idempotency_key,
         client_name=body.client_name,
     )
-    return orders.order_public(o)
+    out = orders.order_public(o)
+    s.commit()  # замовлення і чек у черзі зафіксовано — далі спроба фіскалізації окремо (не блокує відповідь)
+    from .fiscal import kick_fiscal
+
+    kick_fiscal(background, request)
+    return out

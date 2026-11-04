@@ -150,6 +150,10 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "utilities_charge_share_bp": 10000,  # яку частку витрат розподіляти (10000 = 100%)
     "utilities_fixed_amount": 0,  # fixed: сума, копійки
     "utilities_fixed_per": "shift",  # fixed: shift (за зміну) | month (за місяць)
+    # ---- фіскалізація (ПРРО). Вимкнено, доки директор не підключить провайдера.
+    "fiscal_enabled": False,
+    "fiscal_provider": "fake",  # fake (імітація, без справжніх чеків) | checkbox
+    "fiscal_auto_open_shift": True,  # відкривати фіскальну зміну автоматично при першому чеку
     "salon_address": "",
     "salon_phone": "",
     "salon_instagram": "",
@@ -228,6 +232,10 @@ def update_settings(s: Session, actor: Actor, data: dict[str, Any]) -> dict[str,
             raise ValidationError("Розподіл: пропорційно виручці або порівну")
         if key == "utilities_fixed_per" and value not in ("shift", "month"):
             raise ValidationError("Фіксована ставка: за зміну або за місяць")
+        if key in ("fiscal_enabled", "fiscal_auto_open_shift") and not isinstance(value, bool):
+            raise ValidationError(f"{key}: так або ні")
+        if key == "fiscal_provider" and value not in ("fake", "checkbox"):
+            raise ValidationError("Провайдер ПРРО: fake (імітація) або checkbox")
         if key == "slot_step_min" and value < 5:
             raise ValidationError("Крок слотів — щонайменше 5 хвилин")
         set_setting(s, actor, key, value)

@@ -391,12 +391,13 @@ const NAV = {
     ["shift", "check", "Зміна"], ["generator", "zap", "Генератор"], ["profile", "user", "Профіль"],
   ],
   admin: [["calendar", "calendar", "Календар", "Робота"], ["schedule", "clock", "Графік роботи", "Робота"], ["clients", "users", "Клієнти", "Робота"],
-    ["stock", "box", "Склад", "Робота"], ["generator", "zap", "Генератор", "Робота"], ["profile", "user", "Профіль"]],
+    ["stock", "box", "Склад", "Робота"], ["generator", "zap", "Генератор", "Робота"], ["fiscal", "receipt", "Фіскалізація (ПРРО)", "Робота"], ["profile", "user", "Профіль"]],
   director: [
     ["dashboard", "chart", "Огляд", "Огляд"],
     ["calendar", "calendar", "Календар", "Робота"], ["schedule", "clock", "Графік роботи", "Робота"], ["clients", "users", "Клієнти", "Робота"],
     ["stock", "box", "Склад", "Робота"],
     ["orders", "receipt", "Замовлення", "Фінанси"], ["shifts", "banknote", "Зміни й виплати", "Фінанси"], ["expenses", "wallet", "Витрати", "Фінанси"], ["utilities", "zap", "Комунальні і генератор", "Фінанси"],
+    ["fiscal", "receipt", "Фіскалізація (ПРРО)", "Фінанси"], ["taxes", "percent", "Податки і зарплата", "Фінанси"],
     ["staff", "user", "Персонал", "Салон"], ["catalog", "scissors", "Послуги", "Салон"],
     ["settings", "settings", "Налаштування", "Салон"], ["journal", "book", "Журнал", "Салон"],
     ["profile", "user", "Профіль"],
@@ -1070,7 +1071,7 @@ VIEWS.earnings = async (main) => {
   main.append(orders.length ? h("div", { class: "card table-wrap" }, h("table", {},
     h("tr", {}, h("th", {}, "Дата"), h("th", {}, "Послуга"), h("th", {}, "Клієнт"), h("th", { class: "num" }, "Сума"), h("th", { class: "num" }, "Мій заробіток")),
     orders.map((o) => h("tr", {}, h("td", {}, dm(o.closed_at), " ", h("span", { class: "muted" }, hm(o.closed_at))), h("td", {}, o.service_name), h("td", {}, o.client_name),
-      h("td", { class: "num" }, money(o.amount)), h("td", { class: "num" }, h("b", {}, money(o.master_earning))))))) : h("div", { class: "card" }, emptyState("Ще немає закритих замовлень", "receipt")));
+      h("td", { class: "num" }, money(o.amount)), h("td", { class: "num" }, h("b", {}, money(o.master_earning)), o.fiscal ? h("div", {}, fiscalChip(o.fiscal)) : null))))) : h("div", { class: "card" }, emptyState("Ще немає закритих замовлень", "receipt")));
   if (payouts.length) {
     main.append(h("div", { class: "section" }, h("h2", {}, "Виплати")));
     main.append(h("div", { class: "card table-wrap" }, h("table", {},
@@ -1572,6 +1573,219 @@ VIEWS.utilities = async (main) => {
     h("div", { class: "grid two", style: { marginTop: "12px" } }, detail, elecCard),
     h("div", { style: { marginTop: "12px" } }, runsCard),
     h("div", { class: "grid two", style: { marginTop: "12px" } }, allocCard, genSettings));
+};
+
+// ---------- Фіскалізація (ПРРО)
+const FISCAL_ST = { queued: ["у черзі", "st-pending"], sending: ["надсилається", "st-pending"], pending: ["очікує ДПС", "st-pending"],
+  done: ["фіскалізовано", "st-completed"], error: ["повтор", "st-pending"], rejected: ["відхилено", "st-cancelled"] };
+function fiscalChip(f) {
+  const [label, cls] = FISCAL_ST[f.status] || [f.status, "plain"];
+  const chip = h("span", { class: "chip " + cls, title: f.fiscal_code ? "Фіскальний номер " + f.fiscal_code : "" }, "🧾 " + label);
+  const canRetry = f.status === "rejected" || f.status === "error";
+  return h("span", { class: "row", style: { gap: "6px", justifyContent: "flex-end" } }, chip,
+    f.tax_url ? h("a", { href: f.tax_url, target: "_blank", rel: "noopener", class: "small" }, "чек") : null,
+    canRetry ? h("button", { class: "btn sm ghost", onclick: async () => { await run(() => api.post(`/api/fiscal/receipts/${f.receipt_id || f.id}/retry`), "Надіслано повторно"); reload(); } }, "Повторити") : null);
+}
+
+VIEWS.fiscal = async (main) => {
+  const isDir = state.user.role === "director";
+  const params = new URLSearchParams(location.hash.split("?")[1] || "");
+  const day = params.get("d") || today();
+  const [st, list] = await Promise.all([api.get("/api/fiscal/status"), api.get(`/api/fiscal/receipts?date_from=${day}&date_to=${day}`)]);
+  main.append(topbar("Фіскалізація (ПРРО)", st.enabled ? `Провайдер: ${st.provider === "fake" ? "імітація (тест, без справжніх чеків)" : st.provider}` : "Вимкнено — чеки не створюються"));
+  const sh = st.shift;
+  const shiftCard = h("div", { class: "card stack" },
+    h("div", { class: "card-head" }, h("h3", {}, "Касова зміна"), h("span", { class: "chip " + (sh ? "st-completed" : "plain") }, sh ? "відкрита" : "закрита")),
+    sh ? h("p", { class: "muted small" }, `з ${dm(sh.opened_at)} ${hm(sh.opened_at)}`) : h("p", { class: "muted small" }, "Відкриється автоматично з першим чеком (якщо ввімкнено) або кнопкою."),
+    h("div", { class: "row", style: { flexWrap: "wrap" } },
+      !sh ? h("button", { class: "btn primary", onclick: async () => { await run(() => api.post("/api/fiscal/shift/open"), "Зміну відкрито"); reload(); } }, "Відкрити зміну") : null,
+      sh ? h("button", { class: "btn", onclick: async () => {
+        const x = await run(() => api.post("/api/fiscal/x-report"));
+        openSheet("X-звіт", h("pre", { class: "small", style: { whiteSpace: "pre-wrap" } }, JSON.stringify(x, null, 2)));
+      } }, "X-звіт") : null,
+      sh ? h("button", { class: "btn danger", onclick: () => confirmSheet("Закрити зміну (Z-звіт)?", "Після закриття чеки за сьогодні вже не додаються до цієї зміни.", "Закрити зміну",
+        async () => { const z = await run(() => api.post("/api/fiscal/shift/close", { force: false }), "Зміну закрито"); openSheet("Z-звіт", h("pre", { class: "small", style: { whiteSpace: "pre-wrap" } }, JSON.stringify(z.z_report, null, 2))); }) }, "Закрити зміну (Z)") : null,
+      h("button", { class: "btn ghost", onclick: async () => { await run(() => api.post("/api/fiscal/process"), "Черга оброблена"); reload(); } }, "Надіслати чергу зараз")));
+  const c = st.counts || {};
+  const stats = h("div", { class: "grid kpi" },
+    kpi("Фіскалізовано", c.done || 0, "", { raw: true, ico: "ok" }),
+    kpi("У черзі / очікує", (c.queued || 0) + (c.sending || 0) + (c.pending || 0), "", { raw: true, ico: "clock" }),
+    kpi("Потребують уваги", st.attention || 0, st.attention ? "accent" : "", { raw: true, ico: "alert", sub: "відхилені й з помилкою" }));
+  let settingsCard = null;
+  if (isDir) {
+    const en = h("input", { type: "checkbox", checked: !!st.enabled });
+    const prov = select([["fake", "Імітація (тест, без справжніх чеків)"], ["checkbox", "Checkbox"]], st.provider || "fake");
+    settingsCard = h("div", { class: "card stack" }, h("h3", {}, "Налаштування"),
+      h("label", { class: "row" }, en, "Фіскалізувати замовлення автоматично при закритті"), field("Провайдер ПРРО", prov),
+      h("p", { class: "muted small" }, "Checkbox: ключ ліцензії й PIN касира задаються змінними сервера MDS_CHECKBOX_LICENSE_KEY і MDS_CHECKBOX_PIN (не зберігаються в базі). Перед реальним запуском — перевірка на тестовій касі Checkbox."),
+      h("button", { class: "btn primary", onclick: async () => { state.settings = await run(() => api.put("/api/settings", { fiscal_enabled: en.checked, fiscal_provider: prov.value }), "Збережено"); reload(); } }, "Зберегти"));
+  }
+  const dayNav = h("div", { class: "row" },
+    h("button", { class: "btn sm", onclick: () => { location.hash = "#/fiscal?d=" + addDays(day, -1); } }, icon("left", "sm")),
+    h("b", {}, dmy(day)),
+    h("button", { class: "btn sm", onclick: () => { location.hash = "#/fiscal?d=" + addDays(day, 1); } }, icon("right", "sm")));
+  const table = list.length ? h("div", { class: "table-wrap" }, h("table", {},
+    h("tr", {}, h("th", {}, "Час"), h("th", {}, "Чек"), h("th", { class: "num" }, "Сума"), h("th", {}, "Оплата"), h("th", {}, "Статус"), h("th", {}, "")),
+    list.map((r) => h("tr", {}, h("td", {}, hm(r.created_at)), h("td", {}, (r.kind === "return" ? "Повернення · " : "Продаж · ") + "замовл. #" + r.order_id,
+      r.last_error && r.status !== "done" ? h("div", { class: "muted small" }, r.last_error) : null),
+      h("td", { class: "num" }, (r.kind === "return" ? "− " : "") + money(r.amount)), h("td", {}, PAY[r.payment_method] || r.payment_method),
+      h("td", {}, fiscalChip(r)),
+      h("td", { class: "right" }, isDir && r.kind === "sell" && r.status === "done" ? h("button", { class: "btn sm ghost", onclick: () => refundForm(r) }, "Повернення") : null)))))
+    : emptyState("Чеків за цей день немає", "receipt");
+  function refundForm(r) {
+    const amt = h("input", { inputmode: "decimal", value: kopToInput(r.amount) });
+    const reason = h("input", { placeholder: "обов'язково" });
+    openSheet(`Повернення · замовлення #${r.order_id}`, h("div", { class: "stack" },
+      h("p", { class: "muted small" }, "Буде створено фіскальний чек повернення і виправлено замовлення (частки майстра й салону перерахуються, у журналі — сторно)."),
+      h("div", { class: "form-grid" }, field("Сума повернення, ₴", amt), field("Причина", reason)),
+      h("button", { class: "btn danger big", onclick: async () => {
+        await run(() => api.post(`/api/fiscal/orders/${r.order_id}/refund`, { amount: toKop(amt.value), reason: reason.value.trim() }), "Повернення оформлено");
+        closeSheet(); reload();
+      } }, "Оформити повернення")));
+  }
+  let recon = null;
+  if (isDir) {
+    const box = h("div");
+    recon = h("div", { class: "card stack" }, h("div", { class: "card-head" }, h("h3", {}, "Звірка з обліком"),
+      h("button", { class: "btn sm", onclick: async () => {
+        const rec = await run(() => api.get(`/api/fiscal/reconcile?date_from=${day}&date_to=${day}&deep=true`));
+        const t = rec.totals;
+        box.replaceChildren(h("div", { class: "stack" },
+          h("div", { class: "sum-line" }, h("span", {}, "Замовлення (облік)"), h("b", {}, money(t.orders_amount))),
+          h("div", { class: "sum-line" }, h("span", {}, "Чеки: продаж − повернення"), h("b", {}, money(t.fiscal_net))),
+          h("div", { class: "sum-line" }, h("span", { class: "muted" }, "Готівка: облік / чеки"), h("span", {}, `${money(t.cash_internal)} / ${money(t.cash_fiscal)}`)),
+          h("div", { class: "sum-line" }, h("span", { class: "muted" }, "Картка: облік / чеки"), h("span", {}, `${money(t.card_internal)} / ${money(t.card_fiscal)}`)),
+          rec.ok ? h("div", { class: "chip st-completed" }, "Розбіжностей немає") :
+            h("div", { class: "stack" }, [...rec.issues, ...rec.provider_issues].map((i) => h("div", { class: "callout" }, icon("alert"),
+              h("div", { class: "small" }, (i.order_id ? `Замовлення #${i.order_id}: ` : `Чек #${i.receipt_id}: `) + i.text))))));
+      } }, "Звірити день")), box);
+  }
+  main.append(h("div", { class: "grid two" }, shiftCard, settingsCard || h("div")), h("div", { style: { marginTop: "12px" } }, stats),
+    h("div", { class: "card", style: { marginTop: "12px" } }, h("div", { class: "card-head" }, h("h3", {}, "Чеки"), dayNav), table),
+    recon ? h("div", { style: { marginTop: "12px" } }, recon) : null);
+};
+
+// ---------- Податки ФОП і офіційна зарплата (директор)
+const TAX_KEYS = { min_wage: "Мінімальна зарплата", single_tax: "Єдиний податок", military_fop: "Військовий збір (ФОП)", esv_fop: "ЄСВ (ФОП)",
+  pdfo: "ПДФО", military_payroll: "Військовий збір (зарплата)", esv_employer: "ЄСВ роботодавця" };
+const TAX_BASES = { min_wage: "від мінімальної зарплати", income: "від доходу", fixed: "фіксована сума", salary: "від зарплати", salary_min_wage: "від зарплати, не менше мінімальної" };
+VIEWS.taxes = async (main) => {
+  const params = new URLSearchParams(location.hash.split("?")[1] || "");
+  const tab = params.get("t") || "fop";
+  const month = params.get("m") || today().slice(0, 7) + "-01";
+  main.append(topbar("Податки і зарплата", "Ставки задаються з датами дії — у коді немає «вічних» значень. Перевіряйте актуальність з бухгалтером."),
+    seg([["fop", "Податки ФОП"], ["payroll", "Офіційна зарплата"], ["rates", "Ставки"]], tab, (v) => { location.hash = `#/taxes?t=${v}&m=${month}`; }));
+  const body = h("div", { style: { marginTop: "12px" } });
+  main.append(body);
+  const pctTxt = (bp) => (bp === null || bp === undefined ? "—" : (bp / 100).toLocaleString("uk-UA") + "%");
+
+  if (tab === "rates") {
+    const rates = await api.get("/api/taxes/rates");
+    const key = select(Object.entries(TAX_KEYS), "single_tax");
+    const from = h("input", { type: "date", value: today() });
+    const rate = h("input", { inputmode: "decimal", placeholder: "%" });
+    const amount = h("input", { inputmode: "decimal", placeholder: "₴ (для мінімальної зарплати / фіксованої)" });
+    const base = select(Object.entries(TAX_BASES), "min_wage");
+    const period = select([["month", "щомісяця"], ["quarter", "щокварталу"]], "month");
+    const dueDay = h("input", { type: "number", min: 1, max: 31, placeholder: "напр. 20" });
+    const dueFrom = select([["start", "від початку періоду"], ["end", "від кінця періоду"]], "end");
+    const dueOff = h("input", { type: "number", min: 0, max: 12, value: 0 });
+    body.append(h("div", { class: "card stack" }, h("h3", {}, "Нова ставка (діє з дати; попередня завершиться автоматично)"),
+      h("div", { class: "form-grid" }, field("Вид", key), field("Діє з", from), field("Ставка, %", rate), field("Сума, ₴", amount)),
+      h("div", { class: "form-grid" }, field("База", base), field("Період", period), field("День сплати", dueDay), field("Строк рахується", dueFrom), field("+ місяців", dueOff)),
+      h("button", { class: "btn primary", onclick: async () => {
+        const b = { key: key.value, valid_from: from.value, base: base.value, period: period.value, due_from: dueFrom.value, due_offset_months: +dueOff.value || 0 };
+        if (rate.value.trim()) b.rate_bp = Math.round(parseFloat(rate.value.replace(",", ".")) * 100);
+        if (amount.value.trim()) b.amount = toKop(amount.value);
+        if (dueDay.value) b.due_day = +dueDay.value;
+        await run(() => api.post("/api/taxes/rates", b), "Ставку додано"); reload();
+      } }, "Додати ставку")),
+      h("div", { class: "card table-wrap", style: { marginTop: "12px" } }, rates.length ? h("table", {},
+        h("tr", {}, h("th", {}, "Вид"), h("th", {}, "Значення"), h("th", {}, "База / період"), h("th", {}, "Строк"), h("th", {}, "Діє")),
+        rates.map((r) => h("tr", {}, h("td", {}, r.title), h("td", {}, r.amount !== null ? money(r.amount) : pctTxt(r.rate_bp)),
+          h("td", { class: "small" }, `${TAX_BASES[r.base] || r.base} · ${r.period === "quarter" ? "квартал" : "місяць"}`),
+          h("td", { class: "small" }, r.due_day ? `${r.due_day}-го, ${r.due_from === "start" ? "від початку" : "від кінця"} +${r.due_offset_months} міс.` : "—"),
+          h("td", { class: "small" }, `${dmy(r.valid_from)} — ${r.valid_to ? dmy(r.valid_to) : "дотепер"}`)))) : emptyState("Ставок ще немає — додайте мінімальну зарплату та податки", "percent")));
+    return;
+  }
+
+  if (tab === "fop") {
+    const year = +month.slice(0, 4);
+    const rows = await api.get("/api/taxes/fop?year=" + year);
+    const key = select([["single_tax", "Єдиний податок"], ["military_fop", "Військовий збір"], ["esv_fop", "ЄСВ"]], "single_tax");
+    const on = h("input", { type: "date", value: today() });
+    body.append(h("div", { class: "card stack" }, h("h3", {}, "Нарахувати за період"),
+      h("div", { class: "form-grid" }, field("Податок", key), field("Будь-яка дата періоду", on)),
+      h("button", { class: "btn primary", onclick: async () => { await run(() => api.post("/api/taxes/fop/accrue", { key: key.value, on: on.value }), "Нараховано"); reload(); } }, "Нарахувати")),
+      h("div", { class: "card table-wrap", style: { marginTop: "12px" } }, rows.length ? h("table", {},
+        h("tr", {}, h("th", {}, "Податок"), h("th", {}, "Період"), h("th", { class: "num" }, "Нараховано"), h("th", { class: "num" }, "Сплачено"), h("th", { class: "num" }, "Борг"), h("th", {}, "Строк"), h("th", {}, "")),
+        rows.map((r) => h("tr", {}, h("td", {}, r.title), h("td", {}, `${dmy(r.period_start)}${r.period_end ? " — " + dmy(r.period_end) : ""}`),
+          h("td", { class: "num" }, money(r.accrued)), h("td", { class: "num" }, money(r.paid)), h("td", { class: "num" }, h("b", { class: r.overdue ? "neg" : "" }, money(r.debt))),
+          h("td", {}, r.due_date ? dmy(r.due_date) : "—", r.overdue ? h("span", { class: "chip st-cancelled", style: { marginLeft: "6px" } }, "прострочено") : null),
+          h("td", { class: "right", style: { whiteSpace: "nowrap" } },
+            r.debt > 0 ? h("button", { class: "btn sm", onclick: () => payForm(r) }, "Сплачено") : null,
+            r.accrual_id ? h("button", { class: "btn sm ghost", onclick: () => correctForm(r) }, icon("edit", "sm")) : null)))) : emptyState(`Нарахувань за ${year} рік немає`, "percent")));
+    function payForm(r) {
+      const amt = h("input", { inputmode: "decimal", value: kopToInput(r.debt) });
+      const paidOn = h("input", { type: "date", value: today() });
+      openSheet(`Сплата: ${r.title}`, h("div", { class: "stack" }, h("div", { class: "form-grid" }, field("Сума, ₴", amt), field("Дата сплати", paidOn)),
+        h("button", { class: "btn primary big", onclick: async () => { await run(() => api.post("/api/taxes/payments", { key: r.key, period_start: r.period_start, amount: toKop(amt.value), paid_on: paidOn.value }), "Сплату записано"); closeSheet(); reload(); } }, "Зберегти")));
+    }
+    function correctForm(r) {
+      const amt = h("input", { inputmode: "decimal", placeholder: "порожньо — перерахувати за ставками" });
+      const reason = h("input", { placeholder: "обов'язково" });
+      openSheet(`Виправити: ${r.title}`, h("div", { class: "stack" }, h("p", { class: "muted small" }, "Старе нарахування сторнується, створюється нове."),
+        h("div", { class: "form-grid" }, field("Нова сума, ₴", amt), field("Причина", reason)),
+        h("button", { class: "btn primary big", onclick: async () => { await run(() => api.post(`/api/taxes/fop/${r.accrual_id}/correct`, { reason: reason.value.trim(), amount: amt.value.trim() ? toKop(amt.value) : null }), "Виправлено"); closeSheet(); reload(); } }, "Виправити")));
+    }
+    return;
+  }
+
+  // офіційна зарплата
+  const data = await api.get("/api/payroll?month=" + month);
+  const staff = (state.allUsers || []).filter((u) => u.role !== "director");
+  const userSel = select(staff.map((u) => [u.id, u.full_name]), staff[0]?.id);
+  const gross = h("input", { inputmode: "decimal", placeholder: "нараховано (брутто), ₴" });
+  const preview = h("div", { class: "muted small" });
+  gross.addEventListener("input", async () => {
+    const g = toKop(gross.value);
+    if (!(g >= 0)) { preview.textContent = ""; return; }
+    try {
+      const c = await api.get(`/api/payroll/calc?gross=${g}&month=${month}`);
+      preview.textContent = `ПДФО ${money(c.pdfo)} · ВЗ ${money(c.military)} · на руки ${money(c.net)} · ЄСВ роботодавця ${money(c.esv_employer)}`;
+    } catch (e) { preview.textContent = e.message; }
+  });
+  const t = data.totals;
+  body.append(h("div", { class: "row", style: { marginBottom: "10px" } },
+      h("button", { class: "btn sm", onclick: () => { location.hash = `#/taxes?t=payroll&m=${addMonths(month, -1)}`; } }, icon("left", "sm")),
+      h("b", {}, monthTitle(month)),
+      h("button", { class: "btn sm", onclick: () => { location.hash = `#/taxes?t=payroll&m=${addMonths(month, 1)}`; } }, icon("right", "sm"))),
+    h("div", { class: "callout", style: { marginBottom: "12px" } }, icon("alert"), h("div", { class: "small" }, "Це юридичне нарахування зарплати. Управлінський поділ 50/50 (заробіток майстрів у системі) рахується окремо і не змінюється.")),
+    h("div", { class: "card stack" }, h("h3", {}, "Нарахувати зарплату"), h("div", { class: "form-grid" }, field("Працівник", userSel), field("Сума (брутто), ₴", gross)), preview,
+      h("button", { class: "btn primary", onclick: async () => { await run(() => api.post("/api/payroll", { user_id: +userSel.value, month, gross: toKop(gross.value) }), "Нараховано"); reload(); } }, "Нарахувати")),
+    h("div", { class: "card table-wrap", style: { marginTop: "12px" } }, data.rows.length ? h("table", {},
+      h("tr", {}, h("th", {}, "Працівник"), h("th", { class: "num" }, "Брутто"), h("th", { class: "num" }, "ПДФО"), h("th", { class: "num" }, "ВЗ"), h("th", { class: "num" }, "На руки"), h("th", { class: "num" }, "ЄСВ"), h("th", { class: "num" }, "Виплачено"), h("th", { class: "num" }, "Борг"), h("th", {}, "")),
+      data.rows.map((r) => h("tr", {}, h("td", {}, r.user_name), h("td", { class: "num" }, money(r.gross)), h("td", { class: "num" }, money(r.pdfo)), h("td", { class: "num" }, money(r.military)),
+        h("td", { class: "num" }, h("b", {}, money(r.net))), h("td", { class: "num" }, money(r.esv_employer)), h("td", { class: "num" }, money(r.paid)), h("td", { class: "num" }, h("b", {}, money(r.debt))),
+        h("td", { class: "right", style: { whiteSpace: "nowrap" } },
+          r.debt > 0 ? h("button", { class: "btn sm", onclick: () => salaryPay(r) }, "Виплатити") : null,
+          r.accrual_id ? h("button", { class: "btn sm ghost", onclick: () => salaryFix(r) }, icon("edit", "sm")) : null))),
+      h("tr", {}, h("td", {}, h("b", {}, "Разом")), h("td", { class: "num" }, money(t.gross)), h("td", { class: "num" }, money(t.pdfo)), h("td", { class: "num" }, money(t.military)),
+        h("td", { class: "num" }, money(t.net)), h("td", { class: "num" }, money(t.esv_employer)), h("td", { class: "num" }, money(t.paid)), h("td", { class: "num" }, money(t.debt)), h("td", {})))
+      : emptyState("За цей місяць нарахувань немає", "users")),
+    h("p", { class: "muted small" }, `До бюджету: ${money(t.to_budget)} · Витрати роботодавця (брутто + ЄСВ): ${money(t.employer_cost)}`));
+  function salaryPay(r) {
+    const amt = h("input", { inputmode: "decimal", value: kopToInput(r.debt) });
+    const paidOn = h("input", { type: "date", value: today() });
+    openSheet(`Виплата: ${r.user_name}`, h("div", { class: "stack" }, h("div", { class: "form-grid" }, field("Сума, ₴", amt), field("Дата", paidOn)),
+      h("button", { class: "btn primary big", onclick: async () => { await run(() => api.post("/api/payroll/payments", { user_id: r.user_id, month, amount: toKop(amt.value), paid_on: paidOn.value }), "Виплату записано"); closeSheet(); reload(); } }, "Зберегти")));
+  }
+  function salaryFix(r) {
+    const g = h("input", { inputmode: "decimal", value: kopToInput(r.gross) });
+    const reason = h("input", { placeholder: "обов'язково" });
+    openSheet(`Виправити нарахування: ${r.user_name}`, h("div", { class: "stack" }, h("div", { class: "form-grid" }, field("Брутто, ₴", g), field("Причина", reason)),
+      h("button", { class: "btn primary big", onclick: async () => { await run(() => api.post(`/api/payroll/${r.accrual_id}/correct`, { gross: toKop(g.value), reason: reason.value.trim() }), "Виправлено"); closeSheet(); reload(); } }, "Виправити")));
+  }
 };
 
 // ---------- Зміни й виплати

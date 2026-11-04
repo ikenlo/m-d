@@ -408,6 +408,170 @@ class MasterCharge(Base):
     master: Mapped[User] = relationship()
 
 
+# ======================================================================= фіскалізація (ПРРО)
+class FiscalShift(Base):
+    """Фіскальна (касова) зміна ПРРО — окрема від робочих змін майстрів."""
+
+    __tablename__ = "fiscal_shifts"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    uuid: Mapped[str] = mapped_column(String(36), unique=True)  # наш id для провайдера (ідемпотентне відкриття)
+    provider: Mapped[str] = mapped_column(String(16))
+    provider_shift_id: Mapped[str | None] = mapped_column(String(64))
+    status: Mapped[str] = mapped_column(String(16))  # opening | opened | closing | closed | error
+    # «1» лише в незакритої зміни (UNIQUE) — дві відкриті фіскальні зміни неможливі
+    active: Mapped[bool | None] = mapped_column(Boolean, unique=True)
+    opened_at: Mapped[datetime] = mapped_column(DateTime)
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime)
+    opened_by: Mapped[int | None] = mapped_column(Integer)
+    closed_by: Mapped[int | None] = mapped_column(Integer)
+    z_report: Mapped[dict | None] = mapped_column(JSON)
+    last_error: Mapped[str | None] = mapped_column(Text)
+
+
+class FiscalReceipt(Base):
+    """Фіскальний чек (продаж або повернення). Фіскальний журнал — окремо від фінансового (ledger),
+    зв'язок через order_id. Чек фіскалізовано лише при status = done (підтвердження провайдера)."""
+
+    __tablename__ = "fiscal_receipts"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    uuid: Mapped[str] = mapped_column(String(36), unique=True)  # ключ ідемпотентності в провайдера
+    dedupe_key: Mapped[str] = mapped_column(String(64), unique=True)  # sell:<order> | return:<order>:<n>
+    kind: Mapped[str] = mapped_column(String(8))  # sell | return
+    order_id: Mapped[int | None] = mapped_column(ForeignKey("orders.id", name="fk_fiscal_receipts_order_id"), index=True)
+    related_id: Mapped[int | None] = mapped_column(ForeignKey("fiscal_receipts.id", name="fk_fiscal_receipts_related_id"))
+    master_id: Mapped[int | None] = mapped_column(Integer, index=True)
+    amount: Mapped[int] = mapped_column(Integer)  # копійки, завжди > 0
+    payment_method: Mapped[str] = mapped_column(String(16))  # cash | card
+    goods: Mapped[list | None] = mapped_column(JSON)
+    # queued → sending → done; помилка мережі → error (повтор); відмова провайдера → rejected
+    status: Mapped[str] = mapped_column(String(12), index=True)
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    next_attempt_at: Mapped[datetime | None] = mapped_column(DateTime)
+    sending_since: Mapped[datetime | None] = mapped_column(DateTime)
+    last_error: Mapped[str | None] = mapped_column(Text)
+    provider: Mapped[str] = mapped_column(String(16))
+    provider_receipt_id: Mapped[str | None] = mapped_column(String(64))
+    fiscal_code: Mapped[str | None] = mapped_column(String(64))
+    fiscal_date: Mapped[str | None] = mapped_column(String(40))
+    tax_url: Mapped[str | None] = mapped_column(Text)
+    fiscal_shift_id: Mapped[int | None] = mapped_column(ForeignKey("fiscal_shifts.id", name="fk_fiscal_receipts_shift_id"))
+    reason: Mapped[str | None] = mapped_column(Text)
+    created_by: Mapped[int | None] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
+    done_at: Mapped[datetime | None] = mapped_column(DateTime)
+
+
+class FiscalReport(Base):
+    __tablename__ = "fiscal_reports"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    kind: Mapped[str] = mapped_column(String(2))  # X | Z
+    fiscal_shift_id: Mapped[int | None] = mapped_column(ForeignKey("fiscal_shifts.id", name="fk_fiscal_reports_shift_id"))
+    data: Mapped[dict | None] = mapped_column(JSON)
+    created_by: Mapped[int | None] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
+
+
+# ======================================================================= податки ФОП і офіційна зарплата
+class TaxRate(Base):
+    """Ставка/показник з періодом дії. Значення НЕ зашиті в код — вводить директор/бухгалтер.
+    key: min_wage | single_tax | military_fop | esv_fop | pdfo | military_payroll | esv_employer."""
+
+    __tablename__ = "tax_rates"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    key: Mapped[str] = mapped_column(String(24), index=True)
+    rate_bp: Mapped[int | None] = mapped_column(Integer)  # ставка в bp (2000 = 20%)
+    amount: Mapped[int | None] = mapped_column(Integer)  # фіксована сума, копійки (напр. мінімальна зарплата)
+    base: Mapped[str] = mapped_column(String(16), default="fixed")  # min_wage | income | salary | salary_min_wage | fixed
+    period: Mapped[str] = mapped_column(String(8), default="month")  # month | quarter
+    due_day: Mapped[int | None] = mapped_column(Integer)  # день сплати
+    due_from: Mapped[str] = mapped_column(String(8), default="end")  # start | end — від початку чи кінця періоду
+    due_offset_months: Mapped[int] = mapped_column(Integer, default=0)
+    valid_from: Mapped[date] = mapped_column(Date)
+    valid_to: Mapped[date | None] = mapped_column(Date)
+    note: Mapped[str | None] = mapped_column(Text)
+    created_by: Mapped[int | None] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
+
+
+class TaxAccrual(Base):
+    """Нарахування податку ФОП за період. Лише додавання: виправлення — сторно + нове нарахування."""
+
+    __tablename__ = "tax_accruals"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    key: Mapped[str] = mapped_column(String(24))
+    period_start: Mapped[date] = mapped_column(Date)
+    period_end: Mapped[date] = mapped_column(Date)
+    base_amount: Mapped[int] = mapped_column(Integer)
+    rate_bp: Mapped[int | None] = mapped_column(Integer)
+    amount: Mapped[int] = mapped_column(Integer)  # сторно — від'ємне
+    due_date: Mapped[date] = mapped_column(Date)
+    dedupe_key: Mapped[str | None] = mapped_column(String(64), unique=True)
+    reverses_id: Mapped[int | None] = mapped_column(ForeignKey("tax_accruals.id", name="fk_tax_accruals_reverses_id"))
+    reversed: Mapped[bool] = mapped_column(Boolean, default=False)
+    rate_id: Mapped[int | None] = mapped_column(Integer)
+    reminded_at: Mapped[datetime | None] = mapped_column(DateTime)
+    note: Mapped[str | None] = mapped_column(Text)
+    created_by: Mapped[int | None] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
+
+
+class TaxPayment(Base):
+    __tablename__ = "tax_payments"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    key: Mapped[str] = mapped_column(String(24))
+    period_start: Mapped[date] = mapped_column(Date)
+    amount: Mapped[int] = mapped_column(Integer)
+    paid_on: Mapped[date] = mapped_column(Date)
+    note: Mapped[str | None] = mapped_column(Text)
+    created_by: Mapped[int | None] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
+
+
+class PayrollAccrual(Base):
+    """Офіційне (юридичне) нарахування зарплати працівнику за місяць. НЕ пов'язане з управлінським
+    поділом 50/50. Лише додавання: виправлення — сторно + нове нарахування."""
+
+    __tablename__ = "payroll_accruals"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", name="fk_payroll_accruals_user_id"), index=True)
+    month: Mapped[date] = mapped_column(Date)
+    gross: Mapped[int] = mapped_column(Integer)
+    pdfo: Mapped[int] = mapped_column(Integer)
+    military: Mapped[int] = mapped_column(Integer)
+    net: Mapped[int] = mapped_column(Integer)
+    esv_employer: Mapped[int] = mapped_column(Integer)
+    esv_base: Mapped[int] = mapped_column(Integer)
+    rates: Mapped[dict | None] = mapped_column(JSON)  # знімок ставок на дату нарахування
+    dedupe_key: Mapped[str | None] = mapped_column(String(64), unique=True)
+    reverses_id: Mapped[int | None] = mapped_column(ForeignKey("payroll_accruals.id", name="fk_payroll_accruals_reverses_id"))
+    reversed: Mapped[bool] = mapped_column(Boolean, default=False)
+    note: Mapped[str | None] = mapped_column(Text)
+    created_by: Mapped[int | None] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
+
+    user: Mapped[User] = relationship()
+
+
+class PayrollPayment(Base):
+    __tablename__ = "payroll_payments"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", name="fk_payroll_payments_user_id"), index=True)
+    month: Mapped[date] = mapped_column(Date)
+    amount: Mapped[int] = mapped_column(Integer)
+    paid_on: Mapped[date] = mapped_column(Date)
+    note: Mapped[str | None] = mapped_column(Text)
+    created_by: Mapped[int | None] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
+
+
 class LedgerEntry(Base):
     """Журнал фінансових операцій. Тільки додавання, ніколи не змінюється."""
 
@@ -499,10 +663,15 @@ __all__ = [
     "ScheduleDay",
     "StockMove",
     "MaterialsMode",
+    "FiscalReceipt",
+    "FiscalReport",
+    "FiscalShift",
     "GeneratorRun",
     "MasterCharge",
     "MeterReading",
     "Notification",
+    "PayrollAccrual",
+    "PayrollPayment",
     "Order",
     "OrderMaterial",
     "PaymentMethod",
@@ -510,6 +679,9 @@ __all__ = [
     "Role",
     "Service",
     "Setting",
+    "TaxAccrual",
+    "TaxPayment",
+    "TaxRate",
     "Shift",
     "ShiftStatus",
     "User",

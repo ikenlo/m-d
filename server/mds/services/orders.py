@@ -229,6 +229,9 @@ def close_order(
         details={"payment_method": payment_method, "share_bp": share_bp, "materials_mode": mode, "appointment_id": a.id},
     )
     audit(s, actor, "order", o.id, "close", None, _order_snapshot(o))
+    from .fiscal import enqueue_sell
+
+    enqueue_sell(s, actor, o)  # чек у чергу ПРРО в тій самій транзакції (якщо фіскалізацію ввімкнено)
     return o
 
 
