@@ -122,12 +122,34 @@ def cmd_start(cfg: Config, args) -> None:
     upgrade(cfg.database_url)
     bootstrap_director(cfg)
     bootstrap_catalog(cfg)
+    mark = os.environ.get("MDS_WIPE_DATA", "").strip()
+    if mark:
+        # одноразове очищення робочих даних (для кожної нової мітки); перед ним — резервна копія
+        from .wipe import already_wiped
+
+        if not already_wiped(_db(cfg), mark):
+            _wipe(cfg, mark)
     if os.environ.get("MDS_DEMO_FOP1", "").strip().lower() == "yes":
         # тестове середовище: замінити демо-дані на сценарій «ФОП 1 група» (окремий процес)
         import subprocess
 
         subprocess.Popen([sys.executable, "-m", "mds", "demo-fop1"])
     cmd_serve(cfg, args, with_bot=True)
+
+
+def _wipe(cfg: Config, mark: str | None) -> None:
+    from .services.backup import make_backup
+    from .wipe import wipe_data
+
+    print("Резервна копія перед очищенням даних:", make_backup(cfg.database_url, cfg.backup_dir, cfg.backup_keep), flush=True)
+    print("Очищено:", wipe_data(_db(cfg), mark), flush=True)
+
+
+def cmd_wipe_data(cfg: Config, args) -> None:
+    """Очистити робочі дані (лишаються акаунти, послуги, налаштування). Потрібне --yes."""
+    if not args.yes:
+        raise SystemExit("Незворотна дія. Додайте --yes, щоб підтвердити (резервна копія буде зроблена).")
+    _wipe(cfg, None)
 
 
 def cmd_demo_fop1(cfg: Config, _args) -> None:
@@ -210,6 +232,9 @@ def main(argv: list[str] | None = None) -> None:
     sub.add_parser("backup", help="резервна копія зараз")
     sub.add_parser("demo-fop1", help="ЗАМІНИТИ демо-дані на сценарій «ФОП 1 група» (лише тестове середовище)")
 
+    wd = sub.add_parser("wipe-data", help="ОЧИСТИТИ робочі дані (лишаються акаунти, послуги, налаштування)")
+    wd.add_argument("--yes", action="store_true", help="підтвердити незворотну дію")
+
     args = p.parse_args(argv)
     cfg = Config()
     {
@@ -222,6 +247,7 @@ def main(argv: list[str] | None = None) -> None:
         "bot": cmd_bot,
         "start": cmd_start,
         "demo-fop1": cmd_demo_fop1,
+        "wipe-data": cmd_wipe_data,
     }[args.cmd](cfg, args)
 
 
