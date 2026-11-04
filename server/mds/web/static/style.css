@@ -823,3 +823,51 @@ a.bar-row:hover .bar-track i { filter: brightness(1.1); }
 .link-btn.loading { opacity: .5; }
 .link-btn.back { align-self: center; color: #8e8a7f; }
 @media (max-width: 380px) { .code-row { gap: 5px; } .login input.code-box { min-height: 48px; font-size: 20px; } .login-card { padding: 28px 18px 22px; } }
+
+/* ================================================================ 0.1.25: вхід у кольорах основної сторінки (світла/темна тема) */
+.login {
+  background: radial-gradient(900px 480px at 85% -10%, rgba(180, 138, 62, .14), transparent 60%),
+              radial-gradient(700px 420px at 0% 110%, rgba(20, 57, 44, .10), transparent 60%), var(--bg);
+  color: var(--ink); color-scheme: inherit;
+}
+:root[data-theme="dark"] .login {
+  background: radial-gradient(900px 480px at 85% -10%, rgba(210, 171, 95, .12), transparent 60%),
+              radial-gradient(700px 420px at 0% 110%, rgba(20, 57, 44, .35), transparent 60%), var(--bg);
+}
+.login-glow { background: conic-gradient(from 180deg at 50% 50%, transparent 0deg, rgba(180, 138, 62, .07) 60deg, transparent 140deg, rgba(20, 57, 44, .05) 220deg, transparent 300deg); }
+.login-card { background: var(--surface); border: 1px solid var(--line); box-shadow: var(--shadow-lg); backdrop-filter: none; }
+.login-card::before { content: ""; position: absolute; left: 0; right: 0; top: 0; height: 4px; border-radius: 18px 18px 0 0; background: linear-gradient(90deg, var(--brand), var(--gold), var(--brand)); }
+.login-mark { border: 0; color: #1a1408; background: linear-gradient(145deg, #d8b46a, #a9823b); box-shadow: 0 0 0 6px var(--gold-tint), 0 10px 28px rgba(180, 138, 62, .3); }
+.login-name { color: var(--brand); }
+:root[data-theme="dark"] .login-name { color: var(--gold); }
+.login-sub { color: var(--ink-3); }
+.login label.f > span { color: var(--ink-3); }
+.login input { background: var(--surface); border: 1px solid var(--line-strong); color: var(--ink); }
+.login input::placeholder { color: var(--ink-3); }
+.login input:focus { border-color: var(--gold); box-shadow: 0 0 0 3px var(--focus); }
+.login input:-webkit-autofill, .login input:-webkit-autofill:hover, .login input:-webkit-autofill:focus {
+  -webkit-text-fill-color: var(--ink); caret-color: var(--ink);
+  -webkit-box-shadow: 0 0 0 1000px var(--surface) inset; box-shadow: 0 0 0 1000px var(--surface) inset;
+}
+.login-btn { background: var(--brand); color: #fff; }
+.login-btn:hover { background: var(--brand-2); }
+:root[data-theme="dark"] .login-btn { background: var(--gold); color: #17120a; }
+:root[data-theme="dark"] .login-btn:hover { background: #ddb86e; }
+.btn.loading::after { border-color: rgba(255, 255, 255, .35); border-top-color: #fff; }
+:root[data-theme="dark"] .btn.loading::after { border-color: rgba(23, 18, 10, .35); border-top-color: #17120a; }
+.pw-eye { color: var(--ink-3); }
+.pw-eye:hover { color: var(--brand-2); background: var(--surface-3); }
+.login-hint { color: var(--warn); }
+.login-err { color: var(--danger); background: var(--danger-bg); border-color: rgba(194, 69, 61, .3); }
+.login-foot, .login-foot > svg { color: var(--ink-3); }
+.code-head { color: var(--ink-2); }
+.code-head b { color: var(--ink); }
+.code-ico { background: var(--gold-tint); color: var(--gold); }
+.login input.code-box { caret-color: var(--gold); }
+.login input.code-box.filled { border-color: var(--gold); background: var(--gold-tint); }
+.remember { color: var(--ink-2); }
+.remember input { accent-color: var(--brand); }
+.code-foot { color: var(--ink-3); }
+.link-btn { color: var(--brand-2); }
+:root[data-theme="dark"] .link-btn { color: var(--gold); }
+.link-btn.back { color: var(--ink-3); }
