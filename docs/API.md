@@ -60,3 +60,7 @@
 - Зарплата: `GET /api/payroll?month=`, `GET /api/payroll/calc?gross=&month=&user_id=`, `POST /api/payroll`,
   `POST /api/payroll/{id}/correct`, `POST /api/payroll/payments`, `GET /api/payroll/history/{user_id}`,
   `GET /api/payroll/quarter?year=&quarter=`, `GET /api/payroll/quarter.csv?year=&quarter=`.
+
+## Для бухгалтера (директор)
+- `GET /api/reports/accountant?year=&quarter=` — дохід (каса + банк) по місяцях/кварталах, реквізити ФОП, ліміт, працівники.
+- `GET /api/reports/accountant.xlsx?year=&quarter=` — пакет Excel для бухгалтера.

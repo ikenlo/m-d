@@ -59,6 +59,10 @@ def _ddmmyyyy(d: date) -> str:
 
 def validate_profile_value(key: str, value) -> object:
     """Перевірка одного поля профілю (викликається з update_settings)."""
+    if key == "fop_group":
+        if isinstance(value, bool) or value not in (1, 2, 3):
+            raise ValidationError("Група єдиного податку: 1, 2 або 3")
+        return value
     if key in ("fop_c_reg", "fop_c_raj"):
         if not (isinstance(value, int) and not isinstance(value, bool) and 0 <= value <= 99):
             raise ValidationError(f"{PROFILE[key][0]}: число від 0 до 99")
