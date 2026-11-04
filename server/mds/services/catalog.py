@@ -120,6 +120,10 @@ def material_public(m: Material) -> dict:
 
 
 MATERIAL_FIELDS = ("name", "tone", "category", "unit", "pack_name", "pack_size", "unit_cost", "is_active")
+UNITS = ("г", "мл", "шт")  # базові одиниці обліку
+# типові упаковки (у формі — випадаючий список; інша назва теж дозволена)
+PACK_NAMES = ("шт", "туба", "тюбик", "банка", "флакон", "пляшка", "каністра", "упаковка", "пачка", "набір",
+              "коробка", "рулон", "пара", "ампула", "саше", "балон")
 
 
 def _check_material(data: dict, creating: bool) -> dict:
@@ -132,6 +136,10 @@ def _check_material(data: dict, creating: bool) -> dict:
     for k, label in (("unit", "одиницю обліку"), ("pack_name", "назву упаковки")):
         if not creating and k in out and not out[k]:
             raise ValidationError(f"Вкажіть {label}")
+    if out.get("unit") and out["unit"] not in UNITS:
+        raise ValidationError("Одиниця обліку: г, мл або шт")
+    if out.get("pack_name") and len(out["pack_name"]) > 16:
+        raise ValidationError("Назва упаковки — до 16 символів")
     if "unit_cost" in out:
         if out["unit_cost"] is None:
             out["unit_cost"] = 0
@@ -143,9 +151,9 @@ def _check_material(data: dict, creating: bool) -> dict:
             raise ValidationError("Розмір упаковки має бути більшим за 0")
     if creating:
         out.setdefault("unit", "шт")
-        out.setdefault("pack_name", out["unit"] if out.get("pack_size", 1) == 1 else "уп.")
-        out["unit"] = out["unit"] or "шт"
-        out["pack_name"] = out["pack_name"] or "шт"
+        out["unit"] = out.get("unit") or "шт"
+        if not out.get("pack_name"):  # без назви: 1 одиниця — «шт», більше — «упаковка»
+            out["pack_name"] = "шт" if out.get("pack_size", 1) == 1 else "упаковка"
     if "min_stock" in data:
         v = data["min_stock"]
         if v in (None, ""):
@@ -178,7 +186,15 @@ def update_material(s: Session, actor: Actor, material_id: int, data: dict) -> M
     actor.require(Role.DIRECTOR, Role.ADMIN)
     m: Material = get_or_404(s, Material, material_id, "Матеріал")
     before = material_public(m)
-    for k, v in _check_material(data, creating=False).items():
+    vals = _check_material(data, creating=False)
+    if "unit" in vals and vals["unit"] != m.unit:
+        # залишок і рухи записані в старій одиниці — зміна зіпсувала б облік
+        from ..models import StockMove
+
+        if m.stock_milli or s.scalar(select(StockMove.id).where(StockMove.material_id == m.id).limit(1)):
+            raise ValidationError("Одиницю обліку не можна змінити: вже є залишок або рух складу. "
+                                  "Створіть новий матеріал, а цей позначте «не використовується».")
+    for k, v in vals.items():
         setattr(m, k, v)
     s.flush()
     audit(s, actor, "material", m.id, "update", before, material_public(m))
