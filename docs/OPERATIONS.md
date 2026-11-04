@@ -109,10 +109,30 @@ crm.ваш-домен.com.ua {
 
 ## 6. Резервні копії
 
-- Автоматично: при старті та кожні `MDS_BACKUP_INTERVAL_HOURS` (24) годин у `data/backups/`,
-  зберігаються останні `MDS_BACKUP_KEEP` (30). Кожна копія перевіряється `PRAGMA integrity_check`.
-- Вручну: *Налаштування → Створити копію зараз* або `python -m mds backup`.
-- **Важливо:** копіюйте `data/backups/` ще й за межі сервера (хмара/інший диск), напр. rclone за розкладом.
+- Автоматично: при старті та кожні `MDS_BACKUP_INTERVAL_HOURS` (6) годин у `data/backups/`,
+  зберігаються останні `MDS_BACKUP_KEEP` (40 ≈ 10 днів). Кожна копія перевіряється `PRAGMA integrity_check`.
+- **Google Drive** (поза сервером): та сама копія одразу завантажується в папку
+  «MDS Connect — резервні копії» на диску директора; там зберігаються останні `MDS_GDRIVE_KEEP` (180 ≈ 45 днів).
+  Помилка завантаження → повідомлення директору в Telegram (не частіше разу на добу). Налаштування — нижче.
+- Вручну: *Налаштування → Створити копію зараз / Зберегти на диск зараз* або `python -m mds backup`.
+
+### Підключення Google Drive (один раз)
+
+1. https://console.cloud.google.com → створіть проєкт (напр. «MDS Connect»).
+2. *APIs & Services → Library* → увімкніть **Google Drive API**.
+3. *APIs & Services → OAuth consent screen* (Google Auth Platform): тип **External**, назва «MDS Connect»,
+   ваша пошта. У *Data access* додайте scope `.../auth/drive.file` (лише файли, створені програмою).
+   В *Audience* натисніть **Publish app** (статус «In production»): інакше Google відкликає доступ через 7 днів.
+   Для `drive.file` перевірка Google не потрібна; при вході може з'явитись попередження «неперевірений застосунок» —
+   *Додатково → Перейти до MDS Connect*.
+4. *Clients → Create client* → тип **Web application**; *Authorized redirect URIs*:
+   `https://m-d-production.up.railway.app/api/gdrive/callback`.
+5. Скопіюйте *Client ID* і *Client secret* у змінні Railway: `MDS_GDRIVE_CLIENT_ID`, `MDS_GDRIVE_CLIENT_SECRET`.
+6. Директор: *Налаштування → Резервні копії → Підключити Google Drive* → увійти тим Google-акаунтом,
+   де мають лежати копії → дозволити. Готово: далі все працює саме.
+
+Доступ зберігається у `data/gdrive.json` (лише на сервері, не в API). *Відключити* — забуває доступ,
+уже збережені на диску копії лишаються.
 - Відновлення: зупинити сервер → скопіювати потрібний `mds-YYYYMMDD-HHMMSS.db` як `data/mds.db` → запустити.
 - PostgreSQL: замість вбудованих бекапів — `pg_dump` за розкладом.
 

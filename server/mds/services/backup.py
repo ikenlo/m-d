@@ -55,3 +55,26 @@ def list_backups(backup_dir: Path) -> list[dict]:
         {"name": p.name, "size": p.stat().st_size, "created_at": datetime.fromtimestamp(p.stat().st_mtime).isoformat(timespec="seconds")}
         for p in sorted(backup_dir.glob("mds-*.db"), reverse=True)
     ]
+
+
+def backup_cycle(cfg, db) -> dict:
+    """Один цикл: локальна копія + (якщо підключено) завантаження в Google Drive.
+    Помилку Drive не ховаємо: пишемо в стан і повідомляємо директора (не частіше разу на добу)."""
+    from . import gdrive, notifications
+
+    out: dict = {"local": None, "drive": None}
+    if sqlite_path(cfg.database_url) is None:
+        return out
+    path = make_backup(cfg.database_url, cfg.backup_dir, cfg.backup_keep)
+    out["local"] = path.name
+    if gdrive.configured() and gdrive.load_state(cfg.data_dir).get("refresh_token"):
+        try:
+            out["drive"] = gdrive.upload(cfg.data_dir, path)
+        except Exception as e:  # noqa: BLE001 — будь-яка помилка мережі/Google
+            out["drive_error"] = str(e)
+            if gdrive.record_error(cfg.data_dir, str(e)):
+                with db.session() as s:
+                    notifications.notify_directors(
+                        s, "⚠️ Не вдалося зберегти резервну копію в Google Drive.\n"
+                           f"Причина: {str(e)[:300]}\nЛокальна копія на сервері є. Перевірте: Налаштування → Резервні копії.")
+    return out

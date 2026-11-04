@@ -23,16 +23,32 @@ log = logging.getLogger("mds")
 STATIC = Path(__file__).resolve().parent.parent / "web" / "static"
 
 
-async def _backup_loop(cfg: Config) -> None:
-    """Автоматичний бекап SQLite кожні N годин (перший — одразу при старті)."""
+async def _backup_loop(cfg: Config, db: Database) -> None:
+    """Автоматичний бекап кожні N годин (за замовч. 6; перший — одразу при старті):
+    локальна копія + Google Drive, якщо підключено."""
     while True:
         try:
-            if backup.sqlite_path(cfg.database_url):
-                path = await asyncio.to_thread(backup.make_backup, cfg.database_url, cfg.backup_dir, cfg.backup_keep)
-                log.info("Резервна копія: %s", path)
+            res = await asyncio.to_thread(backup.backup_cycle, cfg, db)
+            log.info("Резервна копія: %s; Google Drive: %s", res.get("local"),
+                     (res.get("drive") or {}).get("name") or res.get("drive_error") or "не підключено")
         except Exception:  # noqa: BLE001
             log.exception("Помилка резервного копіювання")
         await asyncio.sleep(max(cfg.backup_interval_hours, 1) * 3600)
+
+
+async def _reminders_loop(db: Database) -> None:
+    """Нагадування клієнтам (за добу і за 2 год) — перевірка кожні 5 хвилин."""
+    from ..services import reminders
+
+    while True:
+        try:
+            with db.session() as s:
+                n = reminders.send_due(s)
+            if n:
+                log.info("Нагадувань поставлено в чергу: %s", n)
+        except Exception:  # noqa: BLE001
+            log.exception("Помилка нагадувань")
+        await asyncio.sleep(300)
 
 
 def create_app(
@@ -51,7 +67,8 @@ def create_app(
     async def lifespan(app: FastAPI):
         tasks = []
         if background:
-            tasks.append(asyncio.create_task(_backup_loop(cfg)))
+            tasks.append(asyncio.create_task(_backup_loop(cfg, db)))
+            tasks.append(asyncio.create_task(_reminders_loop(db)))
         if with_bot:
             if cfg.telegram_token:
                 from ..bot.runner import run_bot

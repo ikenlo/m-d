@@ -1,14 +1,20 @@
 from __future__ import annotations
 
+import logging
+import time
+
+import jwt
 from fastapi import APIRouter, Depends, Request
+from fastapi.responses import RedirectResponse
+from pydantic import Field
 from sqlalchemy.orm import Session
 
 from ... import __version__
-from ...models import Role
-from pydantic import Field
-
-from ...services import backup, bugreport, journal
+from ...errors import Conflict
+from ...models import Role, User
+from ...services import backup, bugreport, gdrive, journal
 from ...services.common import Actor, all_settings, update_settings
+from ...services.common import audit as write_audit
 from ..schemas import BaseModel
 from ..deps import get_actor, get_session
 
@@ -69,3 +75,68 @@ def bug_report(body: BugReportIn, request: Request, actor: Actor = Depends(get_a
 def health():
     """Перевірка роботи сервера; version — щоб звірити розгорнуту версію з тегом у Git."""
     return {"ok": True, "version": __version__}
+
+
+# ------------------------------------------------------------ Google Drive
+def _redirect_uri(request: Request) -> str:
+    return str(request.url_for("gdrive_callback"))
+
+
+@router.get("/gdrive")
+def gdrive_status(request: Request, actor: Actor = Depends(get_actor)):
+    actor.require(Role.DIRECTOR)
+    return gdrive.status(request.app.state.config.data_dir)
+
+
+@router.post("/gdrive/connect")
+def gdrive_connect(request: Request, actor: Actor = Depends(get_actor)):
+    """Посилання на сторінку Google для підключення диска (директор)."""
+    actor.require(Role.DIRECTOR)
+    cfg = request.app.state.config
+    now = int(time.time())
+    state = jwt.encode({"sub": str(actor.user_id), "purpose": "gdrive", "iat": now, "exp": now + 900},
+                       cfg.secret_key, algorithm="HS256")
+    return {"url": gdrive.auth_url(_redirect_uri(request), state)}
+
+
+@router.get("/gdrive/callback", name="gdrive_callback", include_in_schema=False)
+def gdrive_callback(request: Request, state: str = "", code: str = "", error: str = "",
+                    s: Session = Depends(get_session)):
+    """Повернення з Google. Захист від підробки — підписаний state (діє 15 хв, лише для директора)."""
+    cfg = request.app.state.config
+    try:
+        payload = jwt.decode(state, cfg.secret_key, algorithms=["HS256"])
+    except jwt.PyJWTError:
+        payload = {}
+    u = s.get(User, int(payload["sub"])) if payload.get("purpose") == "gdrive" and payload.get("sub") else None
+    if u is None or u.role != Role.DIRECTOR or not u.is_active:
+        return RedirectResponse("/#/settings?gdrive=denied", status_code=303)
+    if error or not code:
+        return RedirectResponse("/#/settings?gdrive=cancelled", status_code=303)
+    try:
+        st = gdrive.finish_auth(cfg.data_dir, code, _redirect_uri(request))
+    except Exception:  # noqa: BLE001
+        logging.getLogger("mds").exception("Google Drive: помилка підключення")
+        return RedirectResponse("/#/settings?gdrive=error", status_code=303)
+    write_audit(s, Actor.of(u), "gdrive", u.id, "connect", None, {"account": st.get("account")})
+    return RedirectResponse("/#/settings?gdrive=ok", status_code=303)
+
+
+@router.post("/gdrive/backup-now")
+def gdrive_backup_now(request: Request, actor: Actor = Depends(get_actor)):
+    """Зробити копію зараз і завантажити на диск (директор)."""
+    actor.require(Role.DIRECTOR)
+    cfg = request.app.state.config
+    res = backup.backup_cycle(cfg, request.app.state.db)
+    if res.get("drive_error"):
+        raise Conflict(f"Локальну копію створено, але Google Drive повернув помилку: {res['drive_error'][:300]}")
+    return {**res, "status": gdrive.status(cfg.data_dir)}
+
+
+@router.post("/gdrive/disconnect")
+def gdrive_disconnect(request: Request, actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
+    """Відключити диск. Уже збережені на диску копії лишаються."""
+    actor.require(Role.DIRECTOR)
+    gdrive.disconnect(request.app.state.config.data_dir)
+    write_audit(s, actor, "gdrive", actor.user_id or 0, "disconnect", None, None)
+    return gdrive.status(request.app.state.config.data_dir)

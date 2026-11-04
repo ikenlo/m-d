@@ -1796,6 +1796,14 @@ VIEWS.schedule = async (main) => {
 VIEWS.settings = async (main) => {
   const s = await api.get("/api/settings");
   const backups = await api.get("/api/backups").catch(() => []);
+  const drive = await api.get("/api/gdrive").catch(() => null);
+  const gq = new URLSearchParams(location.hash.split("?")[1] || "").get("gdrive");
+  if (gq) {
+    const msg = { ok: "Google Drive підключено — копії зберігатимуться автоматично", cancelled: "Підключення Google Drive скасовано",
+      denied: "Посилання застаріло — натисніть «Підключити» ще раз", error: "Google не дав доступ. Спробуйте ще раз" }[gq];
+    if (msg) toast(msg, gq !== "ok");
+    history.replaceState(null, "", "#/settings");
+  }
   const name = h("input", { value: s.salon_name });
   const share = h("input", { type: "number", min: 0, max: 100, step: 0.5, value: s.default_share_bp / 100 });
   const mode = select(Object.entries(MAT_MODES), s.default_materials_mode);
@@ -1805,6 +1813,7 @@ VIEWS.settings = async (main) => {
   const auto = h("input", { type: "checkbox", checked: s.telegram_auto_confirm });
   const takesCash = h("input", { type: "checkbox", checked: s.master_takes_cash !== false });
   const favVisits = h("input", { type: "number", min: 1, max: 50, value: s.favorite_master_visits || 3 });
+  const remind = h("input", { type: "checkbox", checked: s.reminders_enabled !== false });
   const staffCode = h("input", { inputmode: "numeric", maxlength: 8, value: s.bot_staff_code || "" });
   const addr = h("input", { value: s.salon_address || "" });
   const phone = h("input", { value: s.salon_phone || "", type: "tel" });
@@ -1824,27 +1833,56 @@ VIEWS.settings = async (main) => {
     h("div", { class: "card stack" }, h("h3", {}, "Запис клієнтів"), field("Назва салону", name),
       h("div", { class: "form-grid" }, field("Крок слотів, хв", step), field("Запис наперед, днів", horizon), field("Мін. хв до запису (бот)", lead)),
       h("label", { class: "row" }, auto, "Записи з Telegram одразу підтверджені"),
-      field("Улюблений майстер клієнта — після скількох візитів", favVisits)),
+      field("Улюблений майстер клієнта — після скількох візитів", favVisits),
+      h("label", { class: "row" }, remind, "Нагадування клієнтам у Telegram за добу і за 2 години (бот питає згоду)")),
     h("div", { class: "card stack" }, h("h3", {}, "Telegram-бот"),
       field("Код входу в розділ «Для майстрів»", staffCode),
       h("p", { class: "muted small" }, "Після коду кожен обирає себе й вводить особистий PIN (задається в розділі «Персонал»)."),
       field("Адреса салону", addr), h("div", { class: "form-grid" }, field("Телефон", phone), field("Instagram", insta))),
     h("div", { class: "card stack" }, h("h3", {}, "Графік салону"), days.map((d) => d.row)),
     h("div", { class: "card stack" }, h("h3", {}, "Резервні копії"),
-      h("p", { class: "muted small" }, "Автоматично щодня. Останні копії:"),
+      driveBlock(drive),
+      h("p", { class: "muted small" }, "Автоматично кожні 6 годин. Останні копії на сервері:"),
       backups.slice(0, 5).map((b) => h("div", { class: "sum-line small" }, h("span", {}, b.name), h("span", { class: "muted" }, (b.size / 1024).toFixed(0), " КБ"))),
       h("button", { class: "btn", onclick: async () => { await run(() => api.post("/api/backups"), "Копію створено"); reload(); } }, "Створити копію зараз"))),
     h("button", { class: "btn gold big", style: { marginTop: "14px" }, onclick: async () => {
       const body = {
         salon_name: name.value, default_share_bp: Math.round(parseFloat(share.value) * 100), default_materials_mode: mode.value,
         slot_step_min: +step.value, booking_horizon_days: +horizon.value, booking_min_lead_min: +lead.value, telegram_auto_confirm: auto.checked,
-        master_takes_cash: takesCash.checked, favorite_master_visits: Math.max(1, parseInt(favVisits.value || "3", 10)),
+        master_takes_cash: takesCash.checked, reminders_enabled: remind.checked, favorite_master_visits: Math.max(1, parseInt(favVisits.value || "3", 10)),
         bot_staff_code: staffCode.value.trim(), salon_address: addr.value.trim(), salon_phone: phone.value.trim(), salon_instagram: insta.value.trim(),
         schedule: Object.fromEntries(days.map((d) => [String(d.i), d.on.checked ? [d.a.value, d.b.value] : null])),
       };
       state.settings = await run(() => api.put("/api/settings", body), "Налаштування збережено");
     } }, "Зберегти налаштування"));
 };
+
+// Google Drive: стан, підключення, копія зараз
+function driveBlock(d) {
+  if (!d) return null;
+  const dt = (iso) => (iso ? `${dm(iso)} о ${hm(iso)}` : "—");
+  if (!d.configured) {
+    return h("div", { class: "callout" }, icon("alert"), h("div", { class: "small" },
+      "Google Drive ще не налаштовано на сервері. Інструкція — docs/OPERATIONS.md, розділ «Google Drive»."));
+  }
+  if (!d.connected) {
+    return h("div", { class: "stack" },
+      h("p", { class: "small" }, "Підключіть Google Drive — копії бази зберігатимуться ще й там (програма бачить лише свою папку)."),
+      h("button", { class: "btn primary", onclick: async () => { const r = await run(() => api.post("/api/gdrive/connect")); location.href = r.url; } },
+        icon("lock"), "Підключити Google Drive"));
+  }
+  return h("div", { class: "stack" },
+    h("div", { class: "sum-line" }, h("span", {}, "Google Drive"), h("span", { class: "chip st-completed" }, "підключено")),
+    d.account ? h("div", { class: "sum-line small" }, h("span", { class: "muted" }, "Акаунт"), h("span", {}, d.account)) : null,
+    h("div", { class: "sum-line small" }, h("span", { class: "muted" }, "Остання копія на диску"), h("span", {}, dt(d.last_ok_at))),
+    d.last_error ? h("div", { class: "callout", style: { background: "var(--warn-bg)" } }, icon("alert"),
+      h("div", { class: "small" }, `Помилка ${dt(d.last_error_at)}: ${d.last_error}`)) : null,
+    h("p", { class: "muted small" }, `На диску зберігаються останні ${d.keep} копій (≈ ${Math.round(d.keep / 4)} днів).`),
+    h("div", { class: "row" },
+      h("button", { class: "btn", onclick: async () => { await run(() => api.post("/api/gdrive/backup-now"), "Копію збережено в Google Drive"); reload(); } }, "Зберегти на диск зараз"),
+      h("button", { class: "btn ghost", onclick: () => confirmSheet("Відключити Google Drive?", "Нові копії перестануть зберігатися на диск. Уже збережені копії залишаться.",
+        "Відключити", async () => { await run(() => api.post("/api/gdrive/disconnect"), "Google Drive відключено"); reload(); }) }, "Відключити")));
+}
 
 // ---------- Журнал
 VIEWS.journal = async (main) => {

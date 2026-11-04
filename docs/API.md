@@ -34,4 +34,6 @@
 | `GET/PUT /api/settings` | читання — усі; зміна — директор | Налаштування |
 | `GET /api/journal/ledger`, `GET /api/journal/audit` | директор | Журнали |
 | `GET/POST /api/backups` | директор | Резервні копії |
+| `GET /api/gdrive`, `POST /api/gdrive/connect`, `POST /api/gdrive/backup-now`, `POST /api/gdrive/disconnect` | директор | Google Drive: стан, підключення (OAuth), копія зараз, відключення |
+| `GET /api/gdrive/callback` | — (підписаний `state`) | Повернення з Google після підключення |
 | `GET /api/health` | — | Перевірка роботи; `version` — розгорнута версія |

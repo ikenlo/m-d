@@ -275,6 +275,8 @@ def reschedule(
         _check_slot(s, new_master, new_start, new_end, a.id, strict_hours=from_bot)
     old_master = a.master
     a.master = new_master
+    if new_start != a.starts_at:
+        a.reminded_day = a.reminded_2h = False  # новий час — нагадування надішлемо заново
     a.starts_at, a.ends_at = new_start, new_end
     if price is not None:
         if price < 0:

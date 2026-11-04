@@ -206,6 +206,8 @@ class Client(Base):
     phone: Mapped[str] = mapped_column(String(32), unique=True)
     telegram_user_id: Mapped[int | None] = mapped_column(BigInteger, unique=True)
     notes: Mapped[str | None] = mapped_column(Text)
+    # нагадування в Telegram за добу і за 2 години: None — ще не питали, True/False — відповідь клієнта
+    reminders: Mapped[bool | None] = mapped_column(Boolean)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
 
 
@@ -226,6 +228,9 @@ class Appointment(Base):
     cancel_reason: Mapped[str | None] = mapped_column(Text)
     # майстер запропонував клієнту інший час — чекаємо відповіді в боті
     awaiting_client: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
+    # які нагадування вже надіслано (скидаються при перенесенні)
+    reminded_day: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
+    reminded_2h: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
     created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=_now, onupdate=_now)
