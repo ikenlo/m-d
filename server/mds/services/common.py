@@ -136,7 +136,9 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     # при закритті зміни майстер забирає свій заробіток із готівки в касі; решту доплачує директор
     "master_takes_cash": True,
     # скільки візитів до одного майстра — і він стає «улюбленим» для клієнта
-    "favorite_master_visits": 3,  # спільний код входу в розділ «Для майстрів» у боті
+    "favorite_master_visits": 3,
+    # нагадування клієнтам у Telegram за добу і за 2 години (лише тим, хто погодився)
+    "reminders_enabled": True,
     "salon_address": "",
     "salon_phone": "",
     "salon_instagram": "",
@@ -194,7 +196,7 @@ def update_settings(s: Session, actor: Actor, data: dict[str, Any]) -> dict[str,
             isinstance(value, int) and 0 <= value <= 365 * 24 * 60
         ):
             raise ValidationError(f"{key}: очікується ціле невід'ємне число")
-        if key in ("master_takes_cash", "telegram_auto_confirm") and not isinstance(value, bool):
+        if key in ("master_takes_cash", "telegram_auto_confirm", "reminders_enabled") and not isinstance(value, bool):
             raise ValidationError(f"{key}: так або ні")
         if key == "favorite_master_visits" and not (isinstance(value, int) and 1 <= value <= 50):
             raise ValidationError("Улюблений майстер: від 1 до 50 візитів")

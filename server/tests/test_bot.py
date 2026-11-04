@@ -110,7 +110,7 @@ def test_full_booking_flow_and_notifications(h, db):
     h.send(contact=Contact(phone_number="380931234567", first_name="Катя", user_id=TG_ID))
     assert "Перевірте запис" in h.session.texts()[-1]
     h.click("ok")
-    assert "Вас записано" in h.session.texts()[-1]
+    assert any("Вас записано" in x for x in h.session.texts()[-2:])
     with db.session() as s:
         a = s.query(Appointment).one()
         assert a.starts_at == datetime(2026, 11, 2, 10, 0)
@@ -574,7 +574,7 @@ def test_busy_reply_offers_free_slots_and_client_rebooks(h, db, seed):
     assert sent.reply_markup.inline_keyboard[0][0].callback_data == first_cb
     # клієнт обирає запропонований час
     h.click(first_cb)
-    assert "Вас записано" in h.session.texts()[-1]
+    assert any("Вас записано" in x for x in h.session.texts()[-2:])
     with db.session() as s:
         new = s.query(Appointment).order_by(Appointment.id.desc()).first()
         assert new.id != appt_id and new.master_id == seed["m1"] and new.client.telegram_user_id == TG_ID

@@ -13,7 +13,7 @@ from .. import clock
 from ..db import Database
 from ..errors import DomainError
 from ..models import ApptStatus, Client, Role, Service, User
-from ..services import bookings, callbacks, catalog, users
+from ..services import bookings, callbacks, catalog, reminders, users
 from ..services.common import Actor, all_settings, get_setting
 from . import views as v
 
@@ -330,6 +330,7 @@ def build_router() -> Router:
         tail = "\n\nАдміністратор підтвердить запис найближчим часом." if pending else ""
         await cb.message.edit_text(f"🎉 Вас записано!\n\n{text}{tail}")
         await cb.answer()
+        await _ask_reminders(cb, db)
 
 
     @router.callback_query(F.data == "ok")
@@ -379,6 +380,41 @@ def build_router() -> Router:
         tail = "\n\nМайстер підтвердить запис найближчим часом." if pending else ""
         await cb.message.edit_text(f"🎉 Вас записано!\n\n{text}{tail}")
         await cb.answer()
+        await _ask_reminders(cb, db)
+
+    async def _ask_reminders(cb: CallbackQuery, db: Database) -> None:
+        """Після першого запису — спитати, чи потрібні нагадування (один раз)."""
+        with db.session() as s:
+            ask = reminders.should_ask(s, cb.from_user.id)
+        if ask:
+            await cb.message.answer(reminders.ASK_TEXT, reply_markup=v.kb([[tuple(b) for b in row] for row in reminders.ASK_BUTTONS]))
+
+    @router.callback_query(F.data.in_({"rem:1", "rem:0"}))
+    async def reminders_choice(cb: CallbackQuery, db: Database):
+        on = cb.data == "rem:1"
+        try:
+            with db.session() as s:
+                reminders.set_choice(s, Actor.telegram(cb.from_user.id), on)
+        except DomainError as e:
+            await cb.answer(e.message, show_alert=True)
+            return
+        msg = ("🔔 Домовились! Нагадаємо за добу і за 2 години до візиту." if on
+               else "🔕 Добре, нагадувань не буде. Увімкнути знову можна командою /remind")
+        if cb.message.text and cb.message.text.startswith("🔔 Нагадати"):
+            await cb.message.edit_text(msg)
+        else:
+            await cb.message.answer(msg)
+        await cb.answer()
+
+    @router.message(Command("remind"))
+    async def remind_cmd(message: Message, db: Database):
+        try:
+            with db.session() as s:
+                reminders.set_choice(s, Actor.telegram(message.from_user.id), True)
+        except DomainError as e:
+            await message.answer(e.message)
+            return
+        await message.answer("🔔 Нагадування увімкнено: за добу і за 2 години до візиту.")
 
     @router.callback_query(F.data.startswith("cnl:"))
     async def cancel_ask(cb: CallbackQuery):

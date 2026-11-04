@@ -24,8 +24,8 @@ class Config:
     timezone: str = field(default_factory=lambda: _env("TIMEZONE", "Europe/Kyiv"))
     telegram_token: str = field(default_factory=lambda: _env("TELEGRAM_TOKEN", ""))
     backup_dir: Path | None = None
-    backup_interval_hours: int = field(default_factory=lambda: int(_env("BACKUP_INTERVAL_HOURS", "24")))
-    backup_keep: int = field(default_factory=lambda: int(_env("BACKUP_KEEP", "30")))
+    backup_interval_hours: int = field(default_factory=lambda: int(_env("BACKUP_INTERVAL_HOURS", "6")))
+    backup_keep: int = field(default_factory=lambda: int(_env("BACKUP_KEEP", "40")))
     host: str = field(default_factory=lambda: _env("HOST", "0.0.0.0"))
     # хостинги (Railway, Render) передають порт у змінній PORT
     port: int = field(default_factory=lambda: int(_env("PORT", os.getenv("PORT") or "8000")))
