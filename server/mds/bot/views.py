@@ -74,11 +74,6 @@ def price_text(x: Service) -> str:
     return ("від " if x.price_from else "") + fmt(x.price)
 
 
-def _dur(minutes: int) -> str:
-    h, m = divmod(minutes, 60)
-    return (f"{h} год " if h else "") + (f"{m} хв" if m else "").strip()
-
-
 def services_text(services: list[Service], salon: str) -> str:
     from ..services.catalog import service_tree
 
@@ -96,13 +91,6 @@ def services_text(services: list[Service], salon: str) -> str:
                 # тривалість клієнтам не показуємо — вона потрібна лише календарю
                 lines += [f"• {e(x.name)} — <b>{price_text(x)}</b>" for x in items]
     return "\n".join(lines)
-
-
-def services_kb(services: list[Service], back: str | None = None) -> InlineKeyboardMarkup:
-    rows = [[(f"{x.name} · {price_text(x)}", f"svc:{x.id}")] for x in services]
-    if back:
-        rows.append([("« Назад", back)])
-    return kb(rows)
 
 
 SECTION_ICON = {"чоловічі": "💈", "жіночі": "💇‍♀️"}
