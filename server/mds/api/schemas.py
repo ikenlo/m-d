@@ -198,6 +198,7 @@ class ExpenseIn(BaseModel):
     amount: int
     spent_on: date
     description: str | None = None
+    payment_method: str | None = None
 
 
 class ExpensePatch(BaseModel):
@@ -205,4 +206,5 @@ class ExpensePatch(BaseModel):
     amount: int | None = None
     spent_on: date | None = None
     description: str | None = None
+    payment_method: str | None = None
     reason: str | None = None

@@ -103,7 +103,8 @@ def dashboard(s: Session, actor: Actor, d_from: date, d_to: date) -> dict:
     from .utilities import charges_total, generator_totals
 
     gross = t["revenue"] - t["masters_share"] - t["materials"]
-    operating = exp[ExpenseCategory.RENT] + exp[ExpenseCategory.UTILITIES] + exp[ExpenseCategory.ADVERTISING] + exp[ExpenseCategory.OTHER]
+    operating = (exp[ExpenseCategory.RENT] + exp[ExpenseCategory.UTILITIES] + exp[ExpenseCategory.ADVERTISING]
+                 + exp[ExpenseCategory.EQUIPMENT] + exp[ExpenseCategory.HOUSEHOLD] + exp[ExpenseCategory.OTHER])
     generator = generator_totals(s, start, end)["total_cost"]  # пальне + амортизація за мотогодинами
     charged = charges_total(s, d_from=d_from, d_to=d_to)  # компенсація майстрами (комунальні/генератор)
     # загальний борг по зарплаті на сьогодні (за весь час)
@@ -119,6 +120,8 @@ def dashboard(s: Session, actor: Actor, d_from: date, d_to: date) -> dict:
             "rent": exp[ExpenseCategory.RENT],
             "utilities": exp[ExpenseCategory.UTILITIES],
             "advertising": exp[ExpenseCategory.ADVERTISING],
+            "equipment": exp[ExpenseCategory.EQUIPMENT],
+            "household": exp[ExpenseCategory.HOUSEHOLD],
             "other": exp[ExpenseCategory.OTHER],
             "materials_purchases": exp[ExpenseCategory.MATERIALS],
             "generator": generator,
