@@ -781,3 +781,45 @@ a.bar-row:hover .bar-track i { filter: brightness(1.1); }
   .filters select, .filters input { font-size: 16px; min-height: 36px; }
 }
 @media (max-width: 600px) { .mini-stats { grid-template-columns: repeat(2, 1fr); } .gen-bars { gap: 4px; } .gen-bar .v { display: none; } }
+
+/* ================================================================ 0.1.24: сторінка входу і код підтвердження */
+.login { position: relative; overflow: hidden; }
+.login-glow { position: absolute; inset: -30%; pointer-events: none;
+  background: conic-gradient(from 180deg at 50% 50%, transparent 0deg, rgba(201, 164, 92, .10) 60deg, transparent 140deg, rgba(201, 164, 92, .06) 220deg, transparent 300deg);
+  animation: login-spin 40s linear infinite; }
+@keyframes login-spin { to { transform: rotate(360deg); } }
+.login-card { position: relative; max-width: 400px; padding: 34px 28px 26px; backdrop-filter: blur(6px); animation: rise-in .5s cubic-bezier(.2, .7, .3, 1) both; }
+.login-card.shake { animation: shake .4s; }
+@keyframes shake { 20%, 60% { transform: translateX(-7px); } 40%, 80% { transform: translateX(7px); } }
+.login-mark { animation: mark-in .7s cubic-bezier(.2, .7, .3, 1) both; box-shadow: 0 0 0 6px rgba(201, 164, 92, .06), 0 10px 30px rgba(201, 164, 92, .15); background: linear-gradient(160deg, rgba(201, 164, 92, .14), transparent); }
+@keyframes mark-in { from { opacity: 0; transform: scale(.8) rotate(-8deg); } }
+.login-name { animation: rise-in .5s .08s both; }
+.login-sub { animation: rise-in .5s .14s both; }
+.login-form { gap: 12px; animation: rise-in .5s .2s both; }
+.login-form.step-in { animation: rise-in .35s both; }
+.pw-wrap { position: relative; display: block; }
+.pw-wrap input { padding-right: 46px; width: 100%; }
+.pw-eye { position: absolute; right: 6px; top: 50%; transform: translateY(-50%); width: 36px; height: 36px; border: 0; border-radius: 8px; background: transparent; color: #8e8a7f; cursor: pointer; display: grid; place-items: center; }
+.pw-eye:hover { color: #e3cb94; background: rgba(227, 203, 148, .08); }
+.login-hint { display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: #e3cb94; }
+.login-err { display: flex; gap: 8px; font-size: 13px; color: #ffb3ab; background: rgba(194, 69, 61, .14); border: 1px solid rgba(194, 69, 61, .35); padding: 9px 12px; border-radius: 10px; animation: rise-in .25s both; }
+.login-btn { display: inline-flex; gap: 8px; transition: filter .15s, transform .1s; }
+.login-btn:active { transform: scale(.98); }
+.btn.loading { position: relative; color: transparent !important; pointer-events: none; }
+.btn.loading::after { content: ""; position: absolute; width: 18px; height: 18px; border-radius: 50%; border: 2px solid rgba(26, 20, 8, .35); border-top-color: #1a1408; animation: spin .7s linear infinite; }
+.login-foot { display: flex; flex-direction: column; align-items: center; gap: 4px; position: relative; animation: rise-in .5s .3s both; }
+.login-foot > svg { color: #8e8a7f; }
+.code-head { display: flex; gap: 12px; align-items: flex-start; text-align: left; font-size: 13px; color: #b9b4a7; }
+.code-head b { display: block; color: #f3efe6; font-size: 15px; margin-bottom: 2px; }
+.code-ico { flex: 0 0 auto; width: 40px; height: 40px; border-radius: 12px; display: grid; place-items: center; background: rgba(201, 164, 92, .14); color: #e3cb94; }
+.code-row { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; }
+.login input.code-box { min-height: 54px; padding: 0; text-align: center; font-size: 24px; font-weight: 700; font-variant-numeric: tabular-nums; caret-color: #c9a45c; transition: border-color .15s, transform .15s, background .15s; }
+.login input.code-box.filled { border-color: rgba(201, 164, 92, .6); background: #10291f; animation: pop .2s ease-out; }
+.remember { font-size: 13px; color: #b9b4a7; gap: 8px; cursor: pointer; }
+.remember input { width: 18px; height: 18px; min-height: 0; accent-color: #c9a45c; }
+.code-foot { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 12.5px; color: #8e8a7f; }
+.link-btn { border: 0; background: none; color: #e3cb94; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; padding: 4px 0; display: inline-flex; align-items: center; gap: 4px; }
+.link-btn:hover { text-decoration: underline; }
+.link-btn.loading { opacity: .5; }
+.link-btn.back { align-self: center; color: #8e8a7f; }
+@media (max-width: 380px) { .code-row { gap: 5px; } .login input.code-box { min-height: 48px; font-size: 20px; } .login-card { padding: 28px 18px 22px; } }

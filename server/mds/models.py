@@ -679,3 +679,32 @@ class ExpenseFile(Base):
     data: Mapped[bytes] = mapped_column(LargeBinary)
     created_by: Mapped[int | None] = mapped_column(Integer)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
+
+
+class LoginChallenge(Base):
+    """Код підтвердження входу (двофакторний вхід): надсилається в Telegram, зберігається лише хеш."""
+
+    __tablename__ = "login_challenges"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", name="fk_login_challenges_user_id", ondelete="CASCADE"), index=True)
+    code_hash: Mapped[str] = mapped_column(String(64))
+    expires_at: Mapped[datetime] = mapped_column(DateTime)
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    used: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
+
+
+class TrustedDevice(Base):
+    """Пристрій, на якому вже підтвердили вхід кодом («запам'ятати на 30 днів»). Зберігається лише хеш токена."""
+
+    __tablename__ = "trusted_devices"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", name="fk_trusted_devices_user_id", ondelete="CASCADE"), index=True)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    label: Mapped[str | None] = mapped_column(String(160))  # браузер / застосунок
+    token_version: Mapped[int] = mapped_column(Integer, default=0)  # зміна пароля → пристрої забуваються
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime)
+    expires_at: Mapped[datetime] = mapped_column(DateTime)

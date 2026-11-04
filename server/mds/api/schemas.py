@@ -38,6 +38,7 @@ class BaseModel(_PydanticModel):
 class LoginIn(BaseModel):
     username: str
     password: str
+    device_token: str | None = None  # довірений пристрій (двофакторний вхід)
 
 
 class ChangePasswordIn(BaseModel):

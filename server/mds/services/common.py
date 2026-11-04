@@ -139,6 +139,8 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "favorite_master_visits": 3,
     # нагадування клієнтам у Telegram за добу і за 2 години (лише тим, хто погодився)
     "reminders_enabled": True,
+    # двофакторний вхід: для цих ролей після пароля — код у Telegram (якщо Telegram підключено)
+    "twofa_roles": ["director"],
     # ---- генератор (значення діють для НОВИХ запусків; минулі зберігають свої)
     "generator_fuel_lph_milli": 0,  # витрата бензину, л/год × 1000 (1500 = 1,5 л/год)
     "generator_fuel_price": 0,  # ціна бензину, копійок за 1 л
@@ -227,6 +229,8 @@ def update_settings(s: Session, actor: Actor, data: dict[str, Any]) -> dict[str,
             raise ValidationError(f"{key}: очікується ціле невід'ємне число")
         if key in ("master_takes_cash", "telegram_auto_confirm", "reminders_enabled") and not isinstance(value, bool):
             raise ValidationError(f"{key}: так або ні")
+        if key == "twofa_roles" and not (isinstance(value, list) and all(r in ("director", "admin") for r in value)):
+            raise ValidationError("Двофакторний вхід: лише для директора та/або адміністратора")
         if key == "favorite_master_visits" and not (isinstance(value, int) and 1 <= value <= 50):
             raise ValidationError("Улюблений майстер: від 1 до 50 візитів")
         if key == "bot_staff_code" and not (isinstance(value, str) and value.isdigit() and 4 <= len(value) <= 8):
