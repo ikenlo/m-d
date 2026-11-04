@@ -566,7 +566,7 @@ def build_staff_router() -> Router:
                 return
         await state.set_state(AddAppt.phone)
         await state.set_data({"master_id": int(master_id), "service_id": int(service_id), "dt": dt})
-        await cb.message.edit_text(f"➕ {v.parse_dt(dt):%d.%m о %H:%M}\n📞 Надішліть телефон клієнта (або «-», якщо без номера):")
+        await cb.message.edit_text(f"➕ {v.parse_dt(dt):%d.%m о %H:%M}\n📞 Надішліть телефон клієнта:")
         await cb.answer()
 
     async def _create(message: Message, db: Database, staff: StaffSessions, state: FSMContext, name: str, phone: str | None):
@@ -592,11 +592,9 @@ def build_staff_router() -> Router:
 
     @router.message(AddAppt.phone)
     async def add_phone(message: Message, db: Database, staff: StaffSessions, state: FSMContext):
-        phone = (message.text or "").strip()
-        if phone.lower() in ("-", "—", "без номера", "немає", "нема", "0"):  # швидкий запис без телефону
-            await state.update_data(phone=None)
-            await state.set_state(AddAppt.name)
-            await message.answer("Без номера. Як звати клієнта?")
+        phone = (message.text or "").strip()  # у Telegram номер обов'язковий (без номера — лише в програмі)
+        if not phone:
+            await message.answer("Надішліть номер, наприклад 0671234567")
             return
         try:
             with db.session() as s:
