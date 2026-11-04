@@ -181,8 +181,9 @@ def create_appointment(
     if client_id:
         client = get_or_404(s, Client, client_id, "Клієнта")
     else:
-        if not client_phone:
+        if not client_phone and from_bot:
             raise ValidationError("Вкажіть телефон клієнта")
+        # персонал: швидкий запис без номера — достатньо імені (новий клієнт без телефону)
         client = get_or_create_client(
             s, actor, client_name or "", client_phone, telegram_user_id=actor.telegram_user_id
         )
@@ -636,7 +637,7 @@ def shift_appointments(s: Session, actor: Actor, *, master_id: int, minutes: int
             notifications.enqueue(s, a.client.telegram_user_id, text)
             row["channel"] = "telegram"
             telegram += 1
-        elif notify_clients:
+        elif notify_clients and a.client.phone:
             sms.append({"phone": a.client.phone, "text": text})
             row["channel"] = "sms"
         else:

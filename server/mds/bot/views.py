@@ -344,7 +344,7 @@ STATUS_ICON = {
 def staff_appt_text(a: Appointment, show_master: bool) -> str:
     return (
         f"{STATUS_ICON.get(a.status, '')} <b>{a.starts_at:%H:%M}–{a.ends_at:%H:%M}</b> · {e(a.service.name)}\n"
-        f"👤 {e(a.client.name)}, {e(a.client.phone)}\n"
+        f"👤 {e(a.client.name)}, {e(a.client.phone or 'без номера')}\n"
         + (f"💇 {e(a.master.full_name)}\n" if show_master else "")
         + f"💵 {fmt(a.price)} · {STATUS_UA.get(a.status, a.status)}"
     )

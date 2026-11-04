@@ -104,6 +104,8 @@ const dm = (iso) => `${iso.slice(8, 10)}.${iso.slice(5, 7)}`;
 const WD = ["Нд", "Пн", "Вт", "Ср", "Чт", "Пт", "Сб"];
 const WD_LONG = ["Понеділок", "Вівторок", "Середа", "Четвер", "П'ятниця", "Субота", "Неділя"];
 const weekday = (iso) => WD[new Date(iso + "T12:00").getDay()];
+// телефон клієнта посиланням «подзвонити» або «без номера» (швидкий запис без телефону)
+const phoneLink = (p, attrs = {}) => (p ? h("a", { href: "tel:" + p, ...attrs }, attrs.label ?? p) : h("span", { class: "muted" }, "без номера"));
 const uuid = () => (crypto.randomUUID ? crypto.randomUUID() : Date.now() + "-" + Math.random().toString(16).slice(2));
 
 const STATUS = {
@@ -803,7 +805,7 @@ function apptSheet(a, onChange) {
       secondary.append(h("button", { class: "btn danger", onclick: () => declineBusy(a, onChange) }, icon("cancel", "sm"), "Зайнято"));
     }
     if (a.status !== "in_progress") {
-      secondary.append(h("button", { class: "btn", onclick: () => done(() => api.post(`/api/appointments/${a.id}/status`, { status: "in_progress" }), "Клієнта прийнято") }, icon("play", "sm"), "Клієнт прийшов"));
+      // «Клієнт прийшов» прибрано за рішенням директора — замовлення закривається одразу
     }
     secondary.append(h("button", { class: "btn", onclick: () => apptForm({ appt: a }, onChange) }, icon("move", "sm"), "Перенести"));
     if (a.starts_at.slice(0, 10) === today() && a.status !== "in_progress") {
@@ -824,7 +826,7 @@ function apptSheet(a, onChange) {
         h("div", { class: "muted" }, `${weekday(a.starts_at.slice(0, 10))}, ${dmy(a.starts_at)} · ${a.duration_min} хв`)), chip(a.status)),
       h("div", { class: "client-box" }, avatar(a.client.name, "lg"),
         h("div", { class: "grow" }, h("div", { style: { fontWeight: 700, fontSize: "15px" } }, a.client.name),
-          h("a", { href: "tel:" + a.client.phone, class: "row small", style: { gap: "5px" } }, icon("phone", "sm"), a.client.phone)),
+          a.client.phone ? h("a", { href: "tel:" + a.client.phone, class: "row small", style: { gap: "5px" } }, icon("phone", "sm"), a.client.phone) : h("span", { class: "muted small" }, "без номера")),
         h("button", { class: "btn sm", onclick: () => clientSheet(a.client.id) }, icon("history", "sm"), "Історія")),
       h("div", { class: "info-list" },
         h("div", { class: "info-row" }, icon("scissors"), h("b", {}, a.service_name)),
@@ -922,7 +924,7 @@ function closeOrderSheet(a, onChange) {
   const looksLikeNick = /[_@\d]|^[A-Za-z]+$/.test(a.client.name || "") || a.source === "telegram";
   const clientBox = h("div", { class: "card", style: { padding: "12px", background: looksLikeNick ? "var(--warn-bg)" : null } },
     h("div", { class: "row small", style: { marginBottom: "8px" } }, icon("user", "sm"), h("b", {}, "Клієнт"),
-      h("span", { class: "muted" }, a.client.phone),
+      h("span", { class: "muted" }, a.client.phone || "без номера"),
       looksLikeNick ? h("span", { class: "muted grow right" }, "перевірте ім'я — могло прийти з Telegram") : null),
     h("div", { class: "form-grid", style: { gridTemplateColumns: "1fr 1fr" } }, firstName, lastName));
   const svc = state.services.find((s) => s.id === a.service_id) || {};
@@ -1082,7 +1084,10 @@ function apptForm({ appt = null, master_id = null, date = today(), time = "10:00
         await run(() => api.patch(`/api/appointments/${appt.id}`, body), "Запис змінено");
       } else {
         if (clientId) body.client_id = clientId;
-        else { body.client_phone = phone.value; body.client_name = name.value; }
+        else {
+          if (!phone.value.trim() && !name.value.trim()) { save.disabled = false; return toast("Вкажіть ім'я клієнта (телефон — необов'язково)", true); }
+          body.client_phone = phone.value.trim() || null; body.client_name = name.value;
+        }
         await run(() => api.post("/api/appointments", body), "Запис створено");
       }
       closeSheet();
@@ -1092,8 +1097,8 @@ function apptForm({ appt = null, master_id = null, date = today(), time = "10:00
 
   openSheet(appt ? "Перенести / змінити запис" : "Новий запис",
     h("div", { class: "stack" },
-      appt ? h("div", { class: "muted" }, appt.client.name, " · ", appt.client.phone) :
-        h("div", { class: "form-grid" }, field("Телефон клієнта", phone), field("Ім'я", name)),
+      appt ? h("div", { class: "muted" }, appt.client.name, " · ", appt.client.phone || "без номера") :
+        h("div", { class: "form-grid" }, field("Телефон (необов'язково)", phone), field("Ім'я", name)),
       appt ? null : found,
       field("Послуга", svc),
       isMaster ? null : field("Майстер", mst),
@@ -1110,11 +1115,11 @@ async function clientSheet(id) {
   const isMgr = state.user.role !== "master";
   const visits = c.history.filter((a) => a.status === "completed").length;
   const name = h("input", { value: c.name });
-  const phone = h("input", { value: c.phone });
+  const phone = h("input", { value: c.phone || "", placeholder: "без номера" });
   const notes = h("textarea", { rows: 2 }, c.notes || "");
   openSheet(c.name,
     h("div", { class: "stack" },
-      h("div", {}, h("a", { href: "tel:" + c.phone }, c.phone), c.telegram_linked ? h("span", { class: "chip", style: { marginLeft: "8px" } }, "Telegram") : null,
+      h("div", {}, phoneLink(c.phone), c.telegram_linked ? h("span", { class: "chip", style: { marginLeft: "8px" } }, "Telegram") : null,
         c.blocked ? h("span", { class: "chip st-overdue", style: { marginLeft: "8px" } }, "онлайн-запис заблоковано") : null),
       c.blocked && c.blocked_reason ? h("div", { class: "muted small" }, "Причина: ", c.blocked_reason) : null,
       h("div", { class: "muted" }, `Візитів: ${visits} · записів усього: ${c.history.length}`),
@@ -1157,7 +1162,7 @@ function proposeForm(a, onChange) {
     box.replaceChildren(...(list.length ? list.map((t) => h("button", { class: "btn sm", onclick: async () => {
       const r = await run(() => api.post(`/api/appointments/${a.id}/propose`, { starts_at: `${d.value}T${t}` }));
       closeSheet();
-      toast(r.notified ? "Клієнту надіслано пропозицію в Telegram" : `Час змінено. Клієнт не в Telegram — зателефонуйте: ${a.client.phone}`);
+      toast(r.notified ? "Клієнту надіслано пропозицію в Telegram" : `Час змінено. Клієнт не в Telegram — зателефонуйте: ${a.client.phone || "номера немає"}`);
       onChange();
     } }, t)) : [h("span", { class: "muted small" }, "На цей день вільного часу немає")]));
   };
@@ -1167,14 +1172,14 @@ function proposeForm(a, onChange) {
     field("День", d), h("div", { class: "kpi-label" }, "Вільний час майстра"), box,
     h("p", { class: "muted small" }, a.client.telegram_linked
       ? "Клієнт отримає в боті: «Майстер пропонує інший час» з кнопками «Підходить» / «Інший час» / «Скасувати»."
-      : `Клієнт записаний не через Telegram — після зміни зателефонуйте йому: ${a.client.phone}`)));
+      : `Клієнт записаний не через Telegram — після зміни зателефонуйте йому: ${a.client.phone || "номера немає"}`)));
   load();
 }
 
 function declineBusy(a, onChange) {
   confirmSheet("Цей час зайнятий?", a.client.telegram_linked
     ? `Запис ${dayWord(a.starts_at)} о ${hm(a.starts_at)} буде знято. Бот напише клієнту, що час зайнятий, і запропонує найближчі вільні години.`
-    : `Запис буде знято. Клієнт не в Telegram — зателефонуйте йому: ${a.client.phone}`,
+    : `Запис буде знято. Клієнт не в Telegram — зателефонуйте йому: ${a.client.phone || "номера немає"}`,
   "Так, зайнято", async () => {
     const r = await run(() => api.post(`/api/appointments/${a.id}/decline-busy`));
     toast(r.notified ? "Клієнту запропоновано інший вільний час" : "Запис знято. Зателефонуйте клієнту");
@@ -1192,7 +1197,7 @@ async function pendingBlock(onChange) {
     list.map((a) => h("div", { class: "row", style: { padding: "10px 0", borderTop: "1px solid var(--line)", alignItems: "flex-start" } },
       h("div", { style: { minWidth: "96px" } }, h("b", {}, dayWord(a.starts_at)), h("div", { style: { fontSize: "18px", fontWeight: 700 } }, hm(a.starts_at))),
       h("div", { class: "grow", style: { minWidth: "180px" } },
-        h("div", {}, h("b", {}, a.client.name), " · ", h("a", { href: "tel:" + a.client.phone }, a.client.phone)),
+        h("div", {}, h("b", {}, a.client.name), " · ", phoneLink(a.client.phone)),
         h("div", { class: "muted small" }, a.service_name, isMgr ? ` · ${a.master_name}` : "", a.source === "telegram" ? " · з Telegram" : a.source === "site" ? " · з сайту" : ""),
         a.awaiting_client ? h("div", { class: "chip st-in_progress", style: { marginTop: "6px", whiteSpace: "normal", borderRadius: "8px" } }, `Запропоновано ${hm(a.starts_at)} — чекаємо відповіді клієнта в боті`) : null),
       h("div", { class: "row" },
@@ -1242,22 +1247,12 @@ VIEWS.today = async (main) => {
       h("div", { class: "appt-body" },
         h("div", { class: "row" }, h("span", { class: "appt-title" }, a.client.name), chip(a.status)),
         h("div", { class: "muted" }, a.service_name, " · ", money(a.price)),
-        h("a", { href: "tel:" + a.client.phone, class: "small row", style: { gap: "4px", marginTop: "2px" }, onclick: (e) => e.stopPropagation() }, icon("phone", "sm"), a.client.phone)),
+        a.client.phone ? h("a", { href: "tel:" + a.client.phone, class: "small row", style: { gap: "4px", marginTop: "2px" }, onclick: (e) => e.stopPropagation() }, icon("phone", "sm"), a.client.phone) : h("span", { class: "muted small" }, "без номера")),
       done ? h("span", { class: "muted small" }, "Закрито") :
         h("button", { class: "btn primary", onclick: (e) => { e.stopPropagation(); closeOrderSheet(a, reload); } }, icon("banknote", "sm"), "Закрити")));
   }
 };
 
-// «Клієнт прийшов»: якщо попереднє замовлення ще не закрите — спершу запропонувати закрити його (в один дотик)
-async function clientArrived(a, unc, onChange) {
-  const prev = (unc || []).filter((u) => u.master_id === a.master_id && u.id !== a.id);
-  const start = async () => { await run(() => api.post(`/api/appointments/${a.id}/status`, { status: "in_progress" }), "Клієнта прийнято"); closeSheet(); onChange(); };
-  if (!prev.length) return start();
-  openSheet("Спершу закрийте попереднє замовлення", h("div", { class: "stack" },
-    h("p", { class: "muted", style: { margin: 0 } }, "Щоб виручка й ваш заробіток не загубились — закрийте попереднього клієнта. Це один дотик:"),
-    unclosedBlock(prev, async () => { const left = await api.get("/api/appointments/unclosed").catch(() => []); if (!left.some((u) => u.master_id === a.master_id && u.id !== a.id)) start(); else clientArrived(a, left, onChange); }, true),
-    h("button", { class: "btn ghost", onclick: start }, "Закрити пізніше — прийняти ", a.client.name)));
-}
 // незакриті замовлення: закрити за ціною запису готівкою / карткою або детально (матеріали, інша сума)
 function unclosedBlock(list, onChange, bare = false) {
   const quick = async (u, method, btn) => {
@@ -1341,9 +1336,8 @@ function nowCard(a, unc = []) {
       h("div", { class: "grow" }, h("div", { class: "now-client" }, a.client.name), h("div", { class: "muted" }, a.service_name, " · ", money(a.price)),
         a.comment ? h("div", { class: "small muted" }, icon("edit", "sm"), " ", a.comment) : null)),
     h("div", { class: "now-actions" },
-      a.status !== "in_progress" ? h("button", { class: "btn", onclick: () => clientArrived(a, unc, reload) }, icon("play", "sm"), "Клієнт прийшов") : null,
       h("button", { class: "btn primary", onclick: () => closeOrderSheet(a, reload) }, icon("banknote", "sm"), "Закрити замовлення"),
-      h("a", { class: "btn", href: "tel:" + a.client.phone }, icon("phone", "sm"), "Подзвонити")));
+      a.client.phone ? h("a", { class: "btn", href: "tel:" + a.client.phone }, icon("phone", "sm"), "Подзвонити") : null));
 }
 
 // ---------- Календар
@@ -1691,7 +1685,20 @@ async function devicesCard(u) {
 
 // ---------- Клієнти
 VIEWS.clients = async (main) => {
-  main.append(topbar("Клієнти", "Пошук, картка клієнта та історія відвідувань"));
+  const isDir = state.user.role === "director";
+  // прибрати клієнтів без телефону (швидкі записи): без історії — видалити, з історією — в одну картку
+  const purge = async () => {
+    const r = await run(() => api.post("/api/clients/purge-no-phone?dry_run=true"));
+    const total = r.deleted + r.merged;
+    if (!total) return toast(r.kept_future ? `Клієнти без номера мають майбутні записи (${r.kept_future}) — їх не чіпаємо` : "Клієнтів без номера немає");
+    confirmSheet("Видалити клієнтів без номера?",
+      `Буде прибрано: ${total}. ${r.merged ? `Візити ${r.merged} з них (виручка, замовлення) збережуться в картці «Клієнти без номера». ` : ""}` +
+      `${r.kept_future ? `Не чіпаємо ${r.kept_future} — у них є майбутній запис.` : ""}`, "Видалити",
+      async () => { const x = await run(() => api.post("/api/clients/purge-no-phone"), "Готово"); toast(`Прибрано клієнтів: ${x.deleted + x.merged}`); reload(); },
+      { danger: true });
+  };
+  main.append(topbar("Клієнти", "Пошук, картка клієнта та історія відвідувань",
+    isDir ? h("button", { class: "btn danger", onclick: purge }, icon("trash", "sm"), "Видалити клієнтів без номера") : null));
   const q = h("input", { placeholder: "Пошук за ім'ям або телефоном", type: "search", id: "client-search" });
   const box = h("div", { class: "card table-wrap", style: { marginTop: "12px" } });
   main.append(h("div", { class: "search" }, icon("search", "sm"), q), box);
@@ -1700,7 +1707,7 @@ VIEWS.clients = async (main) => {
     const list = await api.get("/api/clients?q=" + encodeURIComponent(q.value.trim()));
     box.replaceChildren(list.length ? h("table", {}, h("tr", {}, h("th", {}, "Клієнт"), h("th", {}, "Телефон"), h("th", {}, "")),
       list.map((c) => h("tr", { class: "click", onclick: () => clientSheet(c.id) },
-        h("td", {}, h("div", { class: "row" }, avatar(c.name, "sm"), h("b", {}, c.name))), h("td", {}, c.phone),
+        h("td", {}, h("div", { class: "row" }, avatar(c.name, "sm"), h("b", {}, c.name))), h("td", {}, c.phone || h("span", { class: "muted" }, "без номера")),
         h("td", { class: "right" }, c.telegram_linked ? h("span", { class: "chip st-confirmed" }, "Telegram") : "")))) : emptyState("Нікого не знайдено", "search"));
   };
   q.addEventListener("input", () => { clearTimeout(timer); timer = setTimeout(load, 300); });
