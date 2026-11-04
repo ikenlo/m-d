@@ -131,11 +131,13 @@ def cmd_start(cfg: Config, args) -> None:
 
 
 def cmd_demo_year(cfg: Config, _args) -> None:
-    from .demo import seed_year
+    from .demo import seed_extra, seed_year
     from .services.backup import make_backup
 
     print("Резервна копія перед демо-даними:", make_backup(cfg.database_url, cfg.backup_dir, cfg.backup_keep), flush=True)
-    print(seed_year(_db(cfg)), flush=True)
+    db = _db(cfg)
+    print(seed_year(db), flush=True)
+    print(seed_extra(db), flush=True)
 
 
 def cmd_create_user(cfg: Config, args) -> None:
