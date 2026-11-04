@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="uk">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'">
+<title>MDS Connect — немає з'єднання</title>
+<style>
+  body { margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center;
+         background: #14392C; color: #F5F1E6; font-family: "Segoe UI", sans-serif; text-align: center; }
+  .m { width: 84px; height: 84px; margin: 0 auto 22px; border-radius: 20px; font-weight: 700; font-size: 26px;
+       line-height: 84px; color: #14392C; background: linear-gradient(135deg, #D9B872, #A9833F); }
+  h1 { font-size: 24px; margin: 0 0 8px; } p { opacity: .8; margin: 0 0 26px; }
+  button { padding: 14px 30px; border: 0; border-radius: 12px; background: #C9A45C; color: #14392C;
+           font-weight: 600; font-size: 16px; cursor: pointer; }
+</style>
+</head>
+<body>
+  <div>
+    <div class="m">M&amp;D</div>
+    <h1>Немає з'єднання</h1>
+    <p>Перевірте інтернет і спробуйте ще раз.</p>
+    <button id="retry">Спробувати ще</button>
+  </div>
+  <script>
+    const u = new URLSearchParams(location.search).get("u");
+    const go = () => { if (u && u.startsWith("https://")) location.href = u; };
+    document.getElementById("retry").onclick = go;
+    window.addEventListener("online", go);
+    setTimeout(go, 8000); // автоповтор: щойно сервер відповість, панель відкриється сама
+  </script>
+</body>
+</html>

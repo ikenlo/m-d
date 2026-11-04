@@ -1,0 +1,42 @@
+{
+  "name": "mds-connect",
+  "productName": "MDS Connect",
+  "version": "0.1.0",
+  "description": "MDS Connect — внутрішня система салону M&D (застосунок для Windows)",
+  "author": "Салон M&D",
+  "license": "UNLICENSED",
+  "private": true,
+  "main": "main.js",
+  "appUrl": "https://m-d-production.up.railway.app",
+  "scripts": {
+    "start": "electron .",
+    "check": "node --check main.js && node --check preload.js",
+    "dist": "electron-builder --win nsis --x64 --publish never"
+  },
+  "build": {
+    "appId": "ua.md.connect",
+    "productName": "MDS Connect",
+    "copyright": "Салон M&D",
+    "files": ["main.js", "preload.js", "offline.html", "package.json", "build/icon.png"],
+    "directories": { "output": "dist", "buildResources": "build" },
+    "win": {
+      "target": [{ "target": "nsis", "arch": ["x64"] }],
+      "icon": "build/icon.ico",
+      "artifactName": "MDS-Connect-Setup-${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "MDS Connect",
+      "installerLanguages": ["uk_UA"],
+      "language": "1058"
+    }
+  },
+  "devDependencies": {
+    "electron": "33.2.1",
+    "electron-builder": "25.1.8"
+  }
+}
