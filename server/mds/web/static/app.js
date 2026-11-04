@@ -1729,40 +1729,84 @@ VIEWS.stock = async (main) => {
 
 // ---------- Графік роботи (по датах)
 VIEWS.schedule = async (main) => {
+  // Графік — сітка-календар на 4 тижні: квадратик = день, ✓ — робочий. Натискання перемикає
+  // «робочий ↔ вихідний»; режим «Години» — змінити години конкретного дня.
   const params = new URLSearchParams(location.hash.split("?")[1] || "");
   const monday = (iso) => { const d = new Date(iso + "T12:00"); d.setDate(d.getDate() - ((d.getDay() + 6) % 7)); return isoDate(d); };
   const start = params.get("w") || monday(today());
-  const end = addDays(start, 13);
+  const end = addDays(start, 27);
   const go = (w) => { location.hash = "#/schedule?w=" + w; };
   const canEdit = state.user.role !== "master";
-  main.append(topbar("Графік роботи", `${dmy(start)} — ${dmy(end)}. Натисніть на клітинку, щоб змінити день`,
-    h("button", { class: "btn", "aria-label": "Раніше", onclick: () => go(addDays(start, -14)) }, icon("left", "sm")),
-    h("button", { class: "btn", onclick: () => go(monday(today())) }, "Цей тиждень"),
-    h("button", { class: "btn", "aria-label": "Пізніше", onclick: () => go(addDays(start, 14)) }, icon("right", "sm"))));
-  const g = await api.get(`/api/schedule?date_from=${start}&date_to=${end}`);
+  const url = `/api/schedule?date_from=${start}&date_to=${end}`;
+  let mode = "days";
+  main.append(topbar("Графік роботи", `${dmy(start)} — ${dmy(end)}`,
+    h("button", { class: "btn", "aria-label": "Раніше", onclick: () => go(addDays(start, -28)) }, icon("left", "sm")),
+    h("button", { class: "btn", onclick: () => go(monday(today())) }, "Сьогодні"),
+    h("button", { class: "btn", "aria-label": "Пізніше", onclick: () => go(addDays(start, 28)) }, icon("right", "sm"))));
+  let g = await api.get(url);
   if (!g.masters.length) { main.append(h("div", { class: "card" }, emptyState("Додайте майстрів у розділі «Персонал»", "users"))); return; }
-  const cellEl = (m, d, c) => {
-    const short = (t) => (t.endsWith(":00") ? String(+t.slice(0, 2)) : t);
-    const label = c.off ? "вихідний" : `${short(c.start)}–${short(c.end)}`;
-    return h("td", { style: { padding: "4px" } }, h("button", {
-      type: "button", disabled: !canEdit || null, title: c.source === "day" ? "Змінено на цю дату" : c.source === "master" ? "За шаблоном майстра" : "За графіком салону",
-      style: {
-        width: "100%", minWidth: "74px", border: c.source === "day" ? "1.5px solid var(--gold)" : "1px solid var(--line)", borderRadius: "8px",
-        padding: "7px 4px", cursor: canEdit ? "pointer" : "default", fontWeight: 700, fontSize: "12.5px",
-        background: c.off ? "var(--muted-bg)" : "var(--ok-bg)", color: c.off ? "var(--ink-3)" : "var(--ok)",
-      },
-      onclick: () => canEdit && dayForm(m, d, c),
-    }, label));
+
+  const short = (x) => (x.endsWith(":00") ? String(+x.slice(0, 2)) : x);
+  const hint = h("span", { class: "muted small" });
+  const drawHint = () => { hint.textContent = mode === "days" ? "Натисніть на день: робочий ✓ ↔ вихідний" : "Натисніть на день, щоб змінити його години"; };
+  drawHint();
+  if (canEdit) {
+    main.append(h("div", { class: "row", style: { marginBottom: "12px", flexWrap: "wrap" } },
+      seg([["days", "✓ Робочі дні"], ["hours", "Години"]], mode, (v) => { mode = v; drawHint(); }), hint));
+  }
+  const body = h("div", { class: "grid two" });
+  main.append(body, h("div", { class: "legend" },
+    h("span", { class: "chip", style: { background: "var(--ok)", color: "#fff" } }, "✓ робочий"), h("span", { class: "chip st-cancelled" }, "сірий — вихідний"),
+    h("span", {}, "Золота рамка — змінено на цю дату. Години замість галочки — якщо не звичайні.")));
+
+  const card = (m) => {
+    const cells = g.cells[m.id];
+    const usual = m.usual_hours;
+    const work = g.days.filter((d) => !cells[d].off).length;
+    return h("div", { class: "card stack" },
+      h("div", { class: "row" }, avatar(m.full_name, "sm"),
+        h("div", { class: "grow" }, h("b", {}, m.full_name),
+          h("div", { class: "muted small" }, `робочих днів: ${work} · зазвичай ${short(usual[0])}–${short(usual[1])}`)),
+        canEdit ? h("button", { class: "btn sm ghost", onclick: () => copyForm(m) }, "Копіювати тиждень…") : null),
+      h("div", { class: "sched-grid" },
+        ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Нд"].map((w) => h("div", { class: "sched-wd" }, w)),
+        g.days.map((d) => {
+          const c = cells[d];
+          const unusual = !c.off && (c.start !== usual[0] || c.end !== usual[1]);
+          return h("button", {
+            type: "button", disabled: !canEdit || null, "aria-pressed": String(!c.off),
+            class: "sched-day " + (c.off ? "off" : "on") + (c.source === "day" ? " changed" : "") + (d === today() ? " today" : ""),
+            "aria-label": `${weekday(d)} ${dm(d)}: ${c.off ? "вихідний" : `${c.start}–${c.end}`}`,
+            onclick: () => (mode === "hours" ? dayForm(m, d, c) : toggle(m, d, c)),
+          },
+          h("span", { class: "num" }, String(+d.slice(8, 10))),
+          c.off ? null : unusual ? h("span", { class: "hrs" }, `${short(c.start)}–${short(c.end)}`) : icon("ok"));
+        })));
   };
-  const head = h("tr", {}, h("th", {}, "Майстер"), g.days.map((d) => h("th", { class: "right", style: { textAlign: "center", color: d === today() ? "var(--gold)" : null } }, weekday(d), h("br"), dm(d))));
-  main.append(h("div", { class: "card table-wrap" }, h("table", {}, head,
-    g.masters.map((m) => h("tr", {},
-      h("td", { style: { whiteSpace: "nowrap" } }, h("div", { class: "row" }, avatar(m.full_name, "sm"), h("b", {}, m.full_name)),
-        canEdit ? h("button", { class: "btn sm ghost", style: { marginTop: "4px" }, onclick: () => copyForm(m) }, "Копіювати тиждень…") : null),
-      g.days.map((d) => cellEl(m, d, g.cells[m.id][d])))))));
-  main.append(h("div", { class: "legend" },
-    h("span", { class: "chip st-completed" }, "робочий день"), h("span", { class: "chip st-cancelled" }, "вихідний"),
-    h("span", {}, "Золота рамка — змінено на конкретну дату; без рамки — за тижневим шаблоном (Персонал → майстер) або графіком салону")));
+  const draw = () => body.replaceChildren(...g.masters.map(card));
+  draw();
+
+  let busy = Promise.resolve();
+  function toggle(m, d, c) {
+    const api_url = `/api/schedule/${m.id}/${d}`;
+    const tpl = c.template; // тижневий шаблон цього дня (null — за шаблоном вихідний)
+    let req;
+    if (!c.off) {
+      // робочий → вихідний; якщо за шаблоном і так вихідний — просто прибрати зміну
+      req = !tpl && c.source === "day" ? () => api.del(api_url) : () => api.put(api_url, { off: true });
+      Object.assign(c, { off: true, start: null, end: null });
+    } else {
+      const [s1, e1] = tpl || m.usual_hours;
+      req = tpl && c.source === "day" ? () => api.del(api_url) : () => api.put(api_url, { start: s1, end: e1 });
+      Object.assign(c, { off: false, start: s1, end: e1 });
+    }
+    c.source = "day";
+    draw(); // одразу показуємо галочку, сервер підтверджує
+    busy = busy.then(async () => {
+      try { await req(); } catch (e) { toast(e.message, true); }
+      g = await api.get(url); draw();
+    });
+  }
 
   function dayForm(m, d, c) {
     let off = c.off;

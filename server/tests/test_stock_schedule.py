@@ -98,7 +98,11 @@ def test_schedule_day_overrides_template(db, seed):
         cells = g["cells"][seed["m1"]]
         assert cells["2026-11-02"]["off"] and cells["2026-11-02"]["source"] == "day"
         assert cells["2026-11-03"]["start"] == "12:00"
-        assert cells["2026-11-04"] == {"start": "09:00", "end": "20:00", "off": False, "source": "salon"}
+        assert cells["2026-11-04"] == {"start": "09:00", "end": "20:00", "off": False, "source": "salon",
+                                       "template": ["09:00", "20:00"]}
+        # вихідний на дату: шаблон дня лишається робочим (для перемикача в сітці)
+        assert cells["2026-11-02"]["template"] == ["09:00", "20:00"]
+        assert g["masters"][0]["usual_hours"] == ["09:00", "20:00"]
         # майстер бачить лише свій рядок
         assert [m["id"] for m in schedule.grid(s, seed["actors"]["m2"], DAY, DAY)["masters"]] == [seed["m2"]]
         schedule.reset_day(s, d, seed["m1"], DAY)
