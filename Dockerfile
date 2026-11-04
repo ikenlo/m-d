@@ -11,6 +11,9 @@ COPY server/requirements.txt ./requirements.txt
 RUN pip install -r requirements.txt
 
 COPY server/ ./
+# сайт-візитка салону (статичний) — відкривається за адресою /site/
+COPY site/ /app/site/
+COPY shared/ /app/shared/
 
 # Дані (база, ключ, резервні копії) — на підключеному диску: Railway передає його шлях
 # у RAILWAY_VOLUME_MOUNT_PATH; без диска — /app/server/data (зникне при оновленні!).

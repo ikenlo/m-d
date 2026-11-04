@@ -117,7 +117,8 @@
     const h = window.MD.h;
     const b = config.booking || {};
     const tz = config.hours?.timezone || "Europe/Kyiv";
-    let api = b.api_mode === "live" && b.api_base ? liveApi(config) : mockApi(config, services);
+    // live без api_base — той самий сервер (сайт відкрито з /site/ на сервері системи)
+    let api = b.api_mode === "live" ? liveApi(config) : mockApi(config, services);
     $("#mock-note").hidden = api.mode !== "mock";
     const form = $("#booking-form");
     const el = { service: $("#b-service"), master: $("#b-master"), dates: $("#b-dates"), times: $("#b-times"), name: $("#b-name"),
