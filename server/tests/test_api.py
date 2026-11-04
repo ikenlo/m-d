@@ -221,3 +221,32 @@ def test_business_site_is_served(client):
     assert r.status_code == 200 and "M&amp;D Beauty Salon" in r.text
     assert client.get("/shared/config.json").json()["salon"]["name"] == "M&D Beauty Salon"
     assert client.get("/site", follow_redirects=False).status_code in (307, 302)
+
+
+def test_sync_reports_new_bookings_to_others(client):
+    from datetime import datetime
+
+    from mds import clock
+    from mds.services import bookings
+    from mds.services.common import Actor
+
+    clock.set_now(datetime(2026, 11, 2, 8))
+    d = login(client, "director", "Director123")
+    m1 = login(client, "olena", "Master123")
+    rev = client.get("/api/sync", headers=d).json()["rev"]
+    m2 = login(client, "iryna", "Master123")
+    rev_m = client.get("/api/sync", headers=m1).json()["rev"]
+    db = client.app.state.db
+    with db.session() as s:  # запис із Telegram-бота до майстра m1
+        bookings.create_appointment(s, Actor.telegram(77), master_id=client.ids["m1"], service_id=client.ids["haircut"],
+                                    starts_at=datetime(2026, 11, 2, 13), client_name="Ірина", client_phone="0671234500")
+    r = client.get(f"/api/sync?since={rev}", headers=d).json()
+    assert "appointment" in r["entities"] and r["new"][0]["client_name"] == "Ірина" and r["new"][0]["source"] == "telegram"
+    assert client.get(f"/api/sync?since={rev_m}", headers=m1).json()["new"][0]["starts_at"] == "2026-11-02T13:00:00"
+    # інший майстер не бачить чужих записів
+    assert client.get(f"/api/sync?since={rev_m}", headers=m2).json()["new"] == []
+    # власні дії не повертаються як «чужі»
+    rev2 = client.get("/api/sync", headers=d).json()["rev"]
+    client.post("/api/settings", headers=d, json={})
+    assert client.get(f"/api/sync?since={rev2}", headers=d).json()["new"] == []
+    clock.set_now(None)

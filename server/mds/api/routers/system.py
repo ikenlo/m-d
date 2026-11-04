@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 from ... import __version__
 from ...errors import Conflict, ValidationError
 from ...models import Role, User
-from ...services import backup, bugreport, gdrive, journal
+from ...services import backup, bugreport, gdrive, journal, sync
 from ...services import journal_feed as journal_feed_svc
 from ...services.common import Actor, all_settings, update_settings
 from ...services.common import audit as write_audit
@@ -152,3 +152,9 @@ def gdrive_disconnect(request: Request, actor: Actor = Depends(get_actor), s: Se
     gdrive.disconnect(request.app.state.config.data_dir)
     write_audit(s, actor, "gdrive", actor.user_id or 0, "disconnect", None, None)
     return gdrive.status(request.app.state.config.data_dir)
+
+
+@router.get("/sync")
+def sync_changes(since: int | None = None, actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
+    """Живе оновлення: версія даних, які сутності змінились і нові записи (для сповіщень)."""
+    return sync.changes(s, actor, since)
