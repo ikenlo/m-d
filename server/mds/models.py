@@ -9,6 +9,7 @@ from datetime import date, datetime
 
 from sqlalchemy import (
     JSON,
+    LargeBinary,
     Boolean,
     Date,
     DateTime,
@@ -79,9 +80,11 @@ class ExpenseCategory:
     UTILITIES = "utilities"
     ADVERTISING = "advertising"
     MATERIALS = "materials"  # закупівля (грошовий потік, див. docs/FINANCE.md)
+    EQUIPMENT = "equipment"  # обладнання
+    HOUSEHOLD = "household"  # господарські витрати
     FUEL = "fuel"  # закупівля бензину для генератора (грошовий потік; витрата — за мотогодинами)
     OTHER = "other"
-    ALL = (RENT, UTILITIES, ADVERTISING, MATERIALS, FUEL, OTHER)
+    ALL = (RENT, UTILITIES, ADVERTISING, MATERIALS, EQUIPMENT, HOUSEHOLD, FUEL, OTHER)
     CASH_FLOW_ONLY = (MATERIALS, FUEL)  # не входять в операційні витрати (інакше подвійний облік)
 
 
@@ -331,6 +334,7 @@ class Expense(Base):
     amount: Mapped[int] = mapped_column(Integer)
     spent_on: Mapped[date] = mapped_column(Date)
     description: Mapped[str | None] = mapped_column(Text)
+    payment_method: Mapped[str | None] = mapped_column(String(16))  # cash | card | account
     is_deleted: Mapped[bool] = mapped_column(Boolean, default=False)
     created_by: Mapped[int] = mapped_column(ForeignKey("users.id"))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
@@ -660,3 +664,18 @@ class EmployeeProfile(Base):
     main_job: Mapped[bool] = mapped_column(Boolean, default=True)  # основне місце роботи (мінімальна база ЄСВ)
     note: Mapped[str | None] = mapped_column(Text)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
+
+
+class ExpenseFile(Base):
+    """Фото або файл документа до витрати (чек, накладна). Зберігається в базі — потрапляє в резервні копії."""
+
+    __tablename__ = "expense_files"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    expense_id: Mapped[int] = mapped_column(ForeignKey("expenses.id", name="fk_expense_files_expense_id"), index=True)
+    filename: Mapped[str] = mapped_column(String(160))
+    content_type: Mapped[str] = mapped_column(String(64))
+    size: Mapped[int] = mapped_column(Integer)
+    data: Mapped[bytes] = mapped_column(LargeBinary)
+    created_by: Mapped[int | None] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)

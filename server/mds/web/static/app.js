@@ -116,7 +116,9 @@ const MAT_MODES = {
   master: "Матеріали за рахунок майстра",
   split: "Матеріали ділимо пропорційно",
 };
-const EXP_CAT = { rent: "Оренда", utilities: "Комунальні", advertising: "Реклама", materials: "Закупівля матеріалів", fuel: "Пальне (закупівля)", other: "Інше" };
+const EXP_CAT = { rent: "Оренда", utilities: "Комунальні", advertising: "Реклама", materials: "Закупівля матеріалів", equipment: "Обладнання",
+  household: "Господарські витрати", fuel: "Пальне (закупівля)", other: "Інше" };
+const EXP_PAY = { cash: "Готівка", card: "Картка", account: "З рахунку ФОП" };
 
 const chip = (st, map = STATUS) => h("span", { class: "chip st-" + st }, map[st] || st);
 
@@ -1332,7 +1334,9 @@ VIEWS.dashboard = async (main) => {
     const p = (await api.get(`/api/finance/dashboard?date_from=${pf}&date_to=${pt}`).catch(() => null))?.summary || {};
     const vs = kind === "month" ? "мин. місяць" : kind === "year" ? "мин. рік" : "попер. період";
     const exp = s.expenses;
-    const expRows = [["Оренда", exp.rent, "home"], ["Комунальні", exp.utilities, "zap"], ["Реклама", exp.advertising, "megaphone"], ["Інші витрати", exp.other, "receipt"]];
+    const expRows = [["Оренда", exp.rent, "home"], ["Комунальні", exp.utilities, "zap"], ["Реклама", exp.advertising, "megaphone"],
+      ...(exp.equipment ? [["Обладнання", exp.equipment, "settings"]] : []), ...(exp.household ? [["Господарські", exp.household, "box"]] : []),
+      ["Інші витрати", exp.other, "receipt"]];
     body.replaceChildren(...[
       h("div", { class: "grid kpi" },
         kpi("Виручка салону", s.revenue, "dark", { ico: "banknote", prev: p.revenue, vs }),
@@ -1769,6 +1773,59 @@ async function orderSheet(id, onChange) {
 }
 
 // ---------- Витрати
+// фото чека: стискаємо в браузері (до 1600 px, JPEG), PDF — як є
+async function prepareUpload(file) {
+  if (!/^image\//.test(file.type) || file.type === "image/png" && file.size < 400000) return { blob: file, type: file.type, name: file.name };
+  try {
+    const bmp = await createImageBitmap(file);
+    const k = Math.min(1, 1600 / Math.max(bmp.width, bmp.height));
+    const c = document.createElement("canvas");
+    c.width = Math.round(bmp.width * k); c.height = Math.round(bmp.height * k);
+    c.getContext("2d").drawImage(bmp, 0, 0, c.width, c.height);
+    const blob = await new Promise((res) => c.toBlob(res, "image/jpeg", 0.82));
+    return { blob, type: "image/jpeg", name: file.name.replace(/\.\w+$/, "") + ".jpg" };
+  } catch (_) { return { blob: file, type: file.type, name: file.name }; }
+}
+async function uploadExpenseFile(expenseId, file) {
+  const p = await prepareUpload(file);
+  let res;
+  try {
+    res = await fetch(`/api/expenses/${expenseId}/files?filename=${encodeURIComponent(p.name)}`,
+      { method: "POST", headers: { Authorization: "Bearer " + api.token, "Content-Type": p.type }, body: p.blob });
+  } catch (e) { throw new Error("Немає з'єднання з сервером"); }
+  if (!res.ok) { const d = await res.json().catch(() => null); throw new Error((d && d.detail) || "Помилка " + res.status); }
+  return res.json();
+}
+async function fileBlobUrl(fileId) {
+  const res = await fetch(`/api/expense-files/${fileId}`, { headers: { Authorization: "Bearer " + api.token } });
+  if (!res.ok) throw new Error("Не вдалося відкрити файл");
+  return URL.createObjectURL(await res.blob());
+}
+function expenseFilesSheet(e, onChange) {
+  const box = h("div", { class: "stack" });
+  const draw = async () => {
+    const list = (await api.get(`/api/expenses?date_from=${e.spent_on}&date_to=${e.spent_on}`)).find((x) => x.id === e.id)?.files || [];
+    const items = await Promise.all(list.map(async (f) => {
+      const img = /^image\//.test(f.content_type) ? h("img", { alt: f.filename, style: { maxWidth: "100%", maxHeight: "260px", borderRadius: "8px", display: "block" } }) : null;
+      if (img) fileBlobUrl(f.id).then((u) => { img.src = u; }).catch(() => {});
+      return h("div", { class: "card", style: { padding: "10px" } }, img,
+        h("div", { class: "row", style: { marginTop: img ? "6px" : 0 } }, h("span", { class: "grow small" }, `${f.filename} · ${Math.ceil(f.size / 1024)} КБ`),
+          h("button", { class: "btn sm", onclick: () => run(() => downloadFile(`/api/expense-files/${f.id}`, f.filename)) }, "Завантажити"),
+          h("button", { class: "btn sm danger", onclick: async () => { await run(() => api.del(`/api/expense-files/${f.id}`), "Файл видалено"); draw(); onChange(); } }, "×")));
+    }));
+    const inp = h("input", { type: "file", accept: "image/*,application/pdf", multiple: true, style: { display: "none" } });
+    inp.addEventListener("change", async () => {
+      for (const f of inp.files) { try { await uploadExpenseFile(e.id, f); } catch (err) { toast(err.message, true); } }
+      toast("Збережено"); draw(); onChange();
+    });
+    box.replaceChildren(...items, items.length ? null : h("p", { class: "muted" }, "Документів ще немає."), inp,
+      h("button", { class: "btn primary", onclick: () => inp.click() }, "+ Фото або PDF"),
+      h("p", { class: "muted small" }, "Фото чека (на телефоні — одразу з камери) або PDF, до 5 МБ. Зберігаються разом з базою в резервних копіях."));
+  };
+  openSheet(`Документи: ${EXP_CAT[e.category] || e.category} ${money(e.amount)}`, box);
+  draw();
+}
+
 VIEWS.expenses = async (main) => {
   const body = h("div", { style: { marginTop: "12px" } });
   let q = "period=month";
@@ -1777,23 +1834,29 @@ VIEWS.expenses = async (main) => {
     const sums = {};
     list.forEach((e) => { sums[e.category] = (sums[e.category] || 0) + e.amount; });
     body.replaceChildren(
-      h("div", { class: "grid kpi" }, Object.keys(EXP_CAT).map((k) => kpi(EXP_CAT[k], sums[k] || 0))),
+      h("div", { class: "grid kpi" }, Object.keys(EXP_CAT).filter((k) => sums[k] || !["equipment", "household", "fuel"].includes(k)).map((k) => kpi(EXP_CAT[k], sums[k] || 0))),
       list.length ? h("div", { class: "card table-wrap", style: { marginTop: "12px" } }, h("table", {},
-        h("tr", {}, h("th", {}, "Дата"), h("th", {}, "Категорія"), h("th", {}, "Опис"), h("th", { class: "num" }, "Сума"), h("th", {})),
-        list.map((e) => h("tr", {}, h("td", {}, dmy(e.spent_on)), h("td", {}, EXP_CAT[e.category]), h("td", {}, e.description || ""), h("td", { class: "num" }, money(e.amount)),
+        h("tr", {}, h("th", {}, "Дата"), h("th", {}, "Категорія"), h("th", {}, "Опис"), h("th", {}, "Оплата"), h("th", { class: "num" }, "Сума"), h("th", {}, "Документи"), h("th", {})),
+        list.map((e) => h("tr", {}, h("td", {}, dmy(e.spent_on)), h("td", {}, EXP_CAT[e.category] || e.category), h("td", {}, e.description || ""),
+          h("td", { class: "small" }, EXP_PAY[e.payment_method] || "—"), h("td", { class: "num" }, money(e.amount)),
+          h("td", {}, h("button", { class: "btn sm" + (e.files.length ? "" : " ghost"), onclick: () => expenseFilesSheet(e, load) }, icon("receipt", "sm"), e.files.length ? String(e.files.length) : "+")),
           h("td", { class: "right" }, h("button", { class: "btn sm danger", onclick: () => confirmSheet("Видалити витрату?", `${EXP_CAT[e.category]} ${money(e.amount)}`, "Видалити",
             async (reason) => { await run(() => api.del(`/api/expenses/${e.id}?reason=${encodeURIComponent(reason)}`), "Видалено"); load(); }, { danger: true, withReason: true }) }, "×"))))))
         : h("div", { class: "card", style: { marginTop: "12px" } }, emptyState("Витрат за період немає")));
   };
   const add = () => {
     const cat = select(Object.entries(EXP_CAT), "rent");
+    const pay = select(Object.entries(EXP_PAY), "card");
     const amount = h("input", { inputmode: "decimal" });
     const date = h("input", { type: "date", value: today() });
-    const desc = h("input");
-    openSheet("Нова витрата", h("div", { class: "stack" }, field("Категорія", cat), field("Сума, ₴", amount), field("Дата", date), field("Опис", desc),
-      h("p", { class: "muted small" }, "Закупівля матеріалів показується окремо як грошовий потік: собівартість матеріалів уже враховується в замовленнях."),
+    const desc = h("input", { placeholder: "напр. оренда за березень" });
+    const file = h("input", { type: "file", accept: "image/*,application/pdf", multiple: true });
+    openSheet("Нова витрата", h("div", { class: "stack" }, h("div", { class: "form-grid" }, field("Категорія", cat), field("Сума, ₴", amount), field("Дата", date), field("Спосіб оплати", pay)),
+      field("Коментар", desc), field("Фото чека або документ (необов'язково)", file),
+      h("p", { class: "muted small" }, "Витрати — для управлінського обліку: дохід ФОП вони не зменшують. Закупівля матеріалів показується окремо як грошовий потік."),
       h("button", { class: "btn gold big", onclick: async () => {
-        await run(() => api.post("/api/expenses", { category: cat.value, amount: toKop(amount.value), spent_on: date.value, description: desc.value || null }), "Додано");
+        const e = await run(() => api.post("/api/expenses", { category: cat.value, amount: toKop(amount.value), spent_on: date.value, description: desc.value || null, payment_method: pay.value }), "Додано");
+        for (const f of file.files) { try { await uploadExpenseFile(e.id, f); } catch (err) { toast(err.message, true); } }
         closeSheet(); load();
       } }, "Додати")));
   };

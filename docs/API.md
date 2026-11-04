@@ -64,3 +64,8 @@
 ## Для бухгалтера (директор)
 - `GET /api/reports/accountant?year=&quarter=` — дохід (каса + банк) по місяцях/кварталах, реквізити ФОП, ліміт, працівники.
 - `GET /api/reports/accountant.xlsx?year=&quarter=` — пакет Excel для бухгалтера.
+
+## Документи до витрат (директор)
+- `POST /api/expenses/{id}/files?filename=` — тіло = файл (jpg/png/webp/pdf, до 5 МБ), тип — `Content-Type`.
+- `GET /api/expense-files/{file_id}` — файл; `DELETE /api/expense-files/{file_id}`.
+- `POST/PATCH /api/expenses` приймають `payment_method`: cash | card | account; категорії + equipment, household.
