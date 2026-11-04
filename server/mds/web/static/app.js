@@ -1320,12 +1320,34 @@ function revenueChart(byDay) {
   return svg;
 }
 
+// Екран керівника: сьогодні (виручка, каса, картка) і контроль (податки, ліміт ФОП, чеки, банк)
+function controlBlock(c) {
+  const t = c.today;
+  const tile = (label, value, sub, cls = "") => h("div", { class: "card ctl-tile " + cls },
+    h("div", { class: "muted small" }, label), h("div", { class: "kpi-value" }, value), sub ? h("div", { class: "muted small" }, sub) : null);
+  const nt = c.next_tax;
+  const pct = c.limit ? Math.floor((c.year_to_date * 100) / c.limit) : null;
+  return h("div", { class: "stack", style: { marginBottom: "12px" } },
+    h("div", { class: "grid kpi" },
+      tile("Виручка сьогодні", money(t.revenue), `${t.orders} замовл.`),
+      tile("Готівка (каса)", money(t.cash)),
+      tile("Картка / банк", money(t.noncash)),
+      tile("Дохід ФОП з початку року", money(c.year_to_date), pct !== null ? `${pct}% ліміту групи` : "ліміт не задано", pct >= 100 ? "ctl-danger" : pct >= 80 ? "ctl-warn" : ""),
+      tile("Найближчий строк", nt ? dmy(nt.due) : "—", nt ? nt.title + (nt.amount ? " · " + money(nt.amount) : "") : "немає"),
+      tile("Фіскальні чеки", c.fiscal.connected ? String(c.fiscal.receipts_today ?? 0) : "—", c.fiscal.connected ? `без чека: ${c.fiscal.unfiscalized ?? 0}` : "Checkbox не підключено"),
+      tile("Незвірені операції банку", c.bank.connected ? String(c.bank.unmatched ?? 0) : "—", c.bank.connected ? "" : "виписку не підключено")),
+    c.alerts.length ? h("div", { class: "card stack" }, c.alerts.map((a) => h("div", { class: "row small " + (a.level === "danger" ? "neg" : "") }, icon("alert", "sm"), a.text)),
+      h("a", { href: "#/taxes?t=calendar", class: "small" }, "Календар податків і звітності →")) : null);
+}
+
 VIEWS.dashboard = async (main) => {
   const body = h("div");
+  const ctrl = h("div");
   main.append(topbar("Огляд", "Фінанси салону: виручка, зарплати майстрів, витрати й прибуток",
     h("button", { class: "btn", onclick: () => { location.hash = "#/expenses"; } }, icon("plus", "sm"), "Витрата"),
     h("button", { class: "btn primary", onclick: () => { location.hash = "#/calendar"; } }, icon("calendar", "sm"), "Календар")),
-    periodPicker((q, kind) => load(q, kind)), body);
+    ctrl, periodPicker((q, kind) => load(q, kind)), body);
+  api.get("/api/finance/control").then((c) => ctrl.replaceChildren(controlBlock(c))).catch(() => ctrl.remove());
   const load = async (q, kind = "month") => {
     body.replaceChildren(h("div", { class: "empty" }, "Завантаження…"));
     const [d, ins] = await Promise.all([api.get("/api/finance/dashboard?" + q), api.get("/api/finance/insights?" + q).catch(() => null)]);
@@ -2549,7 +2571,7 @@ VIEWS.taxes = async (main) => {
   const tab = params.get("t") || "payroll";
   const month = params.get("m") || today().slice(0, 7) + "-01";
   main.append(topbar("Податки і зарплата", "Ставки задаються з датами дії — у коді немає «вічних» значень. Перевіряйте актуальність з бухгалтером."),
-    seg([["payroll", "Зарплата"], ["employees", "Працівники"], ["quarter", "Квартальна відомість"], ["fop", "Податки ФОП"], ["rates", "Ставки"]], tab, (v) => { location.hash = `#/taxes?t=${v}&m=${month}`; }));
+    seg([["payroll", "Зарплата"], ["employees", "Працівники"], ["quarter", "Квартальна відомість"], ["fop", "Податки ФОП"], ["calendar", "Календар"], ["rates", "Ставки"]], tab, (v) => { location.hash = `#/taxes?t=${v}&m=${month}`; }));
   const body = h("div", { style: { marginTop: "12px" } });
   main.append(body);
   const pctTxt = (bp) => (bp === null || bp === undefined ? "—" : (bp / 100).toLocaleString("uk-UA") + "%");
@@ -2581,6 +2603,31 @@ VIEWS.taxes = async (main) => {
           h("td", { class: "small" }, `${TAX_BASES[r.base] || r.base} · ${r.period === "quarter" ? "квартал" : "місяць"}`),
           h("td", { class: "small" }, r.due_day ? `${r.due_day}-го, ${r.due_from === "start" ? "від початку" : "від кінця"} +${r.due_offset_months} міс.` : "—"),
           h("td", { class: "small" }, `${dmy(r.valid_from)} — ${r.valid_to ? dmy(r.valid_to) : "дотепер"}`)))) : emptyState("Ставок ще немає — додайте мінімальну зарплату та податки", "percent")));
+    return;
+  }
+
+  if (tab === "calendar") {
+    const year = +month.slice(0, 4);
+    const ev = await api.get("/api/taxes/calendar?year=" + year);
+    const ST = { paid: ["сплачено", "st-completed"], due: ["до сплати", "st-confirmed"], overdue: ["прострочено", "st-overdue"],
+      planned: ["заплановано", ""], check: ["перевірте", "st-pending"] };
+    body.append(h("div", { class: "row", style: { marginBottom: "8px" } },
+        h("button", { class: "btn sm", onclick: () => { location.hash = `#/taxes?t=calendar&m=${year - 1}-01-01`; } }, "← " + (year - 1)),
+        h("b", {}, `${year} рік`),
+        h("button", { class: "btn sm", onclick: () => { location.hash = `#/taxes?t=calendar&m=${year + 1}-01-01`; } }, (year + 1) + " →")),
+      h("div", { class: "callout", style: { marginBottom: "12px" } }, icon("alert"), h("div", { class: "small" },
+        "Строки — за загальними правилами (вихідний → наступний робочий день). Суми — за «Ставками», статус — за «Податками ФОП». " +
+        "«Перевірте» — строк минув, а нарахування в системі немає. Звітність подає бухгалтер.")),
+      h("div", { class: "card table-wrap" }, ev.length ? h("table", {},
+        h("tr", {}, h("th", {}, "Строк"), h("th", {}, "Що"), h("th", { class: "m-hide" }, "Період"), h("th", { class: "num" }, "Сума"), h("th", {}, "Статус")),
+        ev.map((e) => {
+          const [lbl, cls] = ST[e.status] || [e.status, ""];
+          return h("tr", {}, h("td", { style: { whiteSpace: "nowrap" } }, dmy(e.due)),
+            h("td", {}, e.kind === "report" ? h("b", {}, e.title) : e.title, e.note ? h("div", { class: "muted small" }, e.note) : null),
+            h("td", { class: "small m-hide" }, `${dmy(e.period_from)} — ${dmy(e.period_to)}`),
+            h("td", { class: "num" }, e.amount !== null ? money(e.amount) : "—"),
+            h("td", {}, h("span", { class: "chip " + cls }, lbl)));
+        })) : emptyState("Подій немає", "calendar")));
     return;
   }
 

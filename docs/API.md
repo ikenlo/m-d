@@ -56,6 +56,8 @@
 ## Податки і зарплата (директор) — docs/PAYROLL.md
 - Ставки: `GET/POST /api/taxes/rates`; податки ФОП: `GET /api/taxes/fop?year=`, `POST /api/taxes/fop/accrue`,
   `POST /api/taxes/fop/{id}/correct`, `POST /api/taxes/payments`.
+- Календар податків і звітності: `GET /api/taxes/calendar?year=` (строк, сума, статус paid/due/overdue/planned/check).
+- Екран керівника: `GET /api/finance/control` (сьогодні, дохід з початку року, ліміт, найближчий строк, попередження).
 - Працівники: `GET /api/employees`, `PUT /api/employees/{user_id}`.
 - Зарплата: `GET /api/payroll?month=`, `GET /api/payroll/calc?gross=&month=&user_id=`, `POST /api/payroll`,
   `POST /api/payroll/{id}/correct`, `POST /api/payroll/payments`, `GET /api/payroll/history/{user_id}`,

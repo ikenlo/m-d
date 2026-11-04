@@ -324,3 +324,41 @@ def insights(s: Session, actor: Actor, d_from: date, d_to: date) -> dict:
         "masters": masters,
         "forecast": forecast_month(s, actor),
     }
+
+
+def owner_control(s: Session, actor: Actor) -> dict:
+    """Головний екран керівника: сьогодні (виручка/каса/картка) і контроль (податки, ліміт, чеки, банк)."""
+    from . import taxes
+    from .common import get_setting
+
+    actor.require(Role.DIRECTOR)
+    today = clock.now().date()
+    start, end = _bounds(today, today)
+    by = {m: (int(n), int(v)) for m, n, v in s.execute(
+        select(Order.payment_method, func.count(Order.id), func.sum(Order.amount))
+        .where(Order.closed_at >= start, Order.closed_at < end).group_by(Order.payment_method))}
+    cash = by.get("cash", (0, 0))[1]
+    noncash = sum(v for m, (_, v) in by.items() if m != "cash")
+    events = taxes.tax_calendar(s, actor, today.year)
+    if today.month == 12:
+        events += taxes.tax_calendar(s, actor, today.year + 1)
+    soon = [e for e in events if e["status"] in ("planned", "due") and today.isoformat() <= e["due"]
+            <= (today + timedelta(days=10)).isoformat()]
+    overdue = [e for e in events if e["status"] == "overdue"]
+    ytd = int(s.scalar(select(func.coalesce(func.sum(Order.amount), 0)).where(
+        Order.closed_at >= datetime(today.year, 1, 1), Order.closed_at < end)) or 0)
+    limit = int(get_setting(s, "fop_income_limit") or 0)
+    alerts = [{"level": "danger", "text": f"Прострочено: {e['title']} (строк {e['due']})"} for e in overdue]
+    alerts += [{"level": "warn", "text": f"Скоро: {e['title']} — до {e['due']}"} for e in soon[:3]]
+    if limit and ytd * 10 >= limit * 8:
+        alerts.append({"level": "danger" if ytd >= limit else "warn",
+                       "text": f"Дохід з початку року — {ytd * 100 // limit}% ліміту групи"})
+    return {
+        "today": {"date": today.isoformat(), "revenue": cash + noncash, "cash": cash, "noncash": noncash,
+                  "orders": sum(n for n, _ in by.values())},
+        "year_to_date": ytd, "limit": limit,
+        "next_tax": next((e for e in events if e["due"] >= today.isoformat() and e["status"] != "paid"), None),
+        "alerts": alerts,
+        "fiscal": {"connected": False, "receipts_today": None, "unfiscalized": None},
+        "bank": {"connected": False, "unmatched": None},
+    }
