@@ -64,3 +64,8 @@ alembic revision --autogenerate -m "опис"   # після зміни models.p
   і `version` у `server/pyproject.toml`, додати зверху `CHANGELOG.md` розділ `## [0.1.N] — дата`.
   Тест `test_version.py` перевіряє узгодженість.
 - Після злиття `.github/workflows/release.yml` сам створює тег `v0.1.N` і GitHub Release (архів версії).
+
+## Оплата карткою — «Термінал» ПриватБанку (docs/TERMINAL.md)
+
+- Замовлення з оплатою через «Термінал» закривається ЛИШЕ після перевірки сервером у банку (`check_payment`, response_code "00").
+- Ключі — лише `MDS_PRIVAT_TERMINAL_*` (змінні сервера). У тестах — `FakeTerminalProvider` (`card_terminal_providers.set_provider`).
