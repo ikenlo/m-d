@@ -152,3 +152,24 @@ def test_material_validation_no_server_errors(db, seed):
             stock.adjust(s, d, m.id, 1e300)
         stock.receive(s, d, m.id, "1,5")
         assert m.stock_milli == 1500
+
+
+def test_material_units_packs_and_unit_change_guard(db, seed):
+    """Одиниці лише г/мл/шт; упаковка за замовчуванням; одиницю не можна змінити, коли є залишок або рух."""
+    d = seed["actors"]["director"]
+    with db.session() as s:
+        with pytest.raises(ValidationError):
+            catalog.create_material(s, d, {"name": "Фарба", "unit": "кг"})
+        a = catalog.create_material(s, d, {"name": "Шампунь", "unit": "мл", "pack_size": 1000, "unit_cost": 85000})
+        assert a.pack_name == "упаковка"
+        b = catalog.create_material(s, d, {"name": "Фольга", "unit": "шт", "pack_name": "рулон", "unit_cost": 42000})
+        assert (b.pack_name, b.pack_size) == ("рулон", 1)
+        c = catalog.create_material(s, d, {"name": "Рукавички", "unit": "шт", "pack_size": 100})
+        assert c.pack_name == "упаковка"
+        # без руху — одиницю змінити можна
+        catalog.update_material(s, d, a.id, {"unit": "г"})
+        stock.receive(s, d, a.id, "500")
+        with pytest.raises(ValidationError):
+            catalog.update_material(s, d, a.id, {"unit": "мл"})
+        catalog.update_material(s, d, a.id, {"pack_name": "флакон", "pack_size": 500})  # упаковку — можна
+        assert stock.material_public(a)["stock_packs"] == 1.0
