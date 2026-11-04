@@ -214,11 +214,11 @@ function toggleTheme() {
 }
 try { applyTheme(localStorage.getItem("mds_theme") || "light"); } catch (_) { applyTheme("light"); }
 
-function toast(msg, err = false) {
+function toast(msg, err = false, ms = null) {
   document.querySelectorAll(".toast").forEach((t) => t.remove());
   const t = h("div", { class: "toast" + (err ? " err" : ""), role: "status" }, icon(err ? "alert" : "ok", "sm"), msg);
   document.body.append(t);
-  setTimeout(() => t.remove(), err ? 4500 : 2600);
+  setTimeout(() => t.remove(), ms || (err ? 4500 : 2600));
 }
 
 async function run(fn, okMsg) {
@@ -403,7 +403,51 @@ function openSheet(title, ...content) {
   unfitSheet = fitToKeyboard(ov);
   return ov;
 }
-function closeSheet() { unfitSheet(); unfitSheet = () => {}; const o = document.getElementById("overlay"); if (o) o.remove(); }
+function closeSheet() {
+  unfitSheet(); unfitSheet = () => {};
+  const o = document.getElementById("overlay");
+  if (o) o.remove();
+  if (liveSync.pending) setTimeout(liveRefresh, 50); // зміни прийшли, поки було відкрите вікно
+}
+
+// ---------- Живе оновлення: нові записи з бота/сайту/від колег з'являються без «Оновити»
+// Сторінка раз на 15 с питає /api/sync; якщо змінилось те, що вона показує, — тихо перемальовується
+// (не під час заповнення форми чи відкритого вікна — тоді після закриття).
+const VIEW_ENTITIES = {
+  today: ["appointment", "order", "shift"], calendar: ["appointment", "order", "callback"], dashboard: ["order", "expense", "payout", "appointment"],
+  orders: ["order"], shifts: ["shift", "payout", "order"], stock: ["material"], clients: ["client", "appointment"],
+  expenses: ["expense"], schedule: ["schedule", "user", "appointment"], earnings: ["order", "payout"], shift: ["shift", "order"],
+};
+const liveSync = { rev: null, pending: false, busy: false };
+function liveRefresh() {
+  if (!state.user) return;
+  const typing = document.activeElement && document.activeElement.closest && document.activeElement.closest(".main input, .main textarea, .main select");
+  if (document.getElementById("overlay") || typing) { liveSync.pending = true; return; }
+  liveSync.pending = false;
+  const y = window.scrollY;
+  Promise.resolve(renderApp()).then(() => window.scrollTo(0, y));
+}
+async function liveTick() {
+  if (!state.user || document.hidden || liveSync.busy) return;
+  liveSync.busy = true;
+  try {
+    const r = await api.get("/api/sync" + (liveSync.rev !== null ? "?since=" + liveSync.rev : ""));
+    if (liveSync.rev !== null && r.rev > liveSync.rev) {
+      const n = r.new || [];
+      if (n.length === 1) {
+        const a = n[0];
+        toast(`🆕 Новий запис${a.source === "telegram" ? " з Telegram" : a.source === "site" ? " з сайту" : ""}: ${a.client_name}, ${dm(a.starts_at)} о ${hm(a.starts_at)}`, false, 8000);
+      } else if (n.length > 1) toast(`🆕 Нових записів: ${n.length}`, false, 8000);
+      const ents = VIEW_ENTITIES[currentRoute()] || [];
+      if ((r.entities || []).some((e) => e === "*" || ents.includes(e))) liveRefresh();
+    }
+    liveSync.rev = r.rev;
+  } catch (_) { /* немає зв'язку — спробуємо наступного разу */ } finally {
+    liveSync.busy = false;
+  }
+}
+setInterval(liveTick, 15000);
+document.addEventListener("visibilitychange", () => { if (!document.hidden) liveTick(); });
 document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeSheet(); });
 // Масштабування сторінки вимкнено: програма має виглядати як застосунок
 ["gesturestart", "gesturechange", "gestureend"].forEach((ev) => document.addEventListener(ev, (e) => e.preventDefault(), { passive: false }));
@@ -481,6 +525,8 @@ async function boot() {
   await loadRefs();
   window.onhashchange = renderApp;
   renderApp();
+  liveSync.rev = null;
+  liveTick();
 }
 
 async function loadRefs() {
@@ -1173,6 +1219,14 @@ VIEWS.today = async (main) => {
   const pend = await pendingBlock(reload);
   if (pend) main.querySelector(".topbar").after(pend);
   if (!active.length) { main.append(h("div", { class: "card" }, emptyState("На сьогодні записів немає", "calendar"))); return; }
+  // угорі — запис, з яким зараз працювати: той, що триває / вже настав, або найближчий
+  const focus = focusAppt(active);
+  if (focus) main.querySelector(".topbar").after(nowCard(focus)); // найвище — вище за непідтверджені
+  const focusId = focus?.id;
+  const tick = setInterval(() => { // о 13:00 картка сама переходить на наступного клієнта
+    if (!main.isConnected) return clearInterval(tick);
+    if (focusAppt(active)?.id !== focusId && !document.getElementById("overlay")) { clearInterval(tick); reload(); }
+  }, 30000);
   for (const a of active) {
     const done = a.status === "completed";
     main.append(h("div", { class: `card appt st-b-${a.status}` + (done ? " done" : ""), onclick: () => (done ? null : apptSheet(a, reload)) },
@@ -1185,6 +1239,38 @@ VIEWS.today = async (main) => {
         h("button", { class: "btn primary", onclick: (e) => { e.stopPropagation(); closeOrderSheet(a, reload); } }, icon("banknote", "sm"), "Закрити")));
   }
 };
+
+// запис «зараз»: клієнт уже прийшов → той, чий час настав (до кінця) → найближчий наступний
+function focusAppt(list) {
+  const now = new Date();
+  const t = (iso) => new Date(iso);
+  const open = list.filter((a) => !["completed", "cancelled", "no_show"].includes(a.status));
+  return open.find((a) => a.status === "in_progress")
+    || open.find((a) => t(a.starts_at) <= now && now < t(a.ends_at))
+    || open.filter((a) => t(a.starts_at) > now).sort((x, y) => x.starts_at.localeCompare(y.starts_at))[0]
+    || open.filter((a) => t(a.ends_at) <= now).sort((x, y) => y.starts_at.localeCompare(x.starts_at))[0] // минув, але не закритий
+    || null;
+}
+function nowCard(a) {
+  const now = new Date(), st = new Date(a.starts_at), en = new Date(a.ends_at);
+  const mins = Math.round((st - now) / 60000);
+  const label = a.status === "in_progress" ? "Зараз у кріслі"
+    : st <= now && now < en ? "Зараз · час запису настав"
+      : en <= now ? "Не закрито — час минув"
+        : mins <= 60 ? `Наступний · через ${mins} хв` : `Наступний · о ${hm(a.starts_at)}`;
+  const urgent = st <= now;
+  return h("div", { class: "card now-card" + (urgent ? " urgent" : "") },
+    h("div", { class: "now-top" }, h("span", { class: "now-label" }, h("i", { class: "pulse" }), label), chip(a.status)),
+    h("div", { class: "now-main", onclick: () => apptSheet(a, reload) },
+      h("div", { class: "now-time" }, hm(a.starts_at), h("small", {}, "до " + hm(a.ends_at))),
+      h("div", { class: "grow" }, h("div", { class: "now-client" }, a.client.name), h("div", { class: "muted" }, a.service_name, " · ", money(a.price)),
+        a.comment ? h("div", { class: "small muted" }, icon("edit", "sm"), " ", a.comment) : null)),
+    h("div", { class: "now-actions" },
+      a.status !== "in_progress" ? h("button", { class: "btn", onclick: async () => { await run(() => api.post(`/api/appointments/${a.id}/status`, { status: "in_progress" }), "Клієнта прийнято"); reload(); } },
+        icon("play", "sm"), "Клієнт прийшов") : null,
+      h("button", { class: "btn primary", onclick: () => closeOrderSheet(a, reload) }, icon("banknote", "sm"), "Закрити замовлення"),
+      h("a", { class: "btn", href: "tel:" + a.client.phone }, icon("phone", "sm"), "Подзвонити")));
+}
 
 // ---------- Календар
 VIEWS.calendar = async (main) => {

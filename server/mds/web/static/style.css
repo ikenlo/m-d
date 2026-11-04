@@ -900,3 +900,21 @@ a.bar-row:hover .bar-track i { filter: brightness(1.1); }
 .chip.mv-order { background: var(--info-bg); color: var(--info); }
 .chip.mv-writeoff { background: var(--danger-bg); color: var(--danger); }
 .chip.mv-adjust, .chip.mv-order_return { background: var(--muted-bg); color: var(--ink-2); }
+
+/* ================================================================ 0.1.30: «Зараз / Наступний» у майстра */
+.now-card { margin-bottom: 16px; border: 1px solid rgba(180, 138, 62, .45); background: linear-gradient(180deg, var(--gold-tint), var(--surface) 75%); display: flex; flex-direction: column; gap: 12px; }
+.now-card.urgent { border-color: var(--brand-2); box-shadow: 0 0 0 3px var(--gold-tint), var(--shadow); }
+.now-top { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.now-label { display: inline-flex; align-items: center; gap: 8px; font-size: 12.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--gold); }
+.now-label .pulse { width: 9px; height: 9px; border-radius: 50%; background: var(--gold); animation: now-pulse 1.6s ease-in-out infinite; }
+.now-card.urgent .now-label { color: var(--brand-2); }
+:root[data-theme="dark"] .now-card.urgent .now-label { color: var(--gold); }
+.now-card.urgent .now-label .pulse { background: var(--danger); }
+@keyframes now-pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(180, 138, 62, .5); } 50% { box-shadow: 0 0 0 7px rgba(180, 138, 62, 0); } }
+.now-main { display: flex; gap: 16px; align-items: center; cursor: pointer; }
+.now-time { font-size: 30px; font-weight: 800; letter-spacing: -.03em; line-height: 1; }
+.now-time small { display: block; font-size: 12px; font-weight: 600; color: var(--ink-3); letter-spacing: 0; margin-top: 4px; }
+.now-client { font-size: 18px; font-weight: 700; }
+.now-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.now-actions .btn { flex: 1 1 auto; }
+@media (max-width: 600px) { .now-actions .btn { flex: 1 1 45%; } .now-actions .btn.primary { flex-basis: 100%; order: -1; min-height: 46px; } }

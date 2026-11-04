@@ -72,3 +72,8 @@
 `GET /api/public/slots?date=&service=&master=`, `POST /api/public/bookings` — без авторизації, вимкнено до
 відкриття (`public_booking_enabled`), CORS лише для `MDS_PUBLIC_ORIGINS`. Повний контракт, коди помилок і правила
 захисту від спаму — `site/docs/api.md`. Блокування клієнта: `PATCH /api/clients/{id}` `{blocked, blocked_reason}`.
+
+## Живе оновлення
+
+`GET /api/sync?since=<rev>` (персонал) → `{rev, entities: [...], new: [{id, client_name, starts_at, service_name, master_name, source, status}]}`.
+`rev` — останній id журналу змін; `entities` — що змінили інші користувачі; `new` — нові записи (майстру — лише свої).
