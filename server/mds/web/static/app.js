@@ -105,7 +105,7 @@ const MAT_MODES = {
   master: "Матеріали за рахунок майстра",
   split: "Матеріали ділимо пропорційно",
 };
-const EXP_CAT = { rent: "Оренда", utilities: "Комунальні", advertising: "Реклама", materials: "Закупівля матеріалів", other: "Інше" };
+const EXP_CAT = { rent: "Оренда", utilities: "Комунальні", advertising: "Реклама", materials: "Закупівля матеріалів", fuel: "Пальне (закупівля)", other: "Інше" };
 
 const chip = (st, map = STATUS) => h("span", { class: "chip st-" + st }, map[st] || st);
 
@@ -388,21 +388,22 @@ function confirmSheet(title, text, okText, onOk, { danger = false, withReason = 
 const NAV = {
   master: [
     ["today", "clock", "Сьогодні"], ["calendar", "calendar", "Календар"], ["earnings", "wallet", "Заробіток"],
-    ["shift", "check", "Зміна"], ["profile", "user", "Профіль"],
+    ["shift", "check", "Зміна"], ["generator", "zap", "Генератор"], ["profile", "user", "Профіль"],
   ],
   admin: [["calendar", "calendar", "Календар", "Робота"], ["schedule", "clock", "Графік роботи", "Робота"], ["clients", "users", "Клієнти", "Робота"],
-    ["stock", "box", "Склад", "Робота"], ["profile", "user", "Профіль"]],
+    ["stock", "box", "Склад", "Робота"], ["generator", "zap", "Генератор", "Робота"], ["profile", "user", "Профіль"]],
   director: [
     ["dashboard", "chart", "Огляд", "Огляд"],
     ["calendar", "calendar", "Календар", "Робота"], ["schedule", "clock", "Графік роботи", "Робота"], ["clients", "users", "Клієнти", "Робота"],
     ["stock", "box", "Склад", "Робота"],
-    ["orders", "receipt", "Замовлення", "Фінанси"], ["shifts", "banknote", "Зміни й виплати", "Фінанси"], ["expenses", "wallet", "Витрати", "Фінанси"],
+    ["orders", "receipt", "Замовлення", "Фінанси"], ["shifts", "banknote", "Зміни й виплати", "Фінанси"], ["expenses", "wallet", "Витрати", "Фінанси"], ["utilities", "zap", "Комунальні і генератор", "Фінанси"],
     ["staff", "user", "Персонал", "Салон"], ["catalog", "scissors", "Послуги", "Салон"],
     ["settings", "settings", "Налаштування", "Салон"], ["journal", "book", "Журнал", "Салон"],
     ["profile", "user", "Профіль"],
   ],
 };
-const MOBILE_TABS = { director: ["dashboard", "calendar", "orders", "stock", "more"], admin: ["calendar", "schedule", "stock", "clients", "profile"] };
+const MOBILE_TABS = { director: ["dashboard", "calendar", "orders", "stock", "more"], admin: ["calendar", "schedule", "stock", "clients", "more"],
+  master: ["today", "calendar", "earnings", "shift", "more"] };
 
 function currentRoute() { return (location.hash.replace(/^#\/?/, "") || "").split("?")[0]; }
 
@@ -1062,6 +1063,7 @@ VIEWS.earnings = async (main) => {
   main.append(h("div", { class: "card", style: { marginTop: "12px" } },
     h("div", { class: "sum-line" }, h("span", {}, "Нараховано за весь час"), h("b", {}, money(my.balance.accrued))),
     h("div", { class: "sum-line" }, h("span", {}, "Виплачено"), h("b", {}, money(my.balance.paid))),
+    my.balance.charged ? h("div", { class: "sum-line" }, h("span", {}, "Списано: комунальні / генератор"), h("b", {}, "− " + money(my.balance.charged))) : null,
     h("div", { class: "progress", style: { margin: "6px 0" } }, h("div", { style: { width: paidShare + "%" } })),
     h("div", { class: "sum-line total" }, h("span", {}, "Залишок до виплати"), h("span", {}, money(my.balance.balance)))));
   main.append(h("div", { class: "section" }, h("h2", {}, "Замовлення цього місяця")));
@@ -1359,6 +1361,218 @@ function insightsBlock(ins) {
     h("div", { class: "section", style: { marginTop: "4px" } }, h("h2", {}, "Аналітика і прогноз")),
     h("div", { class: "grid two" }, forecastCard, checkCard, clientsCard, weekCard));
 }
+
+// ---------- Комунальні і генератор (директор) / Генератор (персонал)
+const MONTHS_UA = ["Січень", "Лютий", "Березень", "Квітень", "Травень", "Червень", "Липень", "Серпень", "Вересень", "Жовтень", "Листопад", "Грудень"];
+const monthTitle = (iso) => `${MONTHS_UA[+iso.slice(5, 7) - 1]} ${iso.slice(0, 4)}`;
+const addMonths = (iso, n) => { const d = new Date(iso.slice(0, 7) + "-01T12:00"); d.setMonth(d.getMonth() + n); return isoDate(d).slice(0, 7) + "-01"; };
+const fmtH = (h) => { const m = Math.round(h * 60); return `${Math.floor(m / 60)} год ${m % 60} хв`; };
+
+function generatorCard(g, onChange) {
+  const r = g.running;
+  const outage = h("input", { type: "checkbox", checked: true });
+  const toggle = h("button", {
+    class: "gen-switch " + (r ? "on" : "off"), "aria-pressed": String(!!r),
+    onclick: async () => {
+      if (r) await run(() => api.post("/api/generator/stop"), "Генератор вимкнено");
+      else await run(() => api.post("/api/generator/start", { power_outage: outage.checked }), "Генератор увімкнено");
+      onChange();
+    },
+  }, h("span", { class: "knob" }), h("b", {}, r ? "ON" : "OFF"));
+  return h("div", { class: "card gen-card" + (r ? " running" : "") },
+    h("div", { class: "row", style: { alignItems: "center", gap: "16px" } }, toggle,
+      h("div", { class: "grow" }, h("h3", {}, r ? "Генератор працює" : "Генератор вимкнено"),
+        h("div", { class: "muted small" }, r ? `з ${hm(r.started_at)} · ${fmtH(r.hours)}${r.power_outage ? " · без світла" : ""}` : `Мотогодини: ${fmtNum(g.motohours)}`))),
+    r ? h("div", { class: "row small", style: { flexWrap: "wrap", gap: "14px", marginTop: "10px" } },
+      h("span", {}, "Бензин: ", h("b", {}, fmtNum(r.fuel_l) + " л")),
+      g.forecast !== undefined ? h("span", {}, "Вартість зараз: ", h("b", {}, money(r.total_cost))) : null,
+      h("span", {}, "Мотогодини: ", h("b", {}, fmtNum(g.motohours)))) : h("label", { class: "row small", style: { marginTop: "10px" } }, outage, "Світла немає (увімкнули через відключення)"),
+    !g.configured && g.forecast !== undefined ? h("div", { class: "callout", style: { marginTop: "10px" } }, icon("alert"),
+      h("div", { class: "small" }, "Задайте витрату бензину, ціну й амортизацію в налаштуваннях генератора нижче — інакше вартість буде 0.")) : null);
+}
+
+VIEWS.generator = async (main) => {
+  // адміністратор і майстри: лише перемикач (світло зникло — увімкнути може будь-хто)
+  main.append(topbar("Генератор", "Увімкніть, коли запускаєте генератор, і вимкніть, коли зупиняєте — час роботи рахується сам"));
+  const box = h("div");
+  main.append(box);
+  const load = async () => box.replaceChildren(generatorCard(await api.get("/api/generator"), load));
+  await load();
+  const timer = setInterval(() => { if (!box.isConnected) clearInterval(timer); else load(); }, 60000);
+};
+
+VIEWS.utilities = async (main) => {
+  const params = new URLSearchParams(location.hash.split("?")[1] || "");
+  const month = params.get("m") || today().slice(0, 7) + "-01";
+  const go = (m) => { location.hash = "#/utilities?m=" + m; };
+  main.append(topbar("Комунальні і генератор", monthTitle(month),
+    h("button", { class: "btn", "aria-label": "Попередній місяць", onclick: () => go(addMonths(month, -1)) }, icon("left", "sm")),
+    h("button", { class: "btn", onclick: () => go(today().slice(0, 7) + "-01") }, "Цей місяць"),
+    h("button", { class: "btn", "aria-label": "Наступний місяць", onclick: () => go(addMonths(month, 1)) }, icon("right", "sm"))));
+  const [g, sum, readings, runs, prev, charges] = await Promise.all([
+    api.get("/api/generator"), api.get("/api/utilities/summary?month=" + month), api.get("/api/utilities/readings"),
+    api.get("/api/generator/runs?month=" + month), api.get("/api/utilities/allocation?month=" + month), api.get("/api/utilities/charges?month=" + month)]);
+  const st = state.settings || {};
+  const genBox = h("div");
+  const drawGen = async () => genBox.replaceChildren(generatorCard(await api.get("/api/generator"), reload));
+  genBox.append(generatorCard(g, reload));
+  const timer = setInterval(() => { if (!genBox.isConnected) clearInterval(timer); else if (genBox.querySelector(".running")) drawGen(); }, 60000);
+
+  // ---- підсумки місяця
+  const e = sum.electricity, gen = sum.generator;
+  const kpis = h("div", { class: "grid kpi", style: { marginTop: "12px" } },
+    kpi("Електроенергія", e.cost, "", { ico: "zap", sub: `${fmtNum(e.kwh)} кВт·год${e.has_reading && !e.confirmed ? " · не підтверджено" : ""}` }),
+    kpi("Генератор", gen.total, "", { ico: "zap", sub: `${fmtNum(gen.hours)} мотогод. · ${fmtNum(gen.fuel_l)} л` }),
+    kpi("Разом витрати", sum.total, "dark", { ico: "wallet", sub: sum.charged_to_masters ? `з майстрів ${money(sum.charged_to_masters)}` : "" }),
+    kpi("Вплив на чистий прибуток", sum.net_impact, "accent", { ico: "trend", sub: "витрати мінус компенсація майстрів" }));
+  const detail = h("div", { class: "card" }, h("div", { class: "card-head" }, h("h3", {}, "Деталі місяця")),
+    h("div", { class: "sum-line" }, h("span", {}, "Електроенергія"), h("span", {}, `${fmtNum(e.kwh)} кВт·год × ${e.tariff ? money(e.tariff) : "—"}`), h("b", {}, money(e.cost))),
+    e.paid !== null ? h("div", { class: "sum-line muted" }, h("span", {}, "Фактично сплачено"), h("span", {}, money(e.paid))) : null,
+    h("div", { class: "sum-line" }, h("span", {}, "Бензин"), h("span", {}, fmtNum(gen.fuel_l) + " л"), h("b", {}, money(gen.fuel_cost))),
+    h("div", { class: "sum-line" }, h("span", {}, "Амортизація генератора"), h("span", {}, fmtNum(gen.hours) + " мотогод."), h("b", {}, money(gen.amort_cost))),
+    h("div", { class: "sum-line total" }, h("span", {}, "Разом"), h("b", {}, money(sum.total))),
+    sum.by_master.map((m) => h("div", { class: "sum-line" }, h("span", { class: "muted" }, "− списано: " + m.master_name), h("span", {}, money(m.amount)))),
+    sum.other_utilities ? h("p", { class: "muted small" }, `Інші комунальні витрати (внесені вручну): ${money(sum.other_utilities)}`) : null,
+    g.forecast ? h("p", { class: "muted small" }, `Прогноз генератора на місяць: ${fmtNum(g.forecast.projected_hours)} мотогод. ≈ ${money(g.forecast.projected_cost)} (за поточної вартості години ${money(g.forecast.hour_cost)}).`) : null);
+
+  // ---- електроенергія
+  const cur = readings.find((r) => r.month === month);
+  const elecCard = h("div", { class: "card stack" }, h("div", { class: "card-head" }, h("h3", {}, "Лічильник електроенергії"),
+    cur ? h("span", { class: "chip " + (cur.confirmed ? "st-completed" : "st-pending") }, cur.confirmed ? "підтверджено" : "не підтверджено") : null),
+    cur ? h("div", { class: "stack" },
+      h("div", { class: "sum-line" }, h("span", {}, "Показники"), h("b", {}, `${fmtNum(cur.prev)} → ${fmtNum(cur.curr)} = ${fmtNum(cur.used)} кВт·год`)),
+      h("div", { class: "sum-line" }, h("span", {}, "Тариф"), h("b", {}, money(cur.tariff) + " / кВт·год")),
+      h("div", { class: "sum-line total" }, h("span", {}, "Вартість"), h("b", {}, money(cur.cost))),
+      cur.paid_amount !== null ? h("div", { class: "sum-line" }, h("span", {}, "Сплачено"), h("b", {}, money(cur.paid_amount)),
+        cur.difference ? h("span", { class: "muted small" }, cur.difference > 0 ? ` переплата ${money(cur.difference)}` : ` борг ${money(-cur.difference)}`) : null) : null,
+      h("div", { class: "row" },
+        !cur.confirmed ? h("button", { class: "btn primary", onclick: () => confirmSheet("Підтвердити електроенергію?", `${money(cur.cost)} стане витратою «Комунальні» за ${monthTitle(month).toLowerCase()}.`, "Підтвердити",
+          async () => { await run(() => api.post(`/api/utilities/readings/${cur.id}/confirm`), "Підтверджено"); reload(); }) }, "Підтвердити") : null,
+        h("button", { class: "btn", onclick: () => readingForm(cur) }, icon("edit", "sm"), "Редагувати")))
+      : h("div", { class: "stack" }, h("p", { class: "muted" }, "Показники за цей місяць ще не внесено."),
+        h("button", { class: "btn primary", onclick: () => readingForm(null) }, icon("plus", "sm"), "Внести показники")));
+  function readingForm(r) {
+    const last = readings.find((x) => x.month < month);
+    const prevIn = h("input", { inputmode: "decimal", value: r ? r.prev : (last ? last.curr : ""), placeholder: "кВт·год" });
+    const currIn = h("input", { inputmode: "decimal", value: r ? r.curr : "", placeholder: "кВт·год" });
+    const tariffIn = h("input", { inputmode: "decimal", value: r ? kopToInput(r.tariff) : (last ? kopToInput(last.tariff) : ""), placeholder: "напр. 4,32" });
+    const readOn = h("input", { type: "date", value: r ? r.read_on : today() });
+    const paid = h("input", { inputmode: "decimal", value: r && r.paid_amount !== null ? kopToInput(r.paid_amount) : "", placeholder: "можна пізніше" });
+    const reason = h("input", { placeholder: "обов'язково, якщо місяць підтверджено" });
+    const preview = h("div", { class: "sum-line total" });
+    const calc = () => {
+      const used = parseFloat(String(currIn.value).replace(",", ".")) - parseFloat(String(prevIn.value).replace(",", "."));
+      const t = toKop(tariffIn.value);
+      preview.replaceChildren(h("span", {}, used >= 0 ? `${fmtNum(used)} кВт·год` : "Перевірте показники"), h("b", {}, used >= 0 && t > 0 ? money(Math.round(used * t)) : "—"));
+    };
+    [prevIn, currIn, tariffIn].forEach((x) => x.addEventListener("input", calc));
+    calc();
+    openSheet(r ? "Показники: " + monthTitle(month) : "Нові показники: " + monthTitle(month), h("div", { class: "stack" },
+      h("div", { class: "form-grid" }, field("Попередній показник", prevIn), field("Поточний показник", currIn)),
+      h("div", { class: "form-grid" }, field("Ціна за 1 кВт·год, ₴", tariffIn), field("Дата зняття", readOn)),
+      preview, field("Фактично сплачено, ₴", paid), r && r.confirmed ? field("Причина виправлення", reason) : null,
+      h("button", { class: "btn primary big", onclick: async () => {
+        const body = { prev: prevIn.value.replace(",", "."), curr: currIn.value.replace(",", "."), tariff: toKop(tariffIn.value), read_on: readOn.value,
+          paid_amount: paid.value.trim() ? toKop(paid.value) : null };
+        if (!(body.tariff > 0)) return toast("Вкажіть ціну за 1 кВт·год", true);
+        if (r) await run(() => api.patch(`/api/utilities/readings/${r.id}`, { ...body, reason: reason.value.trim() || null }), "Збережено");
+        else await run(() => api.post("/api/utilities/readings", { ...body, month }), "Показники внесено");
+        closeSheet(); reload();
+      } }, "Зберегти")));
+  }
+
+  // ---- запуски генератора
+  const runsCard = h("div", { class: "card" }, h("div", { class: "card-head" }, h("h3", {}, "Запуски генератора"),
+    h("button", { class: "btn sm", onclick: () => runForm() }, icon("plus", "sm"), "Додати вручну")),
+    runs.length ? h("div", { class: "table-wrap" }, h("table", {},
+      h("tr", {}, h("th", {}, "Початок"), h("th", { class: "num" }, "Мотогод."), h("th", { class: "num" }, "Бензин"), h("th", { class: "num m-hide" }, "Амортизація"), h("th", { class: "num" }, "Разом"), h("th", {}, "")),
+      runs.map((x) => h("tr", {}, h("td", {}, dm(x.started_at), " ", hm(x.started_at), x.running ? h("span", { class: "chip st-in_progress", style: { marginLeft: "6px" } }, "працює") : null,
+        x.corrected ? h("span", { class: "chip plain", style: { marginLeft: "6px" } }, "виправлено") : null),
+        h("td", { class: "num" }, fmtNum(x.hours)), h("td", { class: "num" }, `${fmtNum(x.fuel_l)} л · ${money(x.fuel_cost)}`), h("td", { class: "num" }, money(x.amort_cost)),
+        h("td", { class: "num" }, h("b", {}, money(x.total_cost))),
+        h("td", { class: "right" }, x.running ? null : h("button", { class: "btn sm ghost", "aria-label": "Виправити", onclick: () => runForm(x) }, icon("edit", "sm")))))))
+      : emptyState("Генератор цього місяця не вмикали", "zap"));
+  function runForm(x) {
+    const hours = h("input", { inputmode: "decimal", value: x ? x.hours : "", placeholder: "напр. 2,5" });
+    const start = h("input", { type: "datetime-local", value: (x ? x.started_at : today() + "T10:00").slice(0, 16) });
+    const fuelPrice = h("input", { inputmode: "decimal", value: x ? kopToInput(x.fuel_price) : "" });
+    const fuelCost = h("input", { inputmode: "decimal", placeholder: "лише якщо відома точна сума (чек АЗС)" });
+    const reason = h("input", { placeholder: "обов'язково" });
+    openSheet(x ? "Виправити запуск" : "Додати запуск вручну", h("div", { class: "stack" },
+      x ? null : field("Початок", start), field("Мотогодини", hours),
+      x ? h("div", { class: "form-grid" }, field("Ціна бензину, ₴/л", fuelPrice), field("Бензин, ₴ (вручну)", fuelCost)) : null,
+      x ? field("Причина", reason) : h("p", { class: "muted small" }, "Ціна бензину й амортизація — з поточних налаштувань."),
+      h("button", { class: "btn primary big", onclick: async () => {
+        const hv = hours.value.replace(",", ".");
+        if (x) {
+          const body = { hours: hv || null, reason: reason.value.trim() };
+          if (fuelPrice.value.trim()) body.fuel_price = toKop(fuelPrice.value);
+          if (fuelCost.value.trim()) body.fuel_cost = toKop(fuelCost.value);
+          await run(() => api.patch(`/api/generator/runs/${x.id}`, body), "Запуск виправлено");
+        } else await run(() => api.post("/api/generator/runs", { started_at: start.value, hours: hv }), "Запуск додано");
+        closeSheet(); reload();
+      } }, "Зберегти")));
+  }
+
+  // ---- налаштування генератора
+  const lph = h("input", { inputmode: "decimal", value: (st.generator_fuel_lph_milli || 0) / 1000 });
+  const price = h("input", { inputmode: "decimal", value: kopToInput(st.generator_fuel_price || 0) });
+  const amort = h("input", { inputmode: "decimal", value: kopToInput(st.generator_amort_per_hour || 0) });
+  const moto = h("input", { inputmode: "decimal", value: g.motohours });
+  const genSettings = h("div", { class: "card stack" }, h("h3", {}, "Налаштування генератора"),
+    h("div", { class: "form-grid" }, field("Витрата бензину, л/год", lph), field("Ціна бензину, ₴/л", price), field("Амортизація, ₴/мотогод.", amort)),
+    h("p", { class: "muted small" }, `Вартість години зараз: ${money(g.settings.hour_cost)}. Нові значення діють для наступних запусків — минулі не перераховуються.`),
+    h("button", { class: "btn primary", onclick: async () => {
+      const body = { generator_fuel_lph_milli: Math.round(parseFloat(lph.value.replace(",", ".")) * 1000) || 0,
+        generator_fuel_price: toKop(price.value) || 0, generator_amort_per_hour: toKop(amort.value) || 0 };
+      state.settings = await run(() => api.put("/api/settings", body), "Налаштування збережено"); reload();
+    } }, "Зберегти"),
+    h("div", { class: "form-grid" }, field("Поточні мотогодини (за лічильником генератора)", moto),
+      h("button", { class: "btn", style: { alignSelf: "end" }, onclick: async () => { await run(() => api.post("/api/generator/motohours", { current: moto.value.replace(",", ".") }), "Мотогодини звірено"); reload(); } }, "Звірити")));
+
+  // ---- розподіл між майстрами
+  const mode = st.utilities_charge_mode || "none";
+  const split = select([["revenue", "пропорційно виручці"], ["equal", "порівну"]], st.utilities_split || "revenue");
+  const share = h("input", { type: "number", min: 0, max: 100, step: 1, value: (st.utilities_charge_share_bp ?? 10000) / 100 });
+  const fixedAmt = h("input", { inputmode: "decimal", value: kopToInput(st.utilities_fixed_amount || 0) });
+  const fixedPer = select([["shift", "за зміну"], ["month", "за місяць"]], st.utilities_fixed_per || "shift");
+  let newMode = mode;
+  const modeBox = h("div", { class: "stack" });
+  const drawMode = () => modeBox.replaceChildren(...[
+    newMode === "month_end" ? h("div", { class: "form-grid" }, field("Як ділити", split), field("Яку частку витрат розподіляти, %", share)) : null,
+    newMode === "fixed" ? h("div", { class: "form-grid" }, field("Сума з майстра, ₴", fixedAmt), field("Списувати", fixedPer)) : null,
+    newMode === "fixed" ? h("p", { class: "muted small" }, "Сума автоматично віднімається від заробітку майстра при закритті зміни (або раз на місяць — при першій закритій зміні місяця).") : null,
+    newMode === "month_end" ? h("p", { class: "muted small" }, "Після завершення місяця натисніть «Розподілити» — сума електроенергії й генератора поділиться між майстрами.") : null,
+  ].filter(Boolean));
+  drawMode();
+  const ended = addMonths(month, 1) <= today();
+  const allocCard = h("div", { class: "card stack" }, h("h3", {}, "Розподіл витрат між майстрами"),
+    seg([["none", "Не списувати"], ["month_end", "Наприкінці місяця"], ["fixed", "Фіксована ставка"]], mode, (v) => { newMode = v; drawMode(); }),
+    modeBox,
+    h("button", { class: "btn primary", onclick: async () => {
+      const body = { utilities_charge_mode: newMode, utilities_split: split.value, utilities_charge_share_bp: Math.round(parseFloat(share.value || "0") * 100),
+        utilities_fixed_amount: toKop(fixedAmt.value) || 0, utilities_fixed_per: fixedPer.value };
+      state.settings = await run(() => api.put("/api/settings", body), "Спосіб розподілу збережено"); reload();
+    } }, "Зберегти спосіб розподілу"),
+    mode === "month_end" ? h("div", { class: "stack", style: { borderTop: "1px solid var(--line)", paddingTop: "12px" } },
+      h("b", {}, `${monthTitle(month)}: до розподілу ${money(prev.to_split)}`),
+      prev.rows.map((r) => h("div", { class: "sum-line" }, h("span", {}, r.master_name, h("span", { class: "muted small" }, ` · виручка ${money(r.revenue)}`)), h("b", {}, money(r.amount)))),
+      prev.already_charged ? h("p", { class: "muted small" }, `За цей місяць уже списано ${money(prev.already_charged)}.`) : null,
+      !prev.costs.electricity_confirmed ? h("p", { class: "muted small" }, "Електроенергію за місяць ще не підтверджено — вона не увійде в розподіл.") : null,
+      h("div", { class: "row" },
+        !prev.already_charged ? h("button", { class: "btn primary", disabled: !ended || !prev.to_split || null, onclick: () => confirmSheet("Розподілити витрати?",
+          `${money(prev.to_split)} буде списано з майстрів за ${monthTitle(month).toLowerCase()}. Повторно за цей місяць списати не можна.`, "Розподілити",
+          async () => { await run(() => api.post("/api/utilities/allocate", { month }), "Розподілено"); reload(); }) }, ended ? "Розподілити" : "Доступно після завершення місяця") : null,
+        prev.already_charged ? h("button", { class: "btn danger", onclick: () => confirmSheet("Скасувати списання за місяць?", "Буде створено сторно; після цього можна розподілити знову.", "Скасувати списання",
+          async (reason) => { await run(() => api.post("/api/utilities/reverse", { month, reason }), "Списання скасовано"); reload(); }, { danger: true, withReason: true }) }, "Скасувати списання") : null)) : null,
+    charges.length ? h("details", {}, h("summary", { class: "small" }, `Списання за місяць (${charges.length})`),
+      charges.map((c) => h("div", { class: "sum-line small" }, h("span", {}, `${dm(c.charged_on)} · ${c.master_name}`, c.reversed ? h("span", { class: "muted" }, " (скасовано)") : null), h("span", {}, money(c.amount))))) : null);
+
+  main.append(genBox, kpis,
+    h("div", { class: "grid two", style: { marginTop: "12px" } }, detail, elecCard),
+    h("div", { style: { marginTop: "12px" } }, runsCard),
+    h("div", { class: "grid two", style: { marginTop: "12px" } }, allocCard, genSettings));
+};
 
 // ---------- Зміни й виплати
 VIEWS.shifts = async (main) => {

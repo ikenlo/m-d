@@ -139,6 +139,17 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "favorite_master_visits": 3,
     # нагадування клієнтам у Telegram за добу і за 2 години (лише тим, хто погодився)
     "reminders_enabled": True,
+    # ---- генератор (значення діють для НОВИХ запусків; минулі зберігають свої)
+    "generator_fuel_lph_milli": 0,  # витрата бензину, л/год × 1000 (1500 = 1,5 л/год)
+    "generator_fuel_price": 0,  # ціна бензину, копійок за 1 л
+    "generator_amort_per_hour": 0,  # амортизація, копійок за 1 мотогодину
+    "generator_hours_initial_milli": 0,  # мотогодини на момент початку обліку × 1000
+    # ---- розподіл комунальних і генератора між майстрами
+    "utilities_charge_mode": "none",  # none | month_end | fixed
+    "utilities_split": "revenue",  # month_end: revenue (пропорційно виручці) | equal (порівну)
+    "utilities_charge_share_bp": 10000,  # яку частку витрат розподіляти (10000 = 100%)
+    "utilities_fixed_amount": 0,  # fixed: сума, копійки
+    "utilities_fixed_per": "shift",  # fixed: shift (за зміну) | month (за місяць)
     "salon_address": "",
     "salon_phone": "",
     "salon_instagram": "",
@@ -204,6 +215,19 @@ def update_settings(s: Session, actor: Actor, data: dict[str, Any]) -> dict[str,
             raise ValidationError("Код персоналу: від 4 до 8 цифр")
         if key in ("salon_address", "salon_phone", "salon_instagram", "salon_name") and not isinstance(value, str):
             raise ValidationError(f"{key}: очікується текст")
+        if key in ("generator_fuel_lph_milli", "generator_fuel_price", "generator_amort_per_hour",
+                   "generator_hours_initial_milli", "utilities_fixed_amount") and not (
+            isinstance(value, int) and not isinstance(value, bool) and 0 <= value <= 10**12
+        ):
+            raise ValidationError(f"{key}: очікується ціле невід'ємне число")
+        if key == "utilities_charge_share_bp" and not (isinstance(value, int) and 0 <= value <= 10_000):
+            raise ValidationError("Частка для розподілу — від 0 до 100%")
+        if key == "utilities_charge_mode" and value not in ("none", "month_end", "fixed"):
+            raise ValidationError("Режим списання: вимкнено, наприкінці місяця або фіксована ставка")
+        if key == "utilities_split" and value not in ("revenue", "equal"):
+            raise ValidationError("Розподіл: пропорційно виручці або порівну")
+        if key == "utilities_fixed_per" and value not in ("shift", "month"):
+            raise ValidationError("Фіксована ставка: за зміну або за місяць")
         if key == "slot_step_min" and value < 5:
             raise ValidationError("Крок слотів — щонайменше 5 хвилин")
         set_setting(s, actor, key, value)
