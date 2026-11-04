@@ -63,8 +63,12 @@ def list_appointments(
 
 
 @router.get("/availability")
-def availability(master_id: int, service_id: int, day: date, actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
-    return [t.strftime("%H:%M") for t in bookings.free_slots(s, master_id, service_id, day)]
+def availability(master_id: int, service_id: int, day: date, duration_min: int | None = None,
+                 actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
+    """Вільний час; duration_min — інша тривалість (шаблон швидкого запису: «Фарбування · 2 год»)."""
+    if duration_min is not None and not (5 <= duration_min <= 12 * 60):
+        duration_min = None
+    return [t.strftime("%H:%M") for t in bookings.free_slots(s, master_id, service_id, day, duration_min=duration_min)]
 
 
 @router.post("/appointments", status_code=201)

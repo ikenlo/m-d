@@ -700,11 +700,16 @@ function renderApp() {
       h("button", { class: "icon-btn", title: "Вийти", "aria-label": "Вийти", onclick: logout }, icon("logout"))));
 
   const tabIds = MOBILE_TABS[role] || items.map((i) => i[0]);
-  const tabbar = h("nav", { class: "tabbar" }, tabIds.map((id) => {
+  const tabLinks = tabIds.map((id) => {
     const it = items.find((i) => i[0] === id) || ["more", "more", "Ще"];
     const active = id === route || (id === "more" && !tabIds.includes(route));
     return h("a", { href: "#/" + id, class: active ? "active" : "" }, icon(it[1]), it[2]);
-  }));
+  });
+  // велика кругла «+» — швидкий запис з будь-якої сторінки (як у TikTok — по центру)
+  const plus = () => h("button", { class: "tab-plus", type: "button", "aria-label": "Швидкий запис", onclick: () => quickBook({}) }, h("span", {}, icon("plus")));
+  tabLinks.splice(Math.floor(tabLinks.length / 2), 0, plus());
+  const tabbar = h("nav", { class: "tabbar" }, tabLinks);
+  const fab = h("button", { class: "fab", type: "button", "aria-label": "Швидкий запис", title: "Швидкий запис", onclick: () => quickBook({}) }, icon("plus"));
   const main = h("main", { class: "main" });
   // телефон: закріплена шапка з суцільним фоном — вміст прокручується під нею, а не під годинником iPhone
   const title = route === "more" ? "Меню" : (items.find((i) => i[0] === route) || [])[2] || "";
@@ -717,7 +722,7 @@ function renderApp() {
     h("button", { class: "icon-btn", "aria-label": "Оновити сторінку", onclick: (e) => refreshView(e.currentTarget) }, icon("refresh")),
     h("button", { class: "icon-btn", "aria-label": "Повідомити про помилку", onclick: bugReportForm }, icon("bug")));
   main.append(mbar);
-  document.getElementById("root").replaceChildren(h("div", { class: "app" }, sidebar, main), tabbar);
+  document.getElementById("root").replaceChildren(h("div", { class: "app" }, sidebar, main), tabbar, fab);
   closeSheet();
   const view = route === "more" ? viewMore : VIEWS[route];
   const seq = ++renderSeq;
@@ -1038,7 +1043,22 @@ function quickBook({ master_id = null, date = today(), time = null } = {}, onCha
   const services = state.services.filter((s) => s.is_active);
   let recent = [];
   try { recent = JSON.parse(store.get(RECENT_SVC()) || "[]"); } catch (_) { recent = []; }
-  const st = { master: master_id || masters[0]?.id, service: services.find((s) => s.id === recent[0])?.id || null, date, time, clientId: null };
+  const st = { master: master_id || masters[0]?.id, service: services.find((s) => s.id === recent[0])?.id || null, date, time, clientId: null, preset: null, duration: null };
+  // шаблони: типова послуга й тривалість одним дотиком (послуга — найближча за тривалістю у відповідному розділі)
+  const PRESETS = [
+    // розділ «Чоловічі/Жіночі» може бути не заповнений — тоді за категорією й назвою
+    { key: "men", label: "Чоловіча стрижка", min: 30, ico: "scissors", match: (s) => /стриж/i.test(`${s.category} ${s.name}`)
+      && (/чолов/i.test(`${s.section} ${s.category} ${s.name}`) || /стрижки та послуги/i.test(s.category || "") || /машинк|насадк|модельн/i.test(s.name)) },
+    { key: "women", label: "Жіноча стрижка", min: 60, ico: "scissors", match: (s) => !/чолов/i.test(`${s.section} ${s.category}`)
+      && (/жіноч/i.test(s.section || "") ? /стриж/i.test(`${s.category} ${s.name}`) : /^стрижка$/i.test((s.category || "").trim())) },
+    { key: "color", label: "Фарбування", min: 120, ico: "zap", match: (s) => s.needs_materials || /фарб/i.test(`${s.category} ${s.subcategory} ${s.name}`) },
+  ].map((p) => ({ ...p, service: services.filter(p.match).sort((a, b) => Math.abs(a.duration_min - p.min) - Math.abs(b.duration_min - p.min))[0] }))
+    .filter((p) => p.service);
+  const durText = (m) => (m % 60 ? `${m} хв` : `${m / 60} год`);
+  const pBox = h("div", { class: "qb-presets" });
+  const drawPresets = () => pBox.replaceChildren(...PRESETS.map((p) => h("button", { type: "button", class: "qb-preset" + (st.preset === p.key ? " on" : ""),
+    onclick: () => { st.preset = p.key; st.service = p.service.id; st.duration = p.min; st.time = null; drawPresets(); drawServices(); loadTimes(); } },
+    icon(p.ico), h("b", {}, p.label), h("small", {}, durText(p.min)))));
   const svcById = (id) => services.find((s) => s.id === id);
 
   const mBox = h("div", { class: "qb-chips" });
@@ -1048,7 +1068,7 @@ function quickBook({ master_id = null, date = today(), time = null } = {}, onCha
   const dBox = h("div", { class: "qb-chips" });
   const dPick = h("input", { type: "date", value: date, class: "qb-date", "aria-label": "Інша дата" });
   const tBox = h("div", { class: "qb-times" });
-  const name = h("input", { placeholder: "Ім'я (необов'язково)", autocapitalize: "words" });
+  const name = h("input", { placeholder: "Ім'я клієнта *", autocapitalize: "words", "aria-required": "true" });
   const phone = h("input", { type: "tel", inputmode: "tel", placeholder: "Телефон (необов'язково)" });
   const found = h("div", { class: "muted small" });
   const save = h("button", { class: "btn primary big", disabled: true }, icon("ok"), "Записати");
@@ -1058,9 +1078,9 @@ function quickBook({ master_id = null, date = today(), time = null } = {}, onCha
   const drawServices = () => {
     const ids = [...new Set([...recent, ...services.map((s) => s.id)])].filter((id) => svcById(id)).slice(0, 6);
     if (st.service && !ids.includes(st.service)) ids.unshift(st.service);
-    sBox.replaceChildren(...ids.map((id) => { const s = svcById(id); return chip(s.name, id === st.service, () => pickService(id), [s.subcategory || s.category, priceText(s)].filter(Boolean).join(" · ")); }));
+    sBox.replaceChildren(...ids.map((id) => { const s = svcById(id); return chip(s.name, id === st.service && !st.preset, () => pickService(id), [s.subcategory || s.category, priceText(s)].filter(Boolean).join(" · ")); }));
   };
-  const pickService = (id) => { st.service = id; st.time = null; sSearch.value = ""; sFound.replaceChildren(); drawServices(); loadTimes(); };
+  const pickService = (id) => { st.service = id; st.time = null; st.preset = null; st.duration = null; sSearch.value = ""; sFound.replaceChildren(); drawPresets(); drawServices(); loadTimes(); };
   sSearch.addEventListener("input", () => {
     const q = sSearch.value.trim().toLowerCase();
     sFound.replaceChildren(...(q ? services.filter((s) => [s.name, s.category, s.subcategory, s.section].join(" ").toLowerCase().includes(q)).slice(0, 8)
@@ -1079,7 +1099,7 @@ function quickBook({ master_id = null, date = today(), time = null } = {}, onCha
     if (!st.service || !st.master) { tBox.replaceChildren(h("span", { class: "muted small" }, "Оберіть послугу")); return; }
     const my = ++req;
     tBox.replaceChildren(h("span", { class: "muted small" }, "Шукаю вільний час…"));
-    let list = await api.get(`/api/availability?master_id=${st.master}&service_id=${st.service}&day=${st.date}`).catch(() => []);
+    let list = await api.get(`/api/availability?master_id=${st.master}&service_id=${st.service}&day=${st.date}${st.duration ? "&duration_min=" + st.duration : ""}`).catch(() => []);
     if (my !== req) return;
     if (st.date === today()) { // сьогодні — лише час, що ще не минув (з запасом 10 хв для «зараз»)
       const n = new Date(Date.now() - 10 * 60000), cur = `${pad(n.getHours())}:${pad(n.getMinutes())}`;
@@ -1107,9 +1127,11 @@ function quickBook({ master_id = null, date = today(), time = null } = {}, onCha
     }, 350);
   });
   save.addEventListener("click", async () => {
+    if (!st.clientId && name.value.trim().length < 2) { name.focus(); name.classList.add("invalid"); return toast("Вкажіть ім'я клієнта — щоб розуміти, хто це", true); }
     const body = { master_id: st.master, service_id: st.service, starts_at: `${st.date}T${st.time}` };
+    if (st.duration) body.duration_min = st.duration;
     if (st.clientId) body.client_id = st.clientId;
-    else { body.client_phone = phone.value.trim() || null; body.client_name = name.value.trim() || "Клієнт"; }
+    else { body.client_phone = phone.value.trim() || null; body.client_name = name.value.trim(); }
     save.disabled = true;
     try {
       await run(() => api.post("/api/appointments", body), "Записано");
@@ -1118,13 +1140,15 @@ function quickBook({ master_id = null, date = today(), time = null } = {}, onCha
     } catch (_) { save.disabled = false; }
   });
 
-  drawMasters(); drawServices(); drawDays();
+  name.addEventListener("input", () => name.classList.remove("invalid"));
+  drawMasters(); drawPresets(); drawServices(); drawDays();
   openSheet("Швидкий запис", h("div", { class: "stack qb" },
     masters.length > 1 ? h("div", {}, h("div", { class: "qb-label" }, "Майстер"), mBox) : null,
-    h("div", {}, h("div", { class: "qb-label" }, "Послуга"), sBox, sSearch, sFound),
+    PRESETS.length ? pBox : null,
+    h("div", {}, h("div", { class: "qb-label" }, PRESETS.length ? "Або конкретна послуга" : "Послуга"), sBox, sSearch, sFound),
     h("div", {}, h("div", { class: "qb-label" }, "День"), dBox),
     h("div", {}, h("div", { class: "qb-label" }, "Час"), tBox),
-    h("div", { class: "form-grid" }, name, phone), found,
+    h("div", {}, h("div", { class: "qb-label" }, "Клієнт"), h("div", { class: "form-grid" }, name, phone)), found,
     save,
     h("button", { type: "button", class: "btn ghost", onclick: () => { closeSheet(); apptForm({ master_id: st.master, date: st.date, time: st.time || "10:00" }, onChange); } }, "Повна форма: тривалість, ціна, коментар")));
   loadTimes();
