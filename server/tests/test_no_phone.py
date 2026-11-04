@@ -58,3 +58,32 @@ def test_purge_clients_without_phone_keeps_history_and_future(db, seed):
         # повторно — нічого (картка «Клієнти без номера» не чіпається)
         assert catalog.purge_clients_without_phone(s, d) == {"deleted": 0, "merged": 0, "kept_future": 1}
     clock.set_now(None)
+
+
+def test_coloring_without_materials_flagged_and_master_adds_materials(db, seed):
+    from mds.services import stock
+    from mds.services.orders import needing_materials, order_public
+
+    d, m1, m2 = seed["actors"]["director"], seed["actors"]["m1"], seed["actors"]["m2"]
+    clock.set_now(datetime(2026, 11, 2, 8))
+    with db.session() as s:
+        svc = catalog.create_service(s, d, {"name": "Фарбування в один тон", "duration_min": 60, "price": 150000, "needs_materials": True})
+        dye = catalog.create_material(s, d, {"name": "Igora", "tone": "7-1", "unit": "г", "pack_name": "туба", "pack_size": 60,
+                                             "unit_cost": 30000, "stock": 120})
+        a = bookings.create_appointment(s, seed["actors"]["admin"], master_id=seed["m1"], service_id=svc.id,
+                                        starts_at=datetime(2026, 11, 2, 9), client_name="К", client_phone="0671239999")
+        aid, dye_id = a.id, dye.id
+    clock.set_now(datetime(2026, 11, 2, 10, 5))
+    with db.session() as s:
+        o = orders.close_order(s, m1, aid, amount=150000, payment_method="cash")  # забули матеріали
+        assert order_public(o)["needs_materials"] is True
+        assert [x.id for x in needing_materials(s, m1)] == [o.id] and needing_materials(s, m2) == []
+        with pytest.raises(Forbidden):  # чуже замовлення
+            orders.correct_order(s, m2, o.id, {"materials": [{"material_id": dye_id, "qty": 60}]}, "")
+        with pytest.raises(Forbidden):  # майстер не змінює суму
+            orders.correct_order(s, m1, o.id, {"amount": 1}, "x")
+        orders.correct_order(s, m1, o.id, {"materials": [{"material_id": dye_id, "qty": 60}]}, "")
+        assert order_public(o)["needs_materials"] is False and o.materials_cost == 30000
+        assert stock.material_public(s.get(type(dye), dye_id))["stock"] == 60
+        assert needing_materials(s, m1) == []
+    clock.set_now(None)

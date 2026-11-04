@@ -54,6 +54,8 @@ def order_public(o: Order) -> dict:
         "salon_earning": o.salon_earning,
         "closed_at": o.closed_at.isoformat(),
         "revision": o.revision,
+        # фарбування тощо закрито без матеріалів — майстер має дописати витрату (склад і собівартість)
+        "needs_materials": bool(o.service.needs_materials) and not o.materials,
     }
 
 
@@ -237,11 +239,19 @@ def correct_order(s: Session, actor: Actor, order_id: int, data: dict, reason: s
 
     Журнал: сторно старих сум + проведення нових; історія — в audit_log.
     Якщо зміна вже виплачена, різниця автоматично потрапляє в баланс майстра.
+    Майстер (і адміністратор) може змінити лише матеріали — свого замовлення за останні 14 днів.
     """
-    actor.require(Role.DIRECTOR)
+    o: Order = get_or_404(s, Order, order_id, "Замовлення")
+    if not actor.is_director:
+        only_materials = set(data) <= {"materials"} and "materials" in data
+        own = actor.is_staff_manager or (actor.is_master and o.master_id == actor.user_id)
+        if not (only_materials and own):
+            raise Forbidden("Майстер може лише вказати матеріали у своєму замовленні; інше виправляє директор")
+        if o.closed_at < clock.now() - timedelta(days=14):
+            raise Forbidden("Замовлення старше 14 днів — матеріали виправляє директор")
+        reason = reason or "Вказано використані матеріали"
     if not reason or not reason.strip():
         raise ValidationError("Вкажіть причину виправлення")
-    o: Order = get_or_404(s, Order, order_id, "Замовлення")
     before = _order_snapshot(o)
 
     amount = int(data.get("amount", o.amount))
@@ -530,3 +540,17 @@ def list_payouts(s: Session, actor: Actor, *, master_id: int | None = None, limi
     if master_id:
         q = q.where(Payout.master_id == master_id)
     return list(s.scalars(q.order_by(Payout.paid_at.desc()).limit(limit)))
+
+
+def needing_materials(s: Session, actor: Actor, days: int = 14) -> list[Order]:
+    """Замовлення за `days` днів, закриті без матеріалів, хоча послуга завжди їх витрачає (фарбування)."""
+    from ..models import OrderMaterial, Service
+
+    q = (select(Order).join(Service, Order.service_id == Service.id)
+         .where(Service.needs_materials.is_(True), Order.closed_at >= clock.now() - timedelta(days=days),
+                ~select(OrderMaterial.id).where(OrderMaterial.order_id == Order.id).exists()))
+    if actor.is_master:
+        q = q.where(Order.master_id == actor.user_id)
+    elif not actor.is_staff_manager:
+        raise Forbidden("Недостатньо прав")
+    return list(s.scalars(q.order_by(Order.closed_at.desc())))

@@ -928,7 +928,8 @@ function closeOrderSheet(a, onChange) {
       looksLikeNick ? h("span", { class: "muted grow right" }, "перевірте ім'я — могло прийти з Telegram") : null),
     h("div", { class: "form-grid", style: { gridTemplateColumns: "1fr 1fr" } }, firstName, lastName));
   const svc = state.services.find((s) => s.id === a.service_id) || {};
-  const isColoring = /фарб|мелір|blonde|чорн|тон/i.test([svc.category, svc.subcategory, svc.name].join(" "));
+  const isColoring = !!svc.needs_materials || /фарб|мелір|blonde|чорн|тон/i.test([svc.category, svc.subcategory, svc.name].join(" "));
+  let noMatOk = false; // майстер свідомо закриває без матеріалів
   const matsBox = materialsPicker(mats, custom, { open: isColoring });
 
   const btn = h("button", { class: "btn primary big", onclick: async () => {
@@ -938,6 +939,12 @@ function closeOrderSheet(a, onChange) {
     const clientName = [firstName.value, lastName.value].map((x) => x.trim()).filter(Boolean).join(" ");
     if (firstName.value.trim().length < 2) { firstName.focus(); return toast("Вкажіть ім'я клієнта", true); }
     const materials = [...mats.entries()].filter(([, q]) => q > 0).map(([id, q]) => ({ material_id: id, qty: q })).concat(custom);
+    if (svc.needs_materials && !materials.length && !noMatOk) {
+      matsBox.open = true;
+      matsBox.scrollIntoView({ behavior: "smooth", block: "center" });
+      noMatOk = true;
+      return toast("Фарбування без матеріалів? Вкажіть фарбу й окисник — або натисніть «Закрити» ще раз (замовлення світитиметься червоним, поки не допишете)", true, 6000);
+    }
     if (method === "terminal") {
       if (kop < 100) return toast("Оплата карткою — від 1 грн", true);
       btn.disabled = true;
@@ -1016,6 +1023,111 @@ function terminalPaySheet(p, onChange) {
         : h("p", { class: "muted small" }, "Відкрийте MDS на планшеті з застосунком «Термінал» ПриватБанку, щоб прийняти оплату. Після оплати натисніть «Перевірити оплату»."),
       msg, actions));
   if (p.mode !== "mock") launch();
+}
+
+// ---------- Швидкий запис: мінімум дотиків — послуга (часті вгорі) → день → вільний час → (ім'я) → «Записати»
+const RECENT_SVC = () => `mds_recent_svc_${state.user?.id}`;
+function rememberService(id) {
+  let r = [];
+  try { r = JSON.parse(store.get(RECENT_SVC()) || "[]"); } catch (_) { r = []; }
+  store.set(RECENT_SVC(), JSON.stringify([id, ...r.filter((x) => x !== id)].slice(0, 8)));
+}
+function quickBook({ master_id = null, date = today(), time = null } = {}, onChange = reload) {
+  const isMaster = state.user.role === "master";
+  const masters = isMaster ? [{ id: state.user.id, full_name: state.user.full_name }] : state.masters;
+  const services = state.services.filter((s) => s.is_active);
+  let recent = [];
+  try { recent = JSON.parse(store.get(RECENT_SVC()) || "[]"); } catch (_) { recent = []; }
+  const st = { master: master_id || masters[0]?.id, service: services.find((s) => s.id === recent[0])?.id || null, date, time, clientId: null };
+  const svcById = (id) => services.find((s) => s.id === id);
+
+  const mBox = h("div", { class: "qb-chips" });
+  const sBox = h("div", { class: "qb-chips" });
+  const sSearch = h("input", { type: "search", placeholder: "Інша послуга: пошук…", class: "qb-search" });
+  const sFound = h("div", { class: "qb-found" });
+  const dBox = h("div", { class: "qb-chips" });
+  const dPick = h("input", { type: "date", value: date, class: "qb-date", "aria-label": "Інша дата" });
+  const tBox = h("div", { class: "qb-times" });
+  const name = h("input", { placeholder: "Ім'я (необов'язково)", autocapitalize: "words" });
+  const phone = h("input", { type: "tel", inputmode: "tel", placeholder: "Телефон (необов'язково)" });
+  const found = h("div", { class: "muted small" });
+  const save = h("button", { class: "btn primary big", disabled: true }, icon("ok"), "Записати");
+
+  const chip = (label, on, onclick, sub) => h("button", { type: "button", class: "qb-chip" + (on ? " on" : ""), onclick }, h("b", {}, label), sub ? h("small", {}, sub) : null);
+  const drawMasters = () => mBox.replaceChildren(...masters.map((m) => chip(m.full_name.split(" ")[0], m.id === st.master, () => { st.master = m.id; st.time = null; drawMasters(); loadTimes(); })));
+  const drawServices = () => {
+    const ids = [...new Set([...recent, ...services.map((s) => s.id)])].filter((id) => svcById(id)).slice(0, 6);
+    if (st.service && !ids.includes(st.service)) ids.unshift(st.service);
+    sBox.replaceChildren(...ids.map((id) => { const s = svcById(id); return chip(s.name, id === st.service, () => pickService(id), [s.subcategory || s.category, priceText(s)].filter(Boolean).join(" · ")); }));
+  };
+  const pickService = (id) => { st.service = id; st.time = null; sSearch.value = ""; sFound.replaceChildren(); drawServices(); loadTimes(); };
+  sSearch.addEventListener("input", () => {
+    const q = sSearch.value.trim().toLowerCase();
+    sFound.replaceChildren(...(q ? services.filter((s) => [s.name, s.category, s.subcategory, s.section].join(" ").toLowerCase().includes(q)).slice(0, 8)
+      .map((s) => h("button", { type: "button", class: "qb-found-item", onclick: () => pickService(s.id) },
+        h("span", {}, s.name, h("small", { class: "muted" }, " · " + [s.section, s.subcategory || s.category].filter(Boolean).join(" · "))), h("small", { class: "muted" }, `${s.duration_min} хв · ${priceText(s)}`))) : []));
+  });
+  const drawDays = () => {
+    const days = [0, 1, 2].map((i) => addDays(today(), i));
+    dBox.replaceChildren(...days.map((dd, i) => chip(["Сьогодні", "Завтра", "Післязавтра"][i], dd === st.date, () => { st.date = dd; st.time = null; dPick.value = dd; drawDays(); loadTimes(); }, dm(dd))),
+      h("label", { class: "qb-chip" + (days.includes(st.date) ? "" : " on") }, h("b", {}, days.includes(st.date) ? "Інша" : dm(st.date)), dPick));
+  };
+  dPick.addEventListener("change", () => { if (dPick.value) { st.date = dPick.value; st.time = null; drawDays(); loadTimes(); } });
+  let req = 0;
+  async function loadTimes() {
+    summary();
+    if (!st.service || !st.master) { tBox.replaceChildren(h("span", { class: "muted small" }, "Оберіть послугу")); return; }
+    const my = ++req;
+    tBox.replaceChildren(h("span", { class: "muted small" }, "Шукаю вільний час…"));
+    let list = await api.get(`/api/availability?master_id=${st.master}&service_id=${st.service}&day=${st.date}`).catch(() => []);
+    if (my !== req) return;
+    if (st.date === today()) { // сьогодні — лише час, що ще не минув (з запасом 10 хв для «зараз»)
+      const n = new Date(Date.now() - 10 * 60000), cur = `${pad(n.getHours())}:${pad(n.getMinutes())}`;
+      list = list.filter((x) => x >= cur);
+    }
+    if (time && !st.time && list.includes(time)) st.time = time;
+    tBox.replaceChildren(...(list.length ? list.map((x) => h("button", { type: "button", class: "qb-time" + (x === st.time ? " on" : ""), onclick: () => { st.time = x; loadTimes(); } }, x))
+      : [h("span", { class: "muted small" }, "Вільного часу немає — оберіть інший день" + (isMaster ? "" : " або майстра"))]));
+    summary();
+  }
+  function summary() {
+    const s = svcById(st.service);
+    save.disabled = !(s && st.time && st.master);
+    save.replaceChildren(icon("ok"), s && st.time ? `Записати · ${dm(st.date)} о ${st.time}` : "Записати");
+  }
+  let timer;
+  phone.addEventListener("input", () => {
+    clearTimeout(timer); st.clientId = null; found.textContent = "";
+    timer = setTimeout(async () => {
+      const digits = phone.value.replace(/\D/g, "");
+      if (digits.length < 9) return;
+      const list = await api.get("/api/clients?q=" + encodeURIComponent(digits.slice(-9))).catch(() => []);
+      if (list.length === 1) { st.clientId = list[0].id; if (!name.value.trim()) name.value = list[0].name; found.textContent = "Постійний клієнт: " + list[0].name; }
+      else found.textContent = list.length ? "" : "Новий клієнт";
+    }, 350);
+  });
+  save.addEventListener("click", async () => {
+    const body = { master_id: st.master, service_id: st.service, starts_at: `${st.date}T${st.time}` };
+    if (st.clientId) body.client_id = st.clientId;
+    else { body.client_phone = phone.value.trim() || null; body.client_name = name.value.trim() || "Клієнт"; }
+    save.disabled = true;
+    try {
+      await run(() => api.post("/api/appointments", body), "Записано");
+      rememberService(st.service);
+      closeSheet(); onChange();
+    } catch (_) { save.disabled = false; }
+  });
+
+  drawMasters(); drawServices(); drawDays();
+  openSheet("Швидкий запис", h("div", { class: "stack qb" },
+    masters.length > 1 ? h("div", {}, h("div", { class: "qb-label" }, "Майстер"), mBox) : null,
+    h("div", {}, h("div", { class: "qb-label" }, "Послуга"), sBox, sSearch, sFound),
+    h("div", {}, h("div", { class: "qb-label" }, "День"), dBox),
+    h("div", {}, h("div", { class: "qb-label" }, "Час"), tBox),
+    h("div", { class: "form-grid" }, name, phone), found,
+    save,
+    h("button", { type: "button", class: "btn ghost", onclick: () => { closeSheet(); apptForm({ master_id: st.master, date: st.date, time: st.time || "10:00" }, onChange); } }, "Повна форма: тривалість, ціна, коментар")));
+  loadTimes();
 }
 
 function apptForm({ appt = null, master_id = null, date = today(), time = "10:00" } = {}, onChange) {
@@ -1219,7 +1331,7 @@ VIEWS.today = async (main) => {
   main.append(topbar(`Добрий день, ${state.user.full_name.split(" ")[0]}`,
     `${WD_LONG[(new Date().getDay() + 6) % 7]}, ${dm(d)} · записів: ${active.length}, залишилось: ${left.length}`,
     left.length ? h("button", { class: "btn", onclick: () => shiftForm(state.user.id, null, reload) }, icon("clock", "sm"), "Запізнююсь") : null,
-    h("button", { class: "btn primary", onclick: () => apptForm({ date: d }, reload) }, icon("plus", "sm"), "Запис")));
+    h("button", { class: "btn primary", onclick: () => quickBook({ date: d }) }, icon("plus", "sm"), "Запис")));
   main.append(h("div", { class: "grid kpi", style: { marginBottom: "16px" } },
     kpi("Мій заробіток сьогодні", my.day.earning, "dark", { ico: "wallet" }),
     kpi("Виручка сьогодні", my.day.revenue, "", { ico: "banknote" }),
@@ -1233,6 +1345,8 @@ VIEWS.today = async (main) => {
   // угорі — запис, з яким зараз працювати: той, що триває / вже настав, або найближчий
   const unc = await api.get("/api/appointments/unclosed").catch(() => []);
   if (unc.length) main.querySelector(".topbar").after(unclosedBlock(unc, reload));
+  const noMat = await api.get("/api/orders/needs-materials").catch(() => []);
+  if (noMat.length) main.querySelector(".topbar").after(needsMaterialsBlock(noMat, reload));
   const focus = focusAppt(active.filter((a) => !unc.some((u) => u.id === a.id)));
   if (focus) main.querySelector(".topbar").after(nowCard(focus, unc)); // найвище — вище за непідтверджені
   const focusId = focus?.id;
@@ -1253,6 +1367,29 @@ VIEWS.today = async (main) => {
   }
 };
 
+// закриті без матеріалів замовлення «фарбувальних» послуг — червоним, поки майстер не допише витрату
+function needsMaterialsBlock(list, onChange) {
+  return h("div", { class: "card unc-card mat-alert" },
+    h("div", { class: "card-head" }, h("h3", { class: "row", style: { gap: "8px" } }, icon("box"), `Вкажіть матеріали: ${list.length}`),
+      h("span", { class: "muted small" }, "Фарбування закрито без матеріалів — склад і собівартість неправильні")),
+    list.map((o) => h("div", { class: "unc-row" },
+      h("div", { class: "grow" }, h("b", {}, o.client_name), h("div", { class: "muted small" }, `${dm(o.closed_at)} ${hm(o.closed_at)} · ${o.service_name} · ${money(o.amount)}`)),
+      h("div", { class: "unc-actions" }, h("button", { class: "btn sm primary", onclick: () => orderMaterialsSheet(o, onChange) }, icon("plus", "sm"), "Вказати матеріали")))));
+}
+async function orderMaterialsSheet(o, onChange) {
+  state.materials = await api.get("/api/materials").catch(() => state.materials);
+  const mats = new Map(), custom = [];
+  for (const m of o.materials || []) if (m.material_id) mats.set(m.material_id, m.qty); else custom.push({ name: m.name, unit_cost: m.unit_cost, qty: 1 });
+  openSheet(`Матеріали: ${o.client_name}`, h("div", { class: "stack" },
+    h("div", { class: "muted" }, `${o.service_name} · ${dmy(o.closed_at)} ${hm(o.closed_at)}`),
+    materialsPicker(mats, custom, { open: true }),
+    h("button", { class: "btn primary big", onclick: async () => {
+      const materials = [...mats.entries()].filter(([, q]) => q > 0).map(([id, q]) => ({ material_id: id, qty: q })).concat(custom);
+      if (!materials.length) return toast("Оберіть використані матеріали", true);
+      await run(() => api.patch(`/api/orders/${o.id}`, { materials, reason: "Вказано використані матеріали" }), "Матеріали записано, склад оновлено");
+      closeSheet(); onChange && onChange();
+    } }, icon("ok"), "Зберегти матеріали")));
+}
 // незакриті замовлення: закрити за ціною запису готівкою / карткою або детально (матеріали, інша сума)
 function unclosedBlock(list, onChange, bare = false) {
   const quick = async (u, method, btn) => {
@@ -1364,7 +1501,7 @@ VIEWS.calendar = async (main) => {
     h("div", { class: "seg icons", role: "tablist" },
       h("button", { class: mode === "grid" ? "on" : "", title: "Сітка по майстрах", "aria-label": "Сітка", onclick: () => setMode("grid") }, icon("grid", "sm"), h("span", {}, "Сітка")),
       h("button", { class: mode === "list" ? "on" : "", title: "Список записів", "aria-label": "Список", onclick: () => setMode("list") }, icon("rows", "sm"), h("span", {}, "Список"))),
-    h("button", { class: "btn primary", onclick: () => apptForm({ date: day }, reload) }, icon("plus", "sm"), "Новий запис")));
+    h("button", { class: "btn primary", onclick: () => quickBook({ date: day }) }, icon("plus", "sm"), "Новий запис")));
 
   // стрічка днів (тиждень довкола) з кількістю записів — одним запитом на весь діапазон
   const wdIdx = (iso) => String((new Date(iso + "T12:00").getDay() + 6) % 7);
@@ -1471,7 +1608,7 @@ VIEWS.calendar = async (main) => {
     if (!activeList.length) {
       agenda.append(h("div", { class: "card" }, emptyState(working ? "На цей день записів ще немає" : "Вихідний день салону", "calendar"),
         working ? h("div", { style: { textAlign: "center", paddingBottom: "14px" } },
-          h("button", { class: "btn primary", onclick: () => apptForm({ date: day }, reload) }, icon("plus", "sm"), "Записати клієнта")) : null));
+          h("button", { class: "btn primary", onclick: () => quickBook({ date: day }) }, icon("plus", "sm"), "Записати клієнта")) : null));
     }
     main.append(agenda);
   } else {
@@ -1501,7 +1638,7 @@ VIEWS.calendar = async (main) => {
         const sp = spanOf(m);
         const off = !sp || min < toMin(sp[0]) || min >= toMin(sp[1]);
         grid.append(h("div", { class: "cal-cell" + (off ? " off" : "") + (min % 60 ? " half" : ""), title: off ? "Неробочий час" : `Новий запис · ${m.full_name} · ${time}`,
-          onclick: off ? null : () => apptForm({ master_id: m.id, date: day, time }, reload) }, off ? null : h("span", { class: "cell-add" }, "+ ", time)));
+          onclick: off ? null : () => quickBook({ master_id: m.id, date: day, time }) }, off ? null : h("span", { class: "cell-add" }, "+ ", time)));
       });
     }
     const wrap = h("div", { class: "cal" }, grid);
@@ -2370,9 +2507,9 @@ VIEWS.orders = async (main) => {
       days.map((g) => [
         h("tr", { class: "day-row" }, h("td", { colspan: 4 }, h("b", {}, dayTitle(g.d)), h("span", { class: "muted" }, ` · ${g.items.length} ${plural(g.items.length, "замовлення", "замовлення", "замовлень")}`)),
           h("td", { class: "num" }, h("b", {}, money(dayTotal(g)))), h("td", { colspan: 3 })),
-        g.items.map((o) => h("tr", { class: "click", onclick: () => orderSheet(o.id, load) },
+        g.items.map((o) => h("tr", { class: "click" + (o.needs_materials ? " no-mat" : ""), onclick: () => (o.needs_materials ? orderMaterialsSheet(o, load) : orderSheet(o.id, load)) },
           h("td", {}, h("b", {}, hm(o.closed_at)), h("div", { class: "muted small" }, "#", o.id, o.revision > 1 ? " · виправлено" : "")),
-          h("td", {}, h("div", {}, o.client_name), h("div", { class: "muted small" }, o.service_name)),
+          h("td", {}, h("div", {}, o.client_name, o.needs_materials ? h("span", { class: "chip st-overdue", style: { marginLeft: "6px" } }, "без матеріалів") : null), h("div", { class: "muted small" }, o.service_name)),
           h("td", {}, h("span", { class: "row", style: { gap: "8px" } }, avatar(o.master_name, "xs"), o.master_name)),
           h("td", {}, h("span", { class: "row", style: { gap: "6px" } }, icon(payIco(o.payment_method), "sm"), PAY[o.payment_method])),
           h("td", { class: "num" }, h("b", {}, money(o.amount))), h("td", { class: "num muted" }, money(o.materials_cost)),
@@ -2381,7 +2518,7 @@ VIEWS.orders = async (main) => {
         h("td", { class: "num" }, money(sum((o) => o.materials_cost))), h("td", { class: "num" }, money(sum((o) => o.master_earning))), h("td", { class: "num" }, money(sum((o) => o.salon_earning))))));
     const cards = h("div", { class: "only-mob anim-in" }, days.map((g) => h("div", { class: "ord-day" },
       h("div", { class: "ord-day-head" }, h("span", {}, dayTitle(g.d)), h("b", {}, money(dayTotal(g)))),
-      h("div", { class: "card ord-list" }, g.items.map((o) => h("button", { class: "ord-item", onclick: () => orderSheet(o.id, load) },
+      h("div", { class: "card ord-list" }, g.items.map((o) => h("button", { class: "ord-item" + (o.needs_materials ? " no-mat" : ""), onclick: () => (o.needs_materials ? orderMaterialsSheet(o, load) : orderSheet(o.id, load)) },
         h("div", { class: "ord-time" }, hm(o.closed_at)),
         h("div", { class: "grow ord-main" }, h("b", {}, o.client_name), h("div", { class: "muted small" }, o.service_name),
           h("div", { class: "muted small ord-master" }, avatar(o.master_name, "xs"), h("span", {}, o.master_name + (o.revision > 1 ? " · виправлено" : "")))),
@@ -2612,13 +2749,15 @@ VIEWS.catalog = async (main) => {
     const order = h("input", { type: "number", value: s?.sort_order || 0 });
     const active = h("input", { type: "checkbox", checked: s ? s.is_active : true });
     const from = h("input", { type: "checkbox", checked: s ? s.price_from : false });
+    const needsMat = h("input", { type: "checkbox", checked: s ? !!s.needs_materials : false });
     openSheet(s ? s.name : "Нова послуга", h("div", { class: "stack" }, dls, field("Назва", name),
       h("div", { class: "form-grid" }, field("Розділ (крок 1 у боті)", sec), field("Тип послуги (крок 2)", cat), field("Вид (крок 3)", sub)),
       h("div", { class: "form-grid" }, field("Тривалість, хв (для календаря)", dur), field("Ціна, ₴", price), field("Порядок", order)),
       h("label", { class: "row" }, from, "Ціна «від» (остаточна сума — після послуги)"),
+      h("label", { class: "row" }, needsMat, "Завжди витрачає матеріали (фарбування) — без них замовлення світиться червоним"),
       h("label", { class: "row" }, active, "Доступна для запису"),
       h("button", { class: "btn gold big", onclick: async () => {
-        const body = { name: name.value, section: sec.value.trim() || null, category: cat.value.trim() || null, subcategory: sub.value.trim() || null, duration_min: +dur.value, price: toKop(price.value), price_from: from.checked, sort_order: +order.value, is_active: active.checked };
+        const body = { name: name.value, section: sec.value.trim() || null, category: cat.value.trim() || null, subcategory: sub.value.trim() || null, duration_min: +dur.value, price: toKop(price.value), price_from: from.checked, needs_materials: needsMat.checked, sort_order: +order.value, is_active: active.checked };
         await run(() => (s ? api.patch("/api/services/" + s.id, body) : api.post("/api/services", body)), "Збережено");
         closeSheet(); await loadRefs(); reload();
       } }, "Зберегти")));

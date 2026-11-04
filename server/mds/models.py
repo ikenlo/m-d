@@ -144,6 +144,8 @@ class Service(Base):
     price: Mapped[int] = mapped_column(Integer)  # копійки
     # ціна «від»: остаточна сума залежить від довжини/густоти волосся тощо
     price_from: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
+    # послуга завжди витрачає матеріали (фарбування): закрите без матеріалів замовлення підсвічується червоним
+    needs_materials: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     sort_order: Mapped[int] = mapped_column(Integer, default=0)
 

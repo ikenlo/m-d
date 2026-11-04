@@ -29,6 +29,12 @@ def list_orders(period: str | None = None, date_from: date | None = None, date_t
     return [orders.order_public(o) for o in orders.list_orders(s, actor, date_from=a, date_to=b, master_id=master_id)]
 
 
+@router.get("/orders/needs-materials")
+def orders_needing_materials(actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
+    """Закриті без матеріалів замовлення послуг, що завжди їх витрачають (14 днів). Майстер — свої."""
+    return [orders.order_public(o) for o in orders.needing_materials(s, actor)]
+
+
 @router.get("/orders/{order_id}")
 def get_order(order_id: int, actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
     o = get_or_404(s, Order, order_id, "Замовлення")

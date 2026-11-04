@@ -83,6 +83,7 @@ class ServiceIn(BaseModel):
     category: str | None = None
     subcategory: str | None = None
     price_from: bool = False
+    needs_materials: bool = False
     is_active: bool = True
     sort_order: int = 0
 
@@ -95,6 +96,7 @@ class ServicePatch(BaseModel):
     category: str | None = None
     subcategory: str | None = None
     price_from: bool | None = None
+    needs_materials: bool | None = None
     is_active: bool | None = None
     sort_order: int | None = None
 
