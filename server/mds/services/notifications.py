@@ -37,7 +37,7 @@ def notify_directors(s: Session, text: str, exclude_user_id: int | None = None, 
 def appt_line(a: Appointment) -> str:
     return (
         f"{a.starts_at:%d.%m %H:%M}–{a.ends_at:%H:%M} · {a.service.name}\n"
-        f"Майстер: {a.master.full_name}\nКлієнт: {a.client.name}, {a.client.phone}"
+        f"Майстер: {a.master.full_name}\nКлієнт: {a.client.name}, {a.client.phone or 'без номера'}"
     )
 
 

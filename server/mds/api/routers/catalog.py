@@ -58,6 +58,12 @@ def create_client(body: ClientIn, actor: Actor = Depends(get_actor), s: Session 
     return catalog.client_public(catalog.create_client(s, actor, body.name, body.phone, body.notes))
 
 
+@router.post("/clients/purge-no-phone")
+def purge_no_phone(dry_run: bool = False, actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
+    """Прибрати клієнтів без телефону (dry_run=true — лише порахувати)."""
+    return catalog.purge_clients_without_phone(s, actor, dry_run=dry_run)
+
+
 @router.patch("/clients/{client_id}")
 def update_client(client_id: int, body: ClientPatch, actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
     return catalog.client_public(catalog.update_client(s, actor, client_id, body.model_dump(exclude_unset=True)))

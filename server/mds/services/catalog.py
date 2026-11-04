@@ -239,8 +239,17 @@ def find_client_by_phone(s: Session, phone: str) -> Client | None:
 
 
 def get_or_create_client(
-    s: Session, actor: Actor, name: str, phone: str, telegram_user_id: int | None = None
+    s: Session, actor: Actor, name: str, phone: str | None, telegram_user_id: int | None = None
 ) -> Client:
+    if not (phone or "").strip():
+        # швидкий запис без номера (лише персонал): завжди новий клієнт — зіставити без телефону неможливо
+        if not (name or "").strip():
+            raise ValidationError("Вкажіть ім'я або телефон клієнта")
+        c = Client(name=name.strip(), phone=None)
+        s.add(c)
+        s.flush()
+        audit(s, actor, "client", c.id, "create", None, client_public(c))
+        return c
     phone_n = normalize_phone(phone)
     c = s.scalar(select(Client).where(Client.phone == phone_n))
     if c is None:
@@ -274,7 +283,9 @@ def update_client(s: Session, actor: Actor, client_id: int, data: dict) -> Clien
     actor.require(Role.DIRECTOR, Role.ADMIN)
     c: Client = get_or_404(s, Client, client_id, "Клієнта")
     before = client_public(c)
-    if "phone" in data:
+    if "phone" in data and not (data["phone"] or "").strip():
+        c.phone = None  # номер прибрали — клієнт «без номера»
+    elif "phone" in data:
         phone_n = normalize_phone(data["phone"])
         other = s.scalar(select(Client).where(Client.phone == phone_n, Client.id != c.id))
         if other:
@@ -306,3 +317,54 @@ def search_clients(s: Session, q: str, limit: int = 50, master_id: int | None = 
             conds.append(Client.phone.like(f"%{digits}%"))
         stmt = stmt.where(or_(*conds))
     return list(s.scalars(stmt.order_by(Client.name).limit(limit)))
+
+
+NO_PHONE_NAME = "Клієнти без номера"
+
+
+def purge_clients_without_phone(s: Session, actor: Actor, dry_run: bool = False) -> dict:
+    """Прибрати з бази клієнтів без телефону (швидкі записи). Клієнти без історії — видаляються;
+    з історією (записи/замовлення) — їхні візити переносяться на одну картку «Клієнти без номера»,
+    щоб виручка й журнал не постраждали. Хто має майбутній активний запис — не чіпаємо."""
+    from datetime import datetime as _dt
+
+    from .. import clock
+    from ..models import Appointment, ApptStatus, Order
+
+    actor.require(Role.DIRECTOR)
+    now = clock.now()
+    cands = [c for c in s.scalars(select(Client).where(Client.phone.is_(None))) if c.name != NO_PHONE_NAME]
+    out = {"deleted": 0, "merged": 0, "kept_future": 0}
+    keep = set(s.scalars(select(Appointment.client_id).where(
+        Appointment.client_id.in_([c.id for c in cands] or [0]), Appointment.starts_at >= now,
+        Appointment.status.in_((ApptStatus.PENDING, ApptStatus.CONFIRMED, ApptStatus.IN_PROGRESS)))))
+    holder = None
+    for c in cands:
+        if c.id in keep:
+            out["kept_future"] += 1
+            continue
+        has_history = s.scalar(select(Appointment.id).where(Appointment.client_id == c.id).limit(1)) or \
+            s.scalar(select(Order.id).where(Order.client_id == c.id).limit(1))
+        if dry_run:
+            out["merged" if has_history else "deleted"] += 1
+            continue
+        if has_history:
+            if holder is None:
+                holder = s.scalar(select(Client).where(Client.phone.is_(None), Client.name == NO_PHONE_NAME))
+                if holder is None:
+                    holder = Client(name=NO_PHONE_NAME, phone=None, created_at=_dt.combine(now.date(), _dt.min.time()))
+                    s.add(holder)
+                    s.flush()
+            for a in s.scalars(select(Appointment).where(Appointment.client_id == c.id)):
+                a.client_id = holder.id
+            for o in s.scalars(select(Order).where(Order.client_id == c.id)):
+                o.client_id = holder.id
+            out["merged"] += 1
+        else:
+            out["deleted"] += 1
+        audit(s, actor, "client", c.id, "purge_no_phone", client_public(c), None,
+              "Перенесено в «Клієнти без номера»" if has_history else "Видалено (без номера, без історії)")
+        s.flush()
+        s.delete(c)
+    s.flush()
+    return out

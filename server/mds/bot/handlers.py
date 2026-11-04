@@ -540,7 +540,7 @@ def build_router() -> Router:
                 master_id=u.id if u.role == Role.MASTER else None, include_cancelled=False,
             )
             # дані клієнтів екрануються: бот відповідає в режимі HTML
-            lines = [f"{a.starts_at:%H:%M} {v.e(a.service.name)} — {v.e(a.client.name)} {v.e(a.client.phone)}"
+            lines = [f"{a.starts_at:%H:%M} {v.e(a.service.name)} — {v.e(a.client.name)} {v.e(a.client.phone or '')}"
                      + ("" if u.role == Role.MASTER else f" ({v.e(a.master.full_name)})") for a in items]
         await message.answer("📋 Сьогодні:\n" + ("\n".join(lines) if lines else "записів немає"))
 

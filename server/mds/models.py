@@ -208,7 +208,7 @@ class Client(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(128))
-    phone: Mapped[str] = mapped_column(String(32), unique=True)
+    phone: Mapped[str | None] = mapped_column(String(32), unique=True)  # None — швидкий запис без номера
     telegram_user_id: Mapped[int | None] = mapped_column(BigInteger, unique=True)
     notes: Mapped[str | None] = mapped_column(Text)
     # нагадування в Telegram за добу і за 2 години: None — ще не питали, True/False — відповідь клієнта
