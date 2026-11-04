@@ -6,26 +6,72 @@ from sqlalchemy.orm import Session
 from ...errors import AuthError
 from ...models import User
 from ...security import create_token
-from ...services import orders, users
+from ...services import orders, twofa, users
 from ...services.common import Actor
 from ..deps import get_actor, get_session, get_user
-from ..schemas import ChangePasswordIn, LoginIn
+from ..schemas import BaseModel, ChangePasswordIn, LoginIn
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 
+class VerifyIn(BaseModel):
+    challenge_id: int
+    code: str
+    remember: bool = False
+    device_label: str | None = None
+
+
+def _issue(cfg, u: User) -> dict:
+    return {"token": create_token(cfg.secret_key, u.id, u.token_version, cfg.token_ttl_hours), "user": users.user_public(u)}
+
+
 @router.post("/login")
 def login(body: LoginIn, request: Request):
+    """Пароль → токен; якщо для ролі ввімкнено двофакторний вхід і пристрій не довірений — код у Telegram."""
     cfg = request.app.state.config
     # окрема транзакція: лічильник невдалих спроб має зберегтися навіть при відмові
     with request.app.state.db.session() as s:
         u, err = users.authenticate(s, body.username, body.password)
         if u is not None:
-            token = create_token(cfg.secret_key, u.id, u.token_version, cfg.token_ttl_hours)
-            data = {"token": token, "user": users.user_public(u)}
+            if twofa.applies(s, u) and not twofa.device_ok(s, u, body.device_token):
+                ch = twofa.start(s, u)
+                data = {"twofa": True, "challenge_id": ch.id, "expires_in": int(twofa.CODE_TTL.total_seconds()),
+                        "sent_to": "Telegram"}
+            else:
+                data = _issue(cfg, u)
     if err:
         raise AuthError(err)
     return data
+
+
+@router.post("/login/verify")
+def login_verify(body: VerifyIn, request: Request):
+    """Другий крок входу: код з Telegram. Спроби зберігаються навіть при невірному коді."""
+    cfg = request.app.state.config
+    err = None
+    with request.app.state.db.session() as s:
+        try:
+            u = twofa.verify(s, body.challenge_id, body.code)
+        except AuthError as e:
+            err = e
+        else:
+            data = _issue(cfg, u)
+            if body.remember:
+                data["device_token"] = twofa.remember_device(s, u, body.device_label)
+    if err:
+        raise err
+    return data
+
+
+@router.get("/devices")
+def my_devices(actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
+    """Пристрої, на яких вхід підтверджено кодом і запам'ятовано."""
+    return twofa.list_devices(s, actor)
+
+
+@router.delete("/devices")
+def forget_my_devices(device_id: int | None = None, actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
+    return {"forgotten": twofa.forget_devices(s, actor, device_id)}
 
 
 @router.get("/me")

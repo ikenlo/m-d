@@ -3,6 +3,9 @@
 Інтерактивна документація з прикладами: `http://<сервер>:8000/docs` (Swagger) — генерується автоматично.
 
 Авторизація: `POST /api/auth/login` → `token`; далі заголовок `Authorization: Bearer <token>`.
+Двофакторний вхід: якщо для ролі ввімкнено код і пристрій не довірений, `login` повертає `{twofa: true, challenge_id, expires_in}`
+замість токена; далі `POST /api/auth/login/verify {challenge_id, code, remember, device_label}` → `token` (+ `device_token`,
+який передається в наступний `login` як `device_token`). `GET/DELETE /api/auth/devices[?device_id=]` — свої довірені пристрої.
 Гроші — цілі копійки, відсотки — bp (5000 = 50%). Дати-час — ISO, локальний час салону.
 Помилки: `{"error": "<код>", "detail": "<повідомлення українською>"}`; 401/403/404/409/422.
 

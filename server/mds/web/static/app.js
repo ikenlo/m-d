@@ -180,6 +180,8 @@ const ICONS = {
   coins: '<circle cx="8" cy="8" r="6"/><path d="M18.1 10.4A6 6 0 1 1 10.3 18M7 6h1v4M16.7 13.9l.7.7-2.8 2.8"/>',
   grid: '<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>',
   rows: '<rect x="3" y="4" width="18" height="6" rx="1.5"/><rect x="3" y="14" width="18" height="6" rx="1.5"/>',
+  eye: '<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>',
+  eyeoff: '<path d="M17.9 17.9A10.4 10.4 0 0 1 12 19c-6.5 0-10-7-10-7a18.4 18.4 0 0 1 5.1-5.9M9.9 5.2A9.6 9.6 0 0 1 12 5c6.5 0 10 7 10 7a18.5 18.5 0 0 1-2.2 3.2M14.1 14.1a3 3 0 1 1-4.2-4.2M2 2l20 20"/>',
   gauge: '<path d="M12 14l4-4"/><path d="M3.3 19a10 10 0 1 1 17.4 0"/>',
 };
 function icon(name, cls = "") {
@@ -500,32 +502,125 @@ function setThemeColor(c) {
 function renderLogin() {
   window.onhashchange = null;
   setThemeColor("#0b1f19"); // темна смужка статусу над темним екраном входу
-  const user = h("input", { autocomplete: "username", autocapitalize: "none", placeholder: "Логін", id: "login-user" });
+  const root = document.getElementById("root");
+  const lastUser = store.get("mds_last_user") || "";
+  const user = h("input", { autocomplete: "username", autocapitalize: "none", spellcheck: "false", placeholder: "Ваш логін", id: "login-user", value: lastUser });
   const pass = h("input", { type: "password", autocomplete: "current-password", placeholder: "Пароль", id: "login-pass" });
-  const btn = h("button", { class: "btn login-btn big", type: "submit" }, "Увійти");
-  const form = h("form", { class: "stack", onsubmit: async (e) => {
-    e.preventDefault();
-    btn.disabled = true;
+  const eye = h("button", { type: "button", class: "pw-eye", "aria-label": "Показати пароль", onclick: () => {
+    const show = pass.type === "password"; pass.type = show ? "text" : "password";
+    eye.replaceChildren(icon(show ? "eyeoff" : "eye")); eye.setAttribute("aria-label", show ? "Сховати пароль" : "Показати пароль"); pass.focus();
+  } }, icon("eye"));
+  const caps = h("div", { class: "login-hint hidden" }, icon("alert", "sm"), "Увімкнено Caps Lock");
+  pass.addEventListener("keyup", (e) => caps.classList.toggle("hidden", !(e.getModifierState && e.getModifierState("CapsLock"))));
+  const err = h("div", { class: "login-err hidden", role: "alert" });
+  const showErr = (m) => { err.textContent = m; err.classList.remove("hidden"); card.classList.remove("shake"); void card.offsetWidth; card.classList.add("shake"); };
+  const btn = h("button", { class: "btn login-btn big", type: "submit" }, h("span", {}, "Увійти"), icon("right", "sm"));
+  const busy = (b, on) => { b.disabled = on; b.classList.toggle("loading", on); };
+  const done = async (r) => {
+    api.token = r.token;
+    store.set("mds_token", r.token);
+    if (r.device_token) store.set("mds_device", r.device_token);
+    store.set("mds_last_user", user.value.trim());
+    location.hash = "";
+    await boot();
+  };
+  const submitPassword = async () => {
+    err.classList.add("hidden");
+    if (!user.value.trim() || !pass.value) return showErr("Введіть логін і пароль");
+    busy(btn, true);
     try {
-      const r = await api.post("/api/auth/login", { username: user.value, password: pass.value });
-      api.token = r.token;
-      store.set("mds_token", r.token);
-      location.hash = "";
-      await boot();
-    } catch (err) {
-      toast(err.message, true);
-      btn.disabled = false;
+      const r = await api.post("/api/auth/login", { username: user.value.trim(), password: pass.value, device_token: store.get("mds_device") || null });
+      if (r.twofa) return codeStep(r);
+      await done(r);
+    } catch (e) {
+      showErr(e.message);
+    } finally {
+      busy(btn, false);
     }
-  } }, field("Логін", user), field("Пароль", pass), btn);
-  document.getElementById("root").replaceChildren(
+  };
+  const form = h("form", { class: "stack login-form", onsubmit: (e) => { e.preventDefault(); submitPassword(); } },
+    field("Логін", user), field("Пароль", h("div", { class: "pw-wrap" }, pass, eye)), caps, err, btn);
+
+  // другий крок: 6-значний код з Telegram
+  function codeStep(r) {
+    const boxes = Array.from({ length: 6 }, (_, i) => h("input", { class: "code-box", inputmode: "numeric", maxlength: 1, "aria-label": `Цифра ${i + 1}`,
+      autocomplete: i === 0 ? "one-time-code" : "off" }));
+    const remember = h("input", { type: "checkbox", checked: true });
+    const cerr = h("div", { class: "login-err hidden", role: "alert" });
+    const vbtn = h("button", { class: "btn login-btn big", type: "submit" }, h("span", {}, "Підтвердити"), icon("ok", "sm"));
+    const timer = h("span", {});
+    let left = r.expires_in || 300;
+    const tick = () => { timer.textContent = left > 0 ? `Код дійсний ще ${Math.floor(left / 60)}:${pad(left % 60)}` : "Код застарів — надішліть новий"; };
+    tick();
+    const iv = setInterval(() => { left -= 1; tick(); if (left <= 0 || !timer.isConnected) clearInterval(iv); }, 1000);
+    const value = () => boxes.map((b) => b.value).join("");
+    const verify = async () => {
+      cerr.classList.add("hidden");
+      if (value().length !== 6) { cerr.textContent = "Введіть усі 6 цифр"; cerr.classList.remove("hidden"); return; }
+      busy(vbtn, true);
+      try {
+        const ua = navigator.userAgent;
+        const label = /MDSAndroid|Android/.test(ua) ? "Android" : /iPhone|iPad/.test(ua) ? "iPhone / iPad" : /Windows/.test(ua) ? "Windows" : /Mac/.test(ua) ? "Mac" : "Браузер";
+        const res = await api.post("/api/auth/login/verify", { challenge_id: r.challenge_id, code: value(), remember: remember.checked, device_label: label });
+        clearInterval(iv);
+        await done(res);
+      } catch (e) {
+        cerr.textContent = e.message; cerr.classList.remove("hidden");
+        card.classList.remove("shake"); void card.offsetWidth; card.classList.add("shake");
+        boxes.forEach((b) => { b.value = ""; b.classList.remove("filled"); }); boxes[0].focus();
+      } finally {
+        busy(vbtn, false);
+      }
+    };
+    boxes.forEach((b, i) => {
+      b.addEventListener("input", () => {
+        const digits = b.value.replace(/\D/g, "");
+        if (digits.length > 1) { // вставили весь код або автозаповнення з SMS/Telegram
+          digits.slice(0, 6 - i).split("").forEach((d, k) => { boxes[i + k].value = d; boxes[i + k].classList.add("filled"); });
+          boxes[Math.min(5, i + digits.length - 1)].focus();
+        } else {
+          b.value = digits; b.classList.toggle("filled", !!digits);
+          if (digits && i < 5) boxes[i + 1].focus();
+        }
+        if (value().length === 6) verify();
+      });
+      b.addEventListener("keydown", (e) => {
+        if (e.key === "Backspace" && !b.value && i > 0) { boxes[i - 1].focus(); boxes[i - 1].value = ""; boxes[i - 1].classList.remove("filled"); }
+        if (e.key === "ArrowLeft" && i > 0) boxes[i - 1].focus();
+        if (e.key === "ArrowRight" && i < 5) boxes[i + 1].focus();
+      });
+      b.addEventListener("focus", () => b.select());
+    });
+    const resend = h("button", { type: "button", class: "link-btn", onclick: async (e) => {
+      busy(e.currentTarget, true);
+      try {
+        const n = await api.post("/api/auth/login", { username: user.value.trim(), password: pass.value });
+        if (n.twofa) { clearInterval(iv); codeStep(n); toast("Новий код надіслано в Telegram"); } else await done(n);
+      } catch (x) { toast(x.message, true); } finally { busy(e.currentTarget, false); }
+    } }, "Надіслати код ще раз");
+    body.replaceChildren(h("form", { class: "stack login-form step-in", onsubmit: (e) => { e.preventDefault(); verify(); } },
+      h("div", { class: "code-head" }, h("span", { class: "code-ico" }, icon("lock")),
+        h("div", {}, h("b", {}, "Підтвердження входу"), h("div", {}, "Ми надіслали 6-значний код у Telegram-бот салону."))),
+      h("div", { class: "code-row" }, boxes), cerr,
+      h("label", { class: "row remember" }, remember, "Запам'ятати цей пристрій на 30 днів"),
+      vbtn,
+      h("div", { class: "code-foot" }, timer, resend),
+      h("button", { type: "button", class: "link-btn back", onclick: () => { clearInterval(iv); body.replaceChildren(form); pass.value = ""; autoFocus(pass); } }, icon("left", "sm"), "Інший акаунт")));
+    boxes[0].focus();
+  }
+
+  const body = h("div", { class: "login-body" }, form);
+  const card = h("div", { class: "login-card" },
+    h("div", { class: "login-mark" }, "M&D"),
+    h("div", { class: "login-name" }, "MDS Connect"),
+    h("div", { class: "login-sub" }, state.settings?.salon_name ? "Салон " + state.settings.salon_name : "Салон краси M&D"),
+    body);
+  root.replaceChildren(
     h("div", { class: "login" },
-      h("div", { class: "login-card" },
-        h("div", { class: "login-mark" }, "M&D"),
-        h("div", { class: "login-name" }, "MDS Connect"),
-        h("div", { class: "login-sub" }, "Beauty salon M&D"),
-        form),
-      h("div", { class: "login-foot" }, "Внутрішня система салону · доступ лише для персоналу", h("br"), versionTag())));
-  autoFocus(user);
+      h("div", { class: "login-glow" }),
+      card,
+      h("div", { class: "login-foot" }, icon("lock", "sm"), "Внутрішня система салону · доступ лише для персоналу", h("br"), versionTag())));
+  autoFocus(lastUser ? pass : user);
 }
 
 function renderApp() {
@@ -1393,8 +1488,26 @@ VIEWS.profile = async (main) => {
       h("button", { class: "btn primary", onclick: async () => {
         await run(() => api.post("/api/auth/change-password", { old_password: oldP.value, new_password: newP.value }), "Пароль змінено, увійдіть знову");
         logout();
-      } }, "Змінити пароль"))));
+      } }, "Змінити пароль")),
+    ["director", "admin"].includes(u.role) ? await devicesCard(u) : null));
 };
+
+// Безпека входу: двофакторний код і довірені пристрої
+async function devicesCard(u) {
+  const roles = state.settings?.twofa_roles || ["director"];
+  const on = roles.includes(u.role);
+  const list = await api.get("/api/auth/devices").catch(() => []);
+  const ago = (iso) => (iso ? `${dmy(iso)} ${hm(iso)}` : "—");
+  return h("div", { class: "card stack" }, h("h3", { class: "row", style: { gap: "8px" } }, icon("lock"), "Безпека входу"),
+    !on ? h("p", { class: "muted small", style: { margin: 0 } }, "Код підтвердження для вашої ролі вимкнено (Налаштування → Безпека входу).")
+      : u.telegram_linked ? h("p", { class: "small", style: { margin: 0 } }, "✓ Після пароля на новому пристрої приходить 6-значний код у Telegram.")
+        : h("div", { class: "callout", style: { margin: 0 } }, icon("alert"), h("div", { class: "small" }, "Підключіть Telegram (картка вище) — без нього код підтвердження надіслати нікуди, і вхід захищений лише паролем.")),
+    list.length ? h("div", {}, h("div", { class: "muted small" }, "Запам'ятовані пристрої (вхід без коду до 30 днів):"),
+      list.map((d) => h("div", { class: "sum-line" }, h("span", {}, icon("lock", "sm"), " ", d.label), h("span", { class: "muted small" }, "останній вхід ", ago(d.last_used_at)),
+        h("button", { class: "btn sm ghost", "aria-label": "Забути", onclick: async () => { await run(() => api.del("/api/auth/devices?device_id=" + d.id), "Пристрій забуто"); reload(); } }, icon("x", "sm"))))) : null,
+    list.length ? h("button", { class: "btn danger", onclick: () => confirmSheet("Забути всі пристрої?", "Наступного разу на кожному пристрої знадобиться код з Telegram.", "Забути всі",
+      async () => { await run(() => api.del("/api/auth/devices"), "Усі пристрої забуто"); store.del("mds_device"); reload(); }, { danger: true }) }, "Забути всі пристрої") : null);
+}
 
 // ---------- Клієнти
 VIEWS.clients = async (main) => {
@@ -1735,6 +1848,18 @@ function genRunsTable(runs, onEdit) {
       h("td", { class: "num" }, h("b", {}, money(x.total_cost))), h("td", { class: "small muted" }, x.note || ""),
       onEdit ? h("td", { class: "right" }, x.running ? null : h("button", { class: "btn sm ghost", "aria-label": "Виправити", onclick: () => onEdit(x) }, icon("edit", "sm"))) : null))))
     : emptyState("Цього місяця генератор не використовувався", "gauge");
+}
+function twofaSettingsCard(st) {
+  const roles = st.twofa_roles || [];
+  const dir = h("input", { type: "checkbox", checked: roles.includes("director") });
+  const adm = h("input", { type: "checkbox", checked: roles.includes("admin") });
+  return h("div", { class: "card stack" }, h("h3", { class: "row", style: { gap: "8px" } }, icon("lock"), "Безпека входу"),
+    h("p", { class: "muted small", style: { margin: 0 } }, "Після правильного пароля на новому пристрої — 6-значний код у Telegram (дійсний 5 хв). Пристрій можна запам'ятати на 30 днів. Працює, якщо в людини підключено Telegram."),
+    h("label", { class: "row" }, dir, "Директор"), h("label", { class: "row" }, adm, "Адміністратор"),
+    h("button", { class: "btn primary", onclick: async () => {
+      const v = [dir.checked ? "director" : null, adm.checked ? "admin" : null].filter(Boolean);
+      state.settings = await run(() => api.put("/api/settings", { twofa_roles: v }), "Збережено"); reload();
+    } }, "Зберегти"));
 }
 function generatorSettingsCard(st) {
   const lph = h("input", { inputmode: "decimal", value: (st.generator_fuel_lph_milli || 0) / 1000 });
@@ -2564,6 +2689,7 @@ VIEWS.settings = async (main) => {
       field("Стандартний відсоток майстра, %", share), field("Облік матеріалів за замовчуванням", mode),
       h("label", { class: "row" }, takesCash, "Після зміни майстер бере заробіток з готівки в касі (решту доплачує директор)"),
       h("p", { class: "muted small" }, "Індивідуальні умови задаються в картці майстра (розділ «Персонал»). Зміни діють для нових замовлень; закриті замовлення зберігають умови на момент закриття.")),
+    twofaSettingsCard(s),
     generatorSettingsCard(s),
     h("div", { class: "card stack" }, h("h3", {}, "Запис клієнтів"), field("Назва салону", name),
       h("div", { class: "form-grid" }, field("Крок слотів, хв", step), field("Запис наперед, днів", horizon), field("Мін. хв до запису (бот)", lead)),
