@@ -519,7 +519,12 @@ function renderApp() {
   const main = h("main", { class: "main" });
   // телефон: закріплена шапка з суцільним фоном — вміст прокручується під нею, а не під годинником iPhone
   const title = route === "more" ? "Меню" : (items.find((i) => i[0] === route) || [])[2] || "";
-  const mbar = h("header", { class: "mbar" }, h("div", { class: "brand-mark" }, "M&D"), h("b", { class: "grow" }, title),
+  // сторінки поза нижніми вкладками (Послуги, Персонал, Журнал…) — кнопка «Назад» замість логотипа
+  const isTab = route === "more" || tabIds.includes(route);
+  const backTo = tabIds.includes("more") ? "more" : tabIds[0];
+  const lead = isTab ? h("div", { class: "brand-mark" }, "M&D")
+    : h("button", { class: "icon-btn back-btn", "aria-label": "Назад", onclick: () => { location.hash = "#/" + backTo; } }, icon("left"), h("span", {}, "Назад"));
+  const mbar = h("header", { class: "mbar" }, lead, h("b", { class: "grow" }, title),
     h("button", { class: "icon-btn", "aria-label": "Повідомити про помилку", onclick: bugReportForm }, icon("bug")));
   main.append(mbar);
   document.getElementById("root").replaceChildren(h("div", { class: "app" }, sidebar, main), tabbar);
@@ -1234,7 +1239,7 @@ VIEWS.dashboard = async (main) => {
     periodPicker((q, kind) => load(q, kind)), body);
   const load = async (q, kind = "month") => {
     body.replaceChildren(h("div", { class: "empty" }, "Завантаження…"));
-    const d = await api.get("/api/finance/dashboard?" + q);
+    const [d, ins] = await Promise.all([api.get("/api/finance/dashboard?" + q), api.get("/api/finance/insights?" + q).catch(() => null)]);
     const s = d.summary;
     const [pf, pt] = prevRange(s.from, s.to, kind);
     const p = (await api.get(`/api/finance/dashboard?date_from=${pf}&date_to=${pt}`).catch(() => null))?.summary || {};
@@ -1247,6 +1252,7 @@ VIEWS.dashboard = async (main) => {
         kpi("Чистий прибуток", s.net_profit, "accent", { ico: "trend", prev: p.net_profit, vs }),
         kpi("Валовий прибуток", s.gross_profit, "", { ico: "chart", prev: p.gross_profit }),
         kpi("Середній чек", s.average_check, "", { ico: "receipt", prev: p.average_check, sub: `${s.orders_count} замовл. · ${s.clients_count} клієнтів` })),
+      ins ? insightsBlock(ins) : null,
       h("div", { class: "grid two", style: { marginTop: "12px" } },
         h("div", { class: "card" }, h("div", { class: "card-head" }, h("h3", {}, "Куди йдуть гроші"), h("span", { class: "muted small" }, `${dmy(s.from)} — ${dmy(s.to)}`)),
           h("div", { class: "sum-line" }, h("span", {}, "Виручка"), h("b", {}, money(s.revenue))),
@@ -1286,6 +1292,69 @@ VIEWS.dashboard = async (main) => {
   };
   await load("period=month", "month");
 };
+
+// Аналітика і прогноз (директор): прогноз місяця, середній чек по майстрах, клієнти, дні тижня
+const MONTHS_IN = ["січні", "лютому", "березні", "квітні", "травні", "червні", "липні", "серпні", "вересні", "жовтні", "листопаді", "грудні"];
+function changeChip(bp) {
+  if (bp === null || bp === undefined) return h("span", { class: "muted small" }, "немає даних для порівняння");
+  const up = bp >= 0;
+  return h("span", { class: "chip " + (up ? "st-completed" : "st-cancelled") }, `${up ? "▲ +" : "▼ "}${(bp / 100).toLocaleString("uk-UA", { maximumFractionDigits: 1 })}%`);
+}
+function insightsBlock(ins) {
+  const f = ins.forecast;
+  const month = MONTHS_IN[+f.month_from.slice(5, 7) - 1];
+  const pct = (x) => (f.forecast ? Math.min(100, (x / f.forecast) * 100) : 0);
+  const forecastCard = h("div", { class: "card forecast-card" },
+    h("div", { class: "card-head" }, h("h3", {}, `Прогноз виручки в ${month}`), h("span", { class: "muted small" }, `день ${f.days_elapsed} з ${f.days_total}`)),
+    h("div", { class: "kpi-value big" }, money(f.forecast)),
+    h("div", { class: "forecast-bar", role: "img", "aria-label": `Факт ${money(f.actual)}, записано наперед ${money(f.booked)}, прогноз ${money(f.forecast)}` },
+      h("div", { class: "fact", style: { width: pct(f.actual) + "%" } }),
+      h("div", { class: "booked", style: { width: pct(f.booked) + "%" } })),
+    h("div", { class: "row small", style: { flexWrap: "wrap", gap: "14px" } },
+      h("span", { class: "row" }, h("i", { class: "dot fact" }), "Факт: ", h("b", {}, money(f.actual))),
+      h("span", { class: "row" }, h("i", { class: "dot booked" }), "Записано наперед: ", h("b", {}, money(f.booked)), ` (${f.booked_count})`)),
+    h("div", { class: "sum-line" }, h("span", { class: "muted" }, "За поточним темпом"), h("span", {}, money(f.run_rate))),
+    h("div", { class: "sum-line" }, h("span", { class: "muted" }, "Середня виручка за день"), h("span", {}, money(f.daily_average))),
+    h("div", { class: "sum-line" }, h("span", { class: "muted" }, "Оренда, комунальні, реклама, інше"), h("span", {}, "− " + money(f.operating_expenses))),
+    h("div", { class: "sum-line total" }, h("span", {}, "Прогноз чистого прибутку"), h("span", { class: f.forecast_net < 0 ? "neg" : "" }, money(f.forecast_net))),
+    h("p", { class: "muted small" }, "Прогноз — більше з двох: «за темпом» або «факт + записи наперед». Прибуток — за структурою цього місяця (частки майстрів і матеріали)."));
+
+  const c = ins.compare;
+  const maxAvg = Math.max(1, ...ins.masters.map((m) => m.average_check));
+  const checkCard = h("div", { class: "card" },
+    h("div", { class: "card-head" }, h("h3", {}, "Середній чек"), changeChip(c.average_check.change_bp)),
+    h("div", { class: "kpi-value" }, money(c.average_check.current)),
+    h("div", { class: "muted small", style: { marginBottom: "10px" } }, c.average_check.previous
+      ? `було ${money(c.average_check.previous)} · ${dmy(ins.previous.from)} — ${dmy(ins.previous.to)}` : "за попередній період замовлень не було"),
+    ins.masters.filter((m) => m.orders).map((m) => h("div", { class: "stack", style: { gap: "4px", marginBottom: "8px" } },
+      h("div", { class: "sum-line", style: { padding: 0 } }, h("span", {}, m.master_name, h("span", { class: "muted small" }, ` · ${m.orders} замовл.`)), h("b", {}, money(m.average_check))),
+      h("div", { class: "progress" }, h("div", { style: { width: (m.average_check / maxAvg) * 100 + "%" } })))));
+
+  const cl = ins.clients;
+  const clientsCard = h("div", { class: "card" },
+    h("div", { class: "card-head" }, h("h3", {}, "Клієнти"), changeChip(c.clients_count.change_bp)),
+    h("div", { class: "grid", style: { gridTemplateColumns: "1fr 1fr", gap: "10px" } },
+      h("div", {}, h("div", { class: "kpi-value" }, String(cl.new)), h("div", { class: "muted small" }, "нових")),
+      h("div", {}, h("div", { class: "kpi-value" }, String(cl.returning)), h("div", { class: "muted small" }, "повернулися"))),
+    cl.total ? h("div", { class: "forecast-bar", style: { marginTop: "10px" } },
+      h("div", { class: "fact", style: { width: (cl.returning / cl.total) * 100 + "%" } }), h("div", { class: "booked", style: { width: (cl.new / cl.total) * 100 + "%" } })) : null,
+    h("p", { class: "muted small" }, cl.total ? `Повторних візитів у періоді: ${cl.repeat_in_period}. Частка постійних: ${Math.round((cl.returning / cl.total) * 100)}%.` : "Немає візитів за період."));
+
+  const WDN = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Нд"];
+  const maxWd = Math.max(1, ...ins.weekdays.map((w) => w.average));
+  const best = ins.weekdays.reduce((a, w) => (w.average > a.average ? w : a), ins.weekdays[0]);
+  const weekCard = h("div", { class: "card" },
+    h("div", { class: "card-head" }, h("h3", {}, "Дні тижня"), best.average ? h("span", { class: "muted small" }, `найкращий — ${WDN[best.weekday]}`) : null),
+    h("div", { class: "wd-bars" }, ins.weekdays.map((w) => h("div", { class: "wd" },
+      h("span", { class: "v" }, w.average ? Math.round(w.average / 100).toLocaleString("uk-UA") : ""),
+      h("div", { class: "bar" + (w === best && w.average ? " best" : ""), style: { height: Math.max(4, (w.average / maxWd) * 110) + "px" } }),
+      h("span", { class: "l" }, WDN[w.weekday])))),
+    h("p", { class: "muted small" }, "Середня виручка за один такий день у періоді, грн."));
+
+  return h("div", { class: "stack", style: { marginTop: "12px" } },
+    h("div", { class: "section", style: { marginTop: "4px" } }, h("h2", {}, "Аналітика і прогноз")),
+    h("div", { class: "grid two" }, forecastCard, checkCard, clientsCard, weekCard));
+}
 
 // ---------- Зміни й виплати
 VIEWS.shifts = async (main) => {
@@ -1740,40 +1809,84 @@ VIEWS.stock = async (main) => {
 
 // ---------- Графік роботи (по датах)
 VIEWS.schedule = async (main) => {
+  // Графік — сітка-календар на 4 тижні: квадратик = день, ✓ — робочий. Натискання перемикає
+  // «робочий ↔ вихідний»; режим «Години» — змінити години конкретного дня.
   const params = new URLSearchParams(location.hash.split("?")[1] || "");
   const monday = (iso) => { const d = new Date(iso + "T12:00"); d.setDate(d.getDate() - ((d.getDay() + 6) % 7)); return isoDate(d); };
   const start = params.get("w") || monday(today());
-  const end = addDays(start, 13);
+  const end = addDays(start, 27);
   const go = (w) => { location.hash = "#/schedule?w=" + w; };
   const canEdit = state.user.role !== "master";
-  main.append(topbar("Графік роботи", `${dmy(start)} — ${dmy(end)}. Натисніть на клітинку, щоб змінити день`,
-    h("button", { class: "btn", "aria-label": "Раніше", onclick: () => go(addDays(start, -14)) }, icon("left", "sm")),
-    h("button", { class: "btn", onclick: () => go(monday(today())) }, "Цей тиждень"),
-    h("button", { class: "btn", "aria-label": "Пізніше", onclick: () => go(addDays(start, 14)) }, icon("right", "sm"))));
-  const g = await api.get(`/api/schedule?date_from=${start}&date_to=${end}`);
+  const url = `/api/schedule?date_from=${start}&date_to=${end}`;
+  let mode = "days";
+  main.append(topbar("Графік роботи", `${dmy(start)} — ${dmy(end)}`,
+    h("button", { class: "btn", "aria-label": "Раніше", onclick: () => go(addDays(start, -28)) }, icon("left", "sm")),
+    h("button", { class: "btn", onclick: () => go(monday(today())) }, "Сьогодні"),
+    h("button", { class: "btn", "aria-label": "Пізніше", onclick: () => go(addDays(start, 28)) }, icon("right", "sm"))));
+  let g = await api.get(url);
   if (!g.masters.length) { main.append(h("div", { class: "card" }, emptyState("Додайте майстрів у розділі «Персонал»", "users"))); return; }
-  const cellEl = (m, d, c) => {
-    const short = (t) => (t.endsWith(":00") ? String(+t.slice(0, 2)) : t);
-    const label = c.off ? "вихідний" : `${short(c.start)}–${short(c.end)}`;
-    return h("td", { style: { padding: "4px" } }, h("button", {
-      type: "button", disabled: !canEdit || null, title: c.source === "day" ? "Змінено на цю дату" : c.source === "master" ? "За шаблоном майстра" : "За графіком салону",
-      style: {
-        width: "100%", minWidth: "74px", border: c.source === "day" ? "1.5px solid var(--gold)" : "1px solid var(--line)", borderRadius: "8px",
-        padding: "7px 4px", cursor: canEdit ? "pointer" : "default", fontWeight: 700, fontSize: "12.5px",
-        background: c.off ? "var(--muted-bg)" : "var(--ok-bg)", color: c.off ? "var(--ink-3)" : "var(--ok)",
-      },
-      onclick: () => canEdit && dayForm(m, d, c),
-    }, label));
+
+  const short = (x) => (x.endsWith(":00") ? String(+x.slice(0, 2)) : x);
+  const hint = h("span", { class: "muted small" });
+  const drawHint = () => { hint.textContent = mode === "days" ? "Натисніть на день: робочий ✓ ↔ вихідний" : "Натисніть на день, щоб змінити його години"; };
+  drawHint();
+  if (canEdit) {
+    main.append(h("div", { class: "row", style: { marginBottom: "12px", flexWrap: "wrap" } },
+      seg([["days", "✓ Робочі дні"], ["hours", "Години"]], mode, (v) => { mode = v; drawHint(); }), hint));
+  }
+  const body = h("div", { class: "grid two" });
+  main.append(body, h("div", { class: "legend" },
+    h("span", { class: "chip", style: { background: "var(--ok)", color: "#fff" } }, "✓ робочий"), h("span", { class: "chip st-cancelled" }, "сірий — вихідний"),
+    h("span", {}, "Золота рамка — змінено на цю дату. Години замість галочки — якщо не звичайні.")));
+
+  const card = (m) => {
+    const cells = g.cells[m.id];
+    const usual = m.usual_hours;
+    const work = g.days.filter((d) => !cells[d].off).length;
+    return h("div", { class: "card stack" },
+      h("div", { class: "row" }, avatar(m.full_name, "sm"),
+        h("div", { class: "grow" }, h("b", {}, m.full_name),
+          h("div", { class: "muted small" }, `робочих днів: ${work} · зазвичай ${short(usual[0])}–${short(usual[1])}`)),
+        canEdit ? h("button", { class: "btn sm ghost", onclick: () => copyForm(m) }, "Копіювати тиждень…") : null),
+      h("div", { class: "sched-grid" },
+        ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Нд"].map((w) => h("div", { class: "sched-wd" }, w)),
+        g.days.map((d) => {
+          const c = cells[d];
+          const unusual = !c.off && (c.start !== usual[0] || c.end !== usual[1]);
+          return h("button", {
+            type: "button", disabled: !canEdit || null, "aria-pressed": String(!c.off),
+            class: "sched-day " + (c.off ? "off" : "on") + (c.source === "day" ? " changed" : "") + (d === today() ? " today" : ""),
+            "aria-label": `${weekday(d)} ${dm(d)}: ${c.off ? "вихідний" : `${c.start}–${c.end}`}`,
+            onclick: () => (mode === "hours" ? dayForm(m, d, c) : toggle(m, d, c)),
+          },
+          h("span", { class: "num" }, String(+d.slice(8, 10))),
+          c.off ? null : unusual ? h("span", { class: "hrs" }, `${short(c.start)}–${short(c.end)}`) : icon("ok"));
+        })));
   };
-  const head = h("tr", {}, h("th", {}, "Майстер"), g.days.map((d) => h("th", { class: "right", style: { textAlign: "center", color: d === today() ? "var(--gold)" : null } }, weekday(d), h("br"), dm(d))));
-  main.append(h("div", { class: "card table-wrap" }, h("table", {}, head,
-    g.masters.map((m) => h("tr", {},
-      h("td", { style: { whiteSpace: "nowrap" } }, h("div", { class: "row" }, avatar(m.full_name, "sm"), h("b", {}, m.full_name)),
-        canEdit ? h("button", { class: "btn sm ghost", style: { marginTop: "4px" }, onclick: () => copyForm(m) }, "Копіювати тиждень…") : null),
-      g.days.map((d) => cellEl(m, d, g.cells[m.id][d])))))));
-  main.append(h("div", { class: "legend" },
-    h("span", { class: "chip st-completed" }, "робочий день"), h("span", { class: "chip st-cancelled" }, "вихідний"),
-    h("span", {}, "Золота рамка — змінено на конкретну дату; без рамки — за тижневим шаблоном (Персонал → майстер) або графіком салону")));
+  const draw = () => body.replaceChildren(...g.masters.map(card));
+  draw();
+
+  let busy = Promise.resolve();
+  function toggle(m, d, c) {
+    const api_url = `/api/schedule/${m.id}/${d}`;
+    const tpl = c.template; // тижневий шаблон цього дня (null — за шаблоном вихідний)
+    let req;
+    if (!c.off) {
+      // робочий → вихідний; якщо за шаблоном і так вихідний — просто прибрати зміну
+      req = !tpl && c.source === "day" ? () => api.del(api_url) : () => api.put(api_url, { off: true });
+      Object.assign(c, { off: true, start: null, end: null });
+    } else {
+      const [s1, e1] = tpl || m.usual_hours;
+      req = tpl && c.source === "day" ? () => api.del(api_url) : () => api.put(api_url, { start: s1, end: e1 });
+      Object.assign(c, { off: false, start: s1, end: e1 });
+    }
+    c.source = "day";
+    draw(); // одразу показуємо галочку, сервер підтверджує
+    busy = busy.then(async () => {
+      try { await req(); } catch (e) { toast(e.message, true); }
+      g = await api.get(url); draw();
+    });
+  }
 
   function dayForm(m, d, c) {
     let off = c.off;
@@ -1895,30 +2008,77 @@ function driveBlock(d) {
         "Відключити", async () => { await run(() => api.post("/api/gdrive/disconnect"), "Google Drive відключено"); reload(); }) }, "Відключити")));
 }
 
-// ---------- Журнал
+// ---------- Журнал: стрічка подій простими словами
 VIEWS.journal = async (main) => {
-  const body = h("div", { style: { marginTop: "12px" } });
+  const CATS = [["", "Усе"], ["money", "Гроші"], ["records", "Записи"], ["clients", "Клієнти"], ["stock", "Склад"], ["staff", "Персонал і налаштування"]];
+  const CAT_COLOR = { money: "var(--ok)", records: "var(--brand-2)", clients: "#7a4e6b", stock: "var(--gold)", staff: "var(--ink-3)" };
+  const PERIODS = [["today", "Сьогодні"], ["week", "7 днів"], ["month", "30 днів"]];
+  let cat = "", period = "week", q = "", timer = null;
+  const range = () => {
+    const to = today();
+    return [period === "today" ? to : addDays(to, period === "week" ? -6 : -29), to];
+  };
+  const body = h("div", { class: "stack" });
+  const catRow = h("div", { class: "row chips-scroll" });
+  const drawCats = () => catRow.replaceChildren(...CATS.map(([id, label]) =>
+    h("button", { class: "btn sm" + (cat === id ? " primary" : ""), onclick: () => { cat = id; drawCats(); load(); } }, label)));
+  const search = h("input", { type: "search", placeholder: "Пошук: ім'я, послуга, сума, причина…", oninput: (e) => {
+    clearTimeout(timer); timer = setTimeout(() => { q = e.target.value.trim(); load(); }, 300);
+  } });
+  main.append(topbar("Журнал", "Усе, що відбувалося в салоні: хто, що і коли зробив"),
+    h("div", { class: "row", style: { marginBottom: "10px", flexWrap: "wrap" } },
+      seg(PERIODS, period, (v) => { period = v; load(); }),
+      h("div", { class: "search grow", style: { maxWidth: "380px", minWidth: "220px" } }, icon("search", "sm"), search)),
+    catRow, body,
+    h("details", { class: "card", style: { marginTop: "16px" } }, h("summary", { class: "small" }, "Для бухгалтера: фінансові проведення (технічний журнал)"),
+      h("div", { id: "ledger-box", class: "table-wrap", style: { marginTop: "10px" } })));
+  drawCats();
+
+  const dayTitle = (iso) => {
+    const d = iso.slice(0, 10);
+    if (d === today()) return "Сьогодні";
+    if (d === addDays(today(), -1)) return "Вчора";
+    return `${WD_LONG[(new Date(d + "T12:00").getDay() + 6) % 7]}, ${dmy(d)}`;
+  };
+  const item = (x) => h("div", { class: "jr-item" },
+    h("span", { class: "jr-ico", style: { color: CAT_COLOR[x.category] || "var(--ink-3)" } }, icon(x.icon || "history", "sm")),
+    h("div", { class: "grow", style: { minWidth: 0 } },
+      h("div", { class: "jr-head" }, h("b", {}, x.title), x.amount !== null && x.amount !== undefined ? h("b", { class: "jr-amount" }, money(x.amount)) : null),
+      x.text ? h("div", { class: "jr-text" }, x.text) : null,
+      x.changes.length ? h("div", { class: "jr-changes" }, x.changes.map((c) => h("div", {},
+        h("span", { class: "muted" }, c.field + ": "), h("s", { class: "muted" }, c.before), " → ", h("b", {}, c.after)))) : null,
+      x.reason ? h("div", { class: "jr-reason" }, "Причина: ", x.reason) : null,
+      h("div", { class: "jr-meta" }, `${hm(x.ts)} · ${x.who}`)));
+
+  async function load() {
+    const [from, to] = range();
+    body.replaceChildren(h("div", { class: "empty" }, "Завантаження…"));
+    const params = new URLSearchParams({ date_from: from, date_to: to });
+    if (cat) params.set("category", cat);
+    if (q) params.set("q", q);
+    const list = await api.get("/api/journal/feed?" + params);
+    if (!list.length) { body.replaceChildren(h("div", { class: "card" }, emptyState(q ? "Нічого не знайдено" : "Подій за цей період немає", "history"))); return; }
+    const groups = new Map();
+    for (const x of list) { const k = x.ts.slice(0, 10); if (!groups.has(k)) groups.set(k, []); groups.get(k).push(x); }
+    body.replaceChildren(...[...groups.entries()].map(([d, items]) => h("div", {},
+      h("div", { class: "jr-day" }, dayTitle(d), h("span", { class: "muted" }, ` · ${items.length}`)),
+      h("div", { class: "card jr-list" }, items.map(item)))));
+  }
+  await load();
+
+  // технічний фінансовий журнал — лише за потреби (згорнутий)
   const KIND = { order_closed: "Закрито замовлення", order_reversal: "Сторно (виправлення)", order_corrected: "Виправлене замовлення", payout: "Виплата майстру",
     shift_closed: "Зміну закрито", expense: "Витрата", expense_reversal: "Сторно витрати" };
   const userName = (id) => (state.allUsers.find((u) => u.id === id) || {}).full_name || (id ? "#" + id : "—");
-  const show = async (tab) => {
-    if (tab === "ledger") {
-      const list = await api.get("/api/journal/ledger?limit=300");
-      body.replaceChildren(h("div", { class: "card table-wrap" }, h("table", {},
-        h("tr", {}, h("th", {}, "Час"), h("th", {}, "Операція"), h("th", {}, "Об'єкт"), h("th", {}, "Майстер"), h("th", { class: "num" }, "Сума"), h("th", { class: "num" }, "Майстру"), h("th", { class: "num" }, "Салону"), h("th", {}, "Хто")),
-        list.map((e) => h("tr", {}, h("td", {}, dm(e.ts), " ", hm(e.ts)), h("td", {}, KIND[e.kind] || e.kind), h("td", {}, e.ref_type, " #", e.ref_id), h("td", {}, e.master_id ? userName(e.master_id) : ""),
-          h("td", { class: "num" }, money(e.amount)), h("td", { class: "num" }, money(e.master_amount)), h("td", { class: "num" }, money(e.salon_amount)), h("td", { class: "small muted" }, userName(e.user_id)))))));
-    } else {
-      const list = await api.get("/api/journal/audit?limit=300");
-      body.replaceChildren(h("div", { class: "card table-wrap" }, h("table", {},
-        h("tr", {}, h("th", {}, "Час"), h("th", {}, "Хто"), h("th", {}, "Що"), h("th", {}, "Дія"), h("th", {}, "Деталі")),
-        list.map((a) => h("tr", {}, h("td", {}, dm(a.ts), " ", hm(a.ts)), h("td", {}, a.actor), h("td", {}, a.entity, " #", a.entity_id), h("td", {}, a.action),
-          h("td", { class: "small muted", style: { maxWidth: "420px", wordBreak: "break-word" } }, a.reason ? "Причина: " + a.reason + ". " : "",
-            a.before && a.after ? Object.keys(a.after).filter((k) => JSON.stringify(a.before[k]) !== JSON.stringify(a.after[k])).map((k) => `${k}: ${JSON.stringify(a.before[k])} → ${JSON.stringify(a.after[k])}`).join("; ") : ""))))));
-    }
-  };
-  main.append(topbar("Журнал"), seg([["ledger", "Фінансові операції"], ["audit", "Історія змін"]], "ledger", show), body);
-  await show("ledger");
+  main.querySelector("details").addEventListener("toggle", async (e) => {
+    if (!e.target.open || e.target.dataset.loaded) return;
+    e.target.dataset.loaded = "1";
+    const list = await api.get("/api/journal/ledger?limit=300");
+    main.querySelector("#ledger-box").replaceChildren(h("table", {},
+      h("tr", {}, h("th", {}, "Час"), h("th", {}, "Операція"), h("th", {}, "Майстер"), h("th", { class: "num" }, "Сума"), h("th", { class: "num" }, "Майстру"), h("th", { class: "num" }, "Салону"), h("th", {}, "Хто")),
+      list.map((x) => h("tr", {}, h("td", {}, dm(x.ts), " ", hm(x.ts)), h("td", {}, KIND[x.kind] || x.kind), h("td", {}, x.master_id ? userName(x.master_id) : ""),
+        h("td", { class: "num" }, money(x.amount)), h("td", { class: "num" }, money(x.master_amount)), h("td", { class: "num" }, money(x.salon_amount)), h("td", { class: "small muted" }, userName(x.user_id))))));
+  });
 };
 
 boot();

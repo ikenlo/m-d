@@ -104,6 +104,14 @@ def dashboard(period: str | None = None, date_from: date | None = None, date_to:
     }
 
 
+@router.get("/finance/insights")
+def finance_insights(period: str | None = None, date_from: date | None = None, date_to: date | None = None,
+                     actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
+    """Аналітика: порівняння з попереднім періодом, прогноз місяця, середній чек, клієнти, дні тижня."""
+    a, b = _range(period, date_from, date_to)
+    return analytics.insights(s, actor, a, b)
+
+
 @router.get("/finance/my")
 def my_finance(master_id: int | None = None, actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
     return analytics.my_earnings(s, actor, master_id)

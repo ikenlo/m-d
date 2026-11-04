@@ -108,10 +108,23 @@ def grid(s: Session, actor: Actor, date_from: date, date_to: date) -> dict:
     overrides = {(r.master_id, r.day): r for r in rows}
     days = [date_from + timedelta(days=i) for i in range((date_to - date_from).days + 1)]
     cells = {}
+    hours = {}
     for m in masters:
         cells[m.id] = {}
         for d in days:
             start, end, src = day_span(s, m, d, overrides.get((m.id, d)), lookup=False)
-            cells[m.id][d.isoformat()] = {"start": start, "end": end, "off": start is None, "source": src}
-    return {"masters": [{"id": m.id, "full_name": m.full_name} for m in masters],
+            t_start, t_end, _ = day_span(s, m, d, None, lookup=False)  # тижневий шаблон без змін по датах
+            cells[m.id][d.isoformat()] = {"start": start, "end": end, "off": start is None, "source": src,
+                                          "template": [t_start, t_end] if t_start else None}
+        hours[m.id] = _usual_hours(s, m)
+    return {"masters": [{"id": m.id, "full_name": m.full_name, "usual_hours": hours[m.id]} for m in masters],
             "days": [d.isoformat() for d in days], "cells": cells}
+
+
+def _usual_hours(s: Session, master: User) -> list[str]:
+    """Звичайні години майстра (найчастіші в тижневому шаблоні) — для дня, який позначають робочим."""
+    tpl = master.schedule if master.schedule is not None else (get_setting(s, "schedule") or {})
+    spans = [tuple(v) for v in tpl.values() if v]
+    if not spans:
+        return ["09:00", "18:00"]
+    return list(max(set(spans), key=spans.count))
