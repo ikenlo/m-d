@@ -127,7 +127,31 @@ def cmd_start(cfg: Config, args) -> None:
         import subprocess
 
         subprocess.Popen([sys.executable, "-m", "mds", "demo-year"])
+    if os.environ.get("MDS_DEMO_FOP1", "").strip().lower() == "yes":
+        # тестове середовище: замінити демо-дані на сценарій «ФОП 1 група» (окремий процес)
+        import subprocess
+
+        subprocess.Popen([sys.executable, "-m", "mds", "demo-fop1"])
     cmd_serve(cfg, args, with_bot=True)
+
+
+def cmd_demo_fop1(cfg: Config, _args) -> None:
+    from .demo_fop1 import purge_demo, seed_fop1
+    from .services.backup import make_backup
+
+    db = _db(cfg)
+    from sqlalchemy import select
+
+    from .demo_fop1 import FOP_LOGIN
+    from .models import User
+
+    with db.session() as s:
+        if s.scalar(select(User.id).where(User.username == FOP_LOGIN)):
+            print("Демо «ФОП 1 група» вже є — пропуск", flush=True)
+            return
+    print("Резервна копія перед заміною демо-даних:", make_backup(cfg.database_url, cfg.backup_dir, cfg.backup_keep), flush=True)
+    print(purge_demo(db), flush=True)
+    print(seed_fop1(db), flush=True)
 
 
 def cmd_demo_year(cfg: Config, _args) -> None:
@@ -200,6 +224,7 @@ def main(argv: list[str] | None = None) -> None:
     sub.add_parser("bot", help="лише Telegram-бот")
     sub.add_parser("backup", help="резервна копія зараз")
     sub.add_parser("demo-year", help="ДОДАТИ тестовий рік роботи (лише тестове середовище)")
+    sub.add_parser("demo-fop1", help="ЗАМІНИТИ демо-дані на сценарій «ФОП 1 група» (лише тестове середовище)")
 
     args = p.parse_args(argv)
     cfg = Config()
@@ -213,6 +238,7 @@ def main(argv: list[str] | None = None) -> None:
         "bot": cmd_bot,
         "start": cmd_start,
         "demo-year": cmd_demo_year,
+        "demo-fop1": cmd_demo_fop1,
     }[args.cmd](cfg, args)
 
 
