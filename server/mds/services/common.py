@@ -152,6 +152,20 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "utilities_fixed_per": "shift",  # fixed: shift (за зміну) | month (за місяць)
     # ліміт доходу групи ФОП за рік, копійки (0 — не задано); вносить директор/бухгалтер
     "fop_income_limit": 0,
+    # профіль ФОП для XML-декларації (services/tax_declaration.py); ставки вносить директор/бухгалтер
+    "fop_tin": "",
+    "fop_name": "",
+    "fop_address": "",
+    "fop_sti_name": "",
+    "fop_c_reg": 0,
+    "fop_c_raj": 0,
+    "fop_c_sti": 0,
+    "fop_kved": "96.02",
+    "fop_kved_name": "Надання послуг перукарнями та салонами краси",
+    "fop_single_tax_month": 0,  # єдиний податок на місяць, копійки (рішення місцевої ради)
+    "fop_min_wage": 0,  # мінімальна зарплата на 1 січня року декларації, копійки
+    "fop_email": "",
+    "fop_phone": "",
     "salon_address": "",
     "salon_phone": "",
     "salon_instagram": "",
@@ -230,6 +244,10 @@ def update_settings(s: Session, actor: Actor, data: dict[str, Any]) -> dict[str,
             raise ValidationError("Розподіл: пропорційно виручці або порівну")
         if key == "utilities_fixed_per" and value not in ("shift", "month"):
             raise ValidationError("Фіксована ставка: за зміну або за місяць")
+        if key.startswith("fop_") and key != "fop_income_limit":
+            from .tax_declaration import validate_profile_value
+
+            value = validate_profile_value(key, value)
         if key == "slot_step_min" and value < 5:
             raise ValidationError("Крок слотів — щонайменше 5 хвилин")
         set_setting(s, actor, key, value)

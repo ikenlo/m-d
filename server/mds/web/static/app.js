@@ -2259,6 +2259,58 @@ async function downloadFile(path, fallbackName) {
   setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 1000);
 }
 
+// ---- XML-декларація ФОП 1 групи для Електронного кабінету (F0103309 + Додаток 1)
+async function declarationCard(year) {
+  const d = await api.get("/api/reports/declaration?year=" + year);
+  const st = state.settings || await api.get("/api/settings");
+  const F = [ // ключ, назва, тип: t — текст, i — ціле, m — гроші (грн)
+    ["fop_name", "ПІБ ФОП", "t"], ["fop_tin", "РНОКПП (10 цифр)", "t"], ["fop_address", "Податкова адреса", "t"],
+    ["fop_sti_name", "Податкова, до якої подаєте", "t"], ["fop_c_reg", "Код області (C_REG)", "i"],
+    ["fop_c_raj", "Код району (C_RAJ)", "i"], ["fop_c_sti", "Код податкової (C_STI_ORIG)", "i"],
+    ["fop_kved", "КВЕД", "t"], ["fop_kved_name", "Назва КВЕД", "t"],
+    ["fop_single_tax_month", "Єдиний податок на місяць, грн", "m"], ["fop_min_wage", "Мінімальна зарплата на 1 січня, грн", "m"],
+    ["fop_email", "E-mail (необов'язково)", "t"], ["fop_phone", "Телефон (необов'язково)", "t"]];
+  const ins = {};
+  const form = h("div", { class: "grid", style: { gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "8px" } },
+    F.map(([k, label, typ]) => {
+      const v = st[k];
+      const shown = typ === "m" ? (v ? kopToInput(v) : "") : (v ? String(v) : "");
+      ins[k] = h("input", { value: shown,
+        inputmode: typ === "t" ? null : "decimal" });
+      return field(label, ins[k]);
+    }));
+  const save = async () => {
+    const body = {};
+    for (const [k, , typ] of F) {
+      const raw = ins[k].value.trim();
+      if (typ === "m") { const v = raw ? toKop(raw) : 0; if (!Number.isFinite(v) || v < 0) { toast("Невірна сума: " + k, true); return; } body[k] = v; }
+      else if (typ === "i") { const v = raw ? parseInt(raw, 10) : 0; if (!Number.isFinite(v)) { toast("Потрібне число", true); return; } body[k] = v; }
+      else body[k] = raw;
+    }
+    state.settings = await run(() => api.put("/api/settings", body), "Дані ФОП збережено"); reload();
+  };
+  const line = (label, v) => h("div", { class: "sum-line" }, h("span", {}, label), h("b", {}, money(v)));
+  return h("div", { class: "card stack" },
+    h("div", { class: "card-head" }, h("h3", {}, `Декларація ФОП 1 групи за ${year} рік (XML)`),
+      h("span", { class: "chip " + (d.ready ? "st-completed" : "st-pending") }, d.ready ? "готово до завантаження" : "заповніть дані")),
+    line("Дохід за рік (рядок 01)", d.income),
+    line("Єдиний податок за рік (авансові внески)", d.single_tax_year),
+    line("Військовий збір (рядок 22)", d.military_levy),
+    line("ЄСВ за рік (Додаток 1)", d.esv_year),
+    !d.ready ? h("p", { class: "muted small" }, "Не вистачає: " + d.missing.join(", ")) : null,
+    st.fop_income_limit && d.income > st.fop_income_limit ? h("p", { style: { color: "var(--danger, #c0392b)", fontWeight: 600 } },
+      `Дохід ${money(d.income)} перевищує ліміт групи ${money(st.fop_income_limit)} — зверніться до бухгалтера перед поданням.`) : null,
+    h("div", { class: "row" },
+      h("button", { class: "btn primary", disabled: !d.ready || null,
+        onclick: () => run(() => downloadFile("/api/reports/declaration.zip?year=" + year, `deklaratsiia-fop-${year}.zip`)) },
+        "Завантажити декларацію (XML)")),
+    h("p", { class: "muted small" }, "В архіві два файли: декларація і Додаток 1 (ЄСВ). Розпакуйте, у Електронному кабінеті ДПС оберіть " +
+      "«Введення звітності → Завантажити файл», завантажте обидва, перевірте цифри, підпишіть Дія.Підписом і відправте. " +
+      "Програма нічого не відправляє сама. Ставки й коди податкової звірте з бухгалтером або кабінетом."),
+    h("details", {}, h("summary", {}, "Дані ФОП для декларації"), form,
+      h("div", { class: "row", style: { marginTop: "8px" } }, h("button", { class: "btn", onclick: save }, "Зберегти дані ФОП"))));
+}
+
 VIEWS.taxreport = async (main) => {
   const params = new URLSearchParams(location.hash.split("?")[1] || "");
   const nowY = Number(today().slice(0, 4));
@@ -2311,6 +2363,8 @@ VIEWS.taxreport = async (main) => {
     h("div", { class: "row" },
       h("button", { class: "btn primary", onclick: () => run(() => downloadFile("/api/reports/income.csv?" + qs + "&detail=day", "dohody.csv")) }, "По днях (CSV)"),
       h("button", { class: "btn", onclick: () => run(() => downloadFile("/api/reports/income.csv?" + qs + "&detail=order", "zamovlennia.csv")) }, "По замовленнях (CSV)"))));
+
+  if (!quarter) main.append(await declarationCard(year));
 
   const limIn = h("input", { inputmode: "decimal", value: r.limit.amount ? kopToInput(r.limit.amount) : "", placeholder: "напр. 1444049" });
   main.append(h("div", { class: "card stack" }, h("div", { class: "card-head" }, h("h3", {}, "Ліміт доходу групи на рік")),
