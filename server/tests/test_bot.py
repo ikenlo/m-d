@@ -526,9 +526,9 @@ def test_masters_show_first_name_and_nearest_free_time(h, db, seed):
     h.send("📅 Записатися")
     h.click_text("Стрижка")
     labels = [b.text for b in h.session.buttons()]
-    assert labels[0] == "👥 Будь-хто · сьогодні о 09:00"
-    assert "Олена · сьогодні о 09:00" in labels  # без прізвища
-    assert "Ірина · завтра о 09:00" in labels
+    assert labels[0] == "👥 Будь-хто · найближче сьогодні о 09:00"
+    assert "Олена · найближче сьогодні о 09:00" in labels  # без прізвища
+    assert "Ірина · найближче завтра о 09:00" in labels
     h.click_text("Олена")
     days = [b.text for b in h.session.buttons()]
     assert days[0].startswith("Сьогодні · ") and days[1].startswith("Завтра · ") and days[2].startswith("Ср, 4 листопада")
@@ -755,3 +755,17 @@ def test_unexpected_error_answers_user(db, seed):
     h.bot = make_bot("123456:TEST-TOKEN", session=h.session)
     h.click("book")
     assert any("Щось пішло не так" in (a or "") for a in h.session.alerts())
+
+
+def test_single_free_master_goes_straight_to_days(h, db, seed):
+    from mds.services import users as us
+    with db.session() as s:
+        us.update_user(s, seed["actors"]["director"], seed["m2"], {"is_active": False})
+    h.send("📅 Записатися")
+    h.click_text("Стрижка")
+    text = h.session.texts()[-1]
+    assert "Оберіть день" in text and "Оберіть майстра" not in text and "Стрижка" in text
+    labels = [b.text for b in h.session.buttons()]
+    assert labels[0].startswith("Сьогодні · ") and labels[-1] == "« Назад"
+    h.click_text("Сьогодні")
+    assert "Оберіть зручний час" in h.session.texts()[-1]

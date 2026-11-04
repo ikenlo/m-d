@@ -186,6 +186,10 @@ def build_router() -> Router:
         if not free:
             await cb.answer("Найближчими днями вільного часу на цю послугу немає 😔", show_alert=True)
             return
+        if len(free) == 1:
+            # один вільний майстер — одразу дні, без зайвого кроку «Оберіть майстра»
+            await _show_days(cb, db, service_id, free[0][0].id, back="book", title=title)
+            return
         await cb.message.edit_text(f"<b>{v.e(title)}</b>{hint}\nОберіть майстра:",
                                    reply_markup=v.masters_kb(service_id, free, any_first, favorite_id=fav_id))
         await cb.answer()
@@ -218,20 +222,25 @@ def build_router() -> Router:
     async def nop(cb: CallbackQuery):
         await cb.answer()
 
-    @router.callback_query(F.data.startswith("mst:"))
-    async def pick_master(cb: CallbackQuery, db: Database):
-        _, service_id, master_id = cb.data.split(":")
+    async def _show_days(cb: CallbackQuery, db: Database, service_id: int, master_id: int, back: str,
+                         title: str | None = None) -> None:
         with db.session() as s:
-            days = _available_days(s, int(service_id), int(master_id))
-            who = v.short_name(s.get(User, int(master_id)).full_name) if int(master_id) else "будь-який майстер"
+            days = _available_days(s, service_id, master_id)
+            who = v.short_name(s.get(User, master_id).full_name) if master_id else "будь-який майстер"
         if not days:
             await cb.answer("Найближчими днями вільного часу немає 😔", show_alert=True)
             return
+        head = f"<b>{v.e(title)}</b>\n" if title else ""
         await cb.message.edit_text(
-            f"Майстер: <b>{v.e(who)}</b>\n📅 Оберіть день (поруч — кількість вільних годин для запису):",
-            reply_markup=v.days_kb(f"day:{service_id}:{master_id}", list(days), f"svc:{service_id}", counts=days),
+            f"{head}Майстер: <b>{v.e(who)}</b>\n📅 Оберіть день (поруч — кількість вільних годин для запису):",
+            reply_markup=v.days_kb(f"day:{service_id}:{master_id}", list(days), back, counts=days),
         )
         await cb.answer()
+
+    @router.callback_query(F.data.startswith("mst:"))
+    async def pick_master(cb: CallbackQuery, db: Database):
+        _, service_id, master_id = cb.data.split(":")
+        await _show_days(cb, db, int(service_id), int(master_id), back=f"svc:{service_id}")
 
     @router.callback_query(F.data.startswith("day:"))
     async def pick_day(cb: CallbackQuery, db: Database):
