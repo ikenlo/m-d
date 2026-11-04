@@ -7,6 +7,17 @@
  */
 "use strict";
 
+// Сумісність зі старими вбудованими браузерами (Android 7–11 без оновлень WebView, Chrome < 86):
+// replaceChildren — основа перемальовування екранів.
+if (!Element.prototype.replaceChildren) {
+  const replaceChildren = function (...nodes) {
+    while (this.lastChild) this.removeChild(this.lastChild);
+    this.append(...nodes);
+  };
+  Element.prototype.replaceChildren = replaceChildren;
+  DocumentFragment.prototype.replaceChildren = replaceChildren;
+}
+
 // ============================================================ API
 // сховище може бути недоступне (приватний режим, заборона сайтам) — програма працює і без нього
 const store = {
