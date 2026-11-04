@@ -77,3 +77,10 @@
 
 `GET /api/sync?since=<rev>` (персонал) → `{rev, entities: [...], new: [{id, client_name, starts_at, service_name, master_name, source, status}]}`.
 `rev` — останній id журналу змін; `entities` — що змінили інші користувачі; `new` — нові записи (майстру — лише свої).
+
+## Запізнення і незакриті замовлення
+
+- `POST /api/appointments/shift {master_id, minutes 5–180, from_appt_id?, notify_clients}` → `{shifted, telegram, sms_sent, call}` —
+  зсунути цей і наступні записи майстра на сьогодні; майстер — лише свої.
+- `GET /api/appointments/unclosed[?master_id]` — час минув, замовлення не закрито (7 днів); майстер — лише свої.
+- `GET /api/sms/status` (директор) — чи задано ключ TurboSMS.

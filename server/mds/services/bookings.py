@@ -591,3 +591,72 @@ def favorite_master(s: Session, client_id: int, service_id: int | None = None) -
         if m and m.is_active and m.role == Role.MASTER and (allowed is None or m.id in allowed):
             return m, int(n)
     return None
+
+
+# ------------------------------------------------------ запізнення: зсунути записи майстра
+
+def shift_appointments(s: Session, actor: Actor, *, master_id: int, minutes: int, from_appt_id: int | None = None,
+                       notify_clients: bool = True) -> dict:
+    """Майстер запізнюється / сеанс затягнувся: усі наступні сьогоднішні записи майстра (від обраного або
+    найближчого, що ще не почався) зсуваються на `minutes` хв. Клієнтам із Telegram — повідомлення в бот;
+    іншим — список для SMS/Viber (надсилає роутер) або дзвінка. Межу робочого дня не перевіряємо — це рішення персоналу."""
+    _check_access(actor, master_id)
+    if not (5 <= int(minutes) <= 180):
+        raise ValidationError("Зсув — від 5 до 180 хвилин")
+    now = clock.now()
+    delta = timedelta(minutes=int(minutes))
+    q = select(Appointment).where(
+        Appointment.master_id == master_id, Appointment.status.in_((ApptStatus.PENDING, ApptStatus.CONFIRMED)),
+        Appointment.starts_at < datetime.combine(now.date() + timedelta(days=1), time.min))
+    if from_appt_id:
+        first = get_or_404(s, Appointment, from_appt_id, "Запис")
+        if first.master_id != master_id:
+            raise ValidationError("Запис іншого майстра")
+        q = q.where(Appointment.starts_at >= first.starts_at)
+    else:
+        q = q.where(Appointment.starts_at >= now)
+    _lock_master(s, master_id)
+    items = list(s.scalars(q.order_by(Appointment.starts_at)))
+    if not items:
+        raise ValidationError("Немає наступних записів, які можна зсунути")
+    shifted, sms, no_contact, telegram = [], [], [], 0
+    for a in reversed(items):  # з кінця — щоб жоден запис не «наїхав» на ще не зсунутий
+        before = _snapshot(a)
+        a.starts_at += delta
+        a.ends_at += delta
+        a.reminded_2h = a.reminded_2h and a.starts_at - now <= timedelta(hours=2)
+        audit(s, actor, "appointment", a.id, "shift", before, _snapshot(a), f"Зсув на {minutes} хв")
+    s.flush()
+    for a in items:
+        text = (f"⏰ Салон M&D: ваш запис на {a.service.name} перенесено на {int(minutes)} хв — "
+                f"тепер {a.starts_at:%d.%m} о {a.starts_at:%H:%M}. Вибачте за незручності! Якщо час не підходить — напишіть або зателефонуйте.")
+        row = {"id": a.id, "client": a.client.name, "phone": a.client.phone, "starts_at": a.starts_at.isoformat(),
+               "service": a.service.name, "channel": None}
+        if notify_clients and a.client.telegram_user_id:
+            notifications.enqueue(s, a.client.telegram_user_id, text)
+            row["channel"] = "telegram"
+            telegram += 1
+        elif notify_clients:
+            sms.append({"phone": a.client.phone, "text": text})
+            row["channel"] = "sms"
+        else:
+            no_contact.append(row)
+        shifted.append(row)
+    master = s.get(User, master_id)
+    notifications.notify_directors(s, f"⏰ {master.full_name}: записи зсунуто на {minutes} хв ({len(items)}), "
+                                      f"з {items[0].starts_at:%H:%M}", exclude_user_id=actor.user_id)
+    return {"shifted": shifted, "telegram": telegram, "sms": sms, "minutes": int(minutes)}
+
+
+def unclosed(s: Session, actor: Actor, master_id: int | None = None) -> list[Appointment]:
+    """Записи, час яких минув, а замовлення не закрито (за останні 7 днів). Майстер — лише свої."""
+    if actor.is_master:
+        master_id = actor.user_id
+    elif not actor.is_staff_manager:
+        raise Forbidden("Недостатньо прав")
+    now = clock.now()
+    q = select(Appointment).where(Appointment.status.in_(ApptStatus.CLOSABLE), Appointment.ends_at <= now,
+                                  Appointment.starts_at >= now - timedelta(days=7))
+    if master_id:
+        q = q.where(Appointment.master_id == master_id)
+    return list(s.scalars(q.order_by(Appointment.starts_at)))

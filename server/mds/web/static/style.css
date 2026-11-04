@@ -919,3 +919,10 @@ a.bar-row:hover .bar-track i { filter: brightness(1.1); }
 .now-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 .now-actions .btn { flex: 1 1 auto; }
 @media (max-width: 600px) { .now-actions .btn { flex: 1 1 45%; } .now-actions .btn.primary { flex-basis: 100%; order: -1; min-height: 46px; } }
+
+/* ================================================================ 0.1.32: незакриті замовлення */
+.unc-card { border-color: rgba(194, 69, 61, .35); background: linear-gradient(180deg, var(--danger-bg), var(--surface) 70%); margin-bottom: 14px; }
+.unc-row { display: flex; gap: 10px; align-items: center; padding: 10px 0; border-top: 1px solid var(--line); flex-wrap: wrap; }
+.unc-card .unc-row:first-of-type { border-top: 0; }
+.unc-actions { display: flex; gap: 6px; }
+@media (max-width: 600px) { .unc-actions { width: 100%; } .unc-actions .btn:not(.ghost) { flex: 1; min-height: 40px; } }

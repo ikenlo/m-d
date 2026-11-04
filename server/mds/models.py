@@ -239,6 +239,8 @@ class Appointment(Base):
     # які нагадування вже надіслано (скидаються при перенесенні)
     reminded_day: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
     reminded_2h: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
+    # майстру вже нагадали в Telegram, що час запису минув, а замовлення не закрито
+    close_reminded: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
     created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=_now, onupdate=_now)

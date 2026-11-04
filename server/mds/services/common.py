@@ -144,6 +144,10 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     # склад: якщо після списання лишилось менше цієї частки упаковки (у тисячних: 100 = 0,1 упаковки) — списати залишок; 0 — вимкнено
     "stock_auto_writeoff_milli": 100,
     # захист онлайн-запису (бот і сайт); 0 — без обмеження
+    # номери без обмежень захисту від спаму (власниця, персонал), формат +380XXXXXXXXX
+    "antispam_whitelist": ["+380687166910"],
+    # SMS/Viber клієнтам (TurboSMS; ключ — змінні сервера MDS_TURBOSMS_TOKEN і MDS_TURBOSMS_SENDER)
+    "sms_enabled": False,
     "antispam_max_active": 2,  # активних майбутніх записів на клієнта
     "antispam_max_per_day": 3,  # нових онлайн-записів від клієнта за добу
     "antispam_max_pending_total": 20,  # непідтверджених онлайн-записів у черзі
@@ -239,8 +243,17 @@ def update_settings(s: Session, actor: Actor, data: dict[str, Any]) -> dict[str,
             raise ValidationError(f"{key}: очікується ціле невід'ємне число")
         if key in ("master_takes_cash", "telegram_auto_confirm", "reminders_enabled") and not isinstance(value, bool):
             raise ValidationError(f"{key}: так або ні")
-        if key.startswith("antispam_") and not (isinstance(value, int) and not isinstance(value, bool) and 0 <= value <= 1000):
+        if key.startswith("antispam_") and key != "antispam_whitelist" and not (isinstance(value, int) and not isinstance(value, bool) and 0 <= value <= 1000):
             raise ValidationError(f"{key}: ціле число від 0 до 1000")
+        if key == "antispam_whitelist":
+            from .catalog import normalize_phone
+
+            if not isinstance(value, list) or len(value) > 50:
+                raise ValidationError("Білий список: перелік номерів")
+            value = sorted({normalize_phone(str(x)) for x in value if str(x).strip()})
+            data[key] = value
+        if key == "sms_enabled" and not isinstance(value, bool):
+            raise ValidationError("SMS: так або ні")
         if key == "public_booking_enabled" and not isinstance(value, bool):
             raise ValidationError("Онлайн-запис із сайту: так або ні")
         if key == "stock_auto_writeoff_milli" and not (isinstance(value, int) and not isinstance(value, bool) and 0 <= value <= 500):
