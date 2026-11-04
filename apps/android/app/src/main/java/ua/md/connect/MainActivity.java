@@ -141,7 +141,11 @@ public class MainActivity extends Activity {
                 + "a{display:inline-block;padding:14px 28px;border-radius:12px;background:#C9A45C;color:#14392C;"
                 + "font-weight:600;text-decoration:none}</style></head><body><div class='b'><div class='m'>M&amp;D</div>"
                 + "<h1>Немає з'єднання</h1><p>Перевірте інтернет і спробуйте ще раз.</p>"
-                + "<a href='" + BuildConfig.APP_URL + "'>Спробувати ще</a></div></body></html>";
+                + "<a href='" + BuildConfig.APP_URL + "'>Спробувати ще</a></div>"
+                // автоповтор: щойно з'єднання повернеться, панель відкриється сама
+                + "<script>setTimeout(function(){location.href='" + BuildConfig.APP_URL + "'},8000);"
+                + "window.addEventListener('online',function(){location.href='" + BuildConfig.APP_URL + "'});</script>"
+                + "</body></html>";
         view.loadDataWithBaseURL(null, html, "text/html", "utf-8", null);
     }
 

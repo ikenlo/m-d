@@ -26,6 +26,7 @@
     const go = () => { if (u && u.startsWith("https://")) location.href = u; };
     document.getElementById("retry").onclick = go;
     window.addEventListener("online", go);
+    setTimeout(go, 8000); // автоповтор: щойно сервер відповість, панель відкриється сама
   </script>
 </body>
 </html>

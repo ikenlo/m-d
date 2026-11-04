@@ -78,11 +78,9 @@ jobs:
           script: |
             adb install -r MDS-Connect-0.1.0.apk
             adb shell am start -n ua.md.connect/.MainActivity
-            sleep 25
-            adb shell uiautomator dump /sdcard/ui.xml
-            adb pull /sdcard/ui.xml ui.xml
+            for i in $(seq 1 18); do sleep 5; adb shell uiautomator dump /sdcard/ui.xml >/dev/null; adb pull /sdcard/ui.xml ui.xml >/dev/null; grep -q "Увійти" ui.xml && break; done
             adb exec-out screencap -p > screen.png
-            grep -q "Увійти" ui.xml && echo "OK: сторінка входу відкрилась" || (echo "FAIL: немає сторінки входу"; cat ui.xml | head -c 3000; exit 1)
+            grep -q "Увійти" ui.xml && echo "OK: сторінка входу відкрилась" || (echo "FAIL: немає сторінки входу"; head -c 3000 ui.xml; exit 1)
       - uses: actions/upload-artifact@v4
         if: always()
         with:
