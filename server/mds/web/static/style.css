@@ -527,3 +527,7 @@ body::before {
 /* Кнопка «Назад» у мобільній шапці */
 .mbar .back-btn { width: auto; padding: 0 10px 0 4px; gap: 2px; display: inline-flex; align-items: center; font-weight: 600; font-size: 15px; color: var(--brand-2); }
 .mbar .back-btn .i { width: 22px; height: 22px; }
+
+/* Номер версії */
+.brand-ver { display: block; font-size: 10.5px; letter-spacing: .04em; color: rgba(245, 241, 230, .45); margin-top: 2px; }
+.login-foot .version { opacity: .7; font-size: 12px; }
