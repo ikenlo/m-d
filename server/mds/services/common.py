@@ -141,6 +141,8 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "reminders_enabled": True,
     # двофакторний вхід: для цих ролей після пароля — код у Telegram (якщо Telegram підключено)
     "twofa_roles": ["director"],
+    # склад: якщо після списання лишилось менше цієї частки упаковки (у тисячних: 100 = 0,1 упаковки) — списати залишок; 0 — вимкнено
+    "stock_auto_writeoff_milli": 100,
     # ---- генератор (значення діють для НОВИХ запусків; минулі зберігають свої)
     "generator_fuel_lph_milli": 0,  # витрата бензину, л/год × 1000 (1500 = 1,5 л/год)
     "generator_fuel_price": 0,  # ціна бензину, копійок за 1 л
@@ -229,6 +231,8 @@ def update_settings(s: Session, actor: Actor, data: dict[str, Any]) -> dict[str,
             raise ValidationError(f"{key}: очікується ціле невід'ємне число")
         if key in ("master_takes_cash", "telegram_auto_confirm", "reminders_enabled") and not isinstance(value, bool):
             raise ValidationError(f"{key}: так або ні")
+        if key == "stock_auto_writeoff_milli" and not (isinstance(value, int) and not isinstance(value, bool) and 0 <= value <= 500):
+            raise ValidationError("Автосписання залишку: від 0 до 0,5 упаковки")
         if key == "twofa_roles" and not (isinstance(value, list) and all(r in ("director", "admin") for r in value)):
             raise ValidationError("Двофакторний вхід: лише для директора та/або адміністратора")
         if key == "favorite_master_visits" and not (isinstance(value, int) and 1 <= value <= 50):

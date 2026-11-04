@@ -121,23 +121,59 @@ def writeoff(s: Session, actor: Actor, material_id: int, qty, note: str | None =
         raise ValidationError("Вкажіть причину списання")
     mv = _move(s, actor, m, "writeoff", -q, cost=line_cost(m, q), note=note)
     audit(s, actor, "material", m.id, "writeoff", None, {"qty": q / 1000}, note)
+    _auto_writeoff(s, actor, m)
+    return mv
+
+
+def auto_writeoff_threshold(s: Session, m: Material) -> int:
+    """Поріг «крихти» в тисячних базової одиниці: частка упаковки з налаштувань × розмір упаковки."""
+    from .common import get_setting
+
+    share = int(get_setting(s, "stock_auto_writeoff_milli") or 0)  # 100 = 0,1 упаковки
+    return m.pack_size * share
+
+
+def _auto_writeoff(s: Session, actor: Actor, m: Material, order_id: int | None = None) -> StockMove | None:
+    """Після списання лишилась крихта (менше порогу, напр. 0,09 туби) — списати її автоматично."""
+    limit = auto_writeoff_threshold(s, m)
+    if not limit or not (0 < m.stock_milli < limit):
+        return None
+    left = m.stock_milli
+    mv = _move(s, actor, m, "writeoff", -left, cost=line_cost(m, left), order_id=order_id,
+               note=f"Автоматичне списання залишку (менше {limit / m.pack_size / 1000:g} {m.pack_name})".replace(".", ","))
+    audit(s, actor, "material", m.id, "auto_writeoff", {"stock": left / 1000}, {"stock": 0}, mv.note)
     return mv
 
 
 def apply_order(s: Session, actor: Actor, o: Order) -> None:
-    """Списати зі складу матеріали закритого замовлення."""
+    """Списати зі складу матеріали закритого замовлення (і крихту залишку, якщо лишилась)."""
     for line in o.materials:
         if line.material_id:
             m = s.get(Material, line.material_id)
             _move(s, actor, m, "order", -line.qty, cost=line.total, order_id=o.id)
+            _auto_writeoff(s, actor, m, order_id=o.id)
+
+
+AUTO_RETURN_NOTE = "Повернення автосписання залишку"
 
 
 def reverse_order(s: Session, actor: Actor, o: Order, note: str = "Виправлення замовлення") -> None:
-    """Повернути на склад матеріали замовлення (перед заміною матеріалів при виправленні)."""
+    """Повернути на склад матеріали замовлення (перед заміною матеріалів при виправленні),
+    а також автоматично списану при цьому замовленні крихту залишку (ще не повернуту)."""
     for line in o.materials:
         if line.material_id:
             m = s.get(Material, line.material_id)
             _move(s, actor, m, "order_return", line.qty, cost=line.total, order_id=o.id, note=note)
+    rows = s.execute(select(StockMove.material_id, StockMove.kind, StockMove.qty_milli, StockMove.note)
+                     .where(StockMove.order_id == o.id, StockMove.kind.in_(("writeoff", "order_return")))).all()
+    net: dict[int, int] = {}
+    for mid, kind, q, n in rows:
+        if kind == "writeoff" or (n or "") == AUTO_RETURN_NOTE:
+            net[mid] = net.get(mid, 0) + q
+    for mid, q in net.items():
+        if q < 0:
+            m = s.get(Material, mid)
+            _move(s, actor, m, "order_return", -q, cost=line_cost(m, -q), order_id=o.id, note=AUTO_RETURN_NOTE)
 
 
 def list_materials(s: Session, active_only: bool = True) -> list[Material]:
