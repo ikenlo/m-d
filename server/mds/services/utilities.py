@@ -72,6 +72,10 @@ def _fmt(k: int) -> str:
     return ("−" if k < 0 else "") + f"{g:,}".replace(",", " ") + (f",{kop:02d}" if kop else "") + " ₴"
 
 
+def _hours(milli: int) -> str:
+    return f"{milli / 1000:g}".replace(".", ",")
+
+
 def _milli(v, what: str) -> int:
     from .stock import to_milli
 
@@ -287,6 +291,55 @@ def add_run(s: Session, actor: Actor, *, started_at: datetime, hours, power_outa
     s.flush()
     audit(s, actor, "generator", g.id, "add", None, run_public(g), note)
     return g
+
+
+def record_hours(s: Session, actor: Actor, *, on: date, current=None, hours=None, note: str | None = None) -> GeneratorRun:
+    """Внести роботу генератора, як показники лічильника: або новий показник лічильника мотогодин
+    (різниця з попереднім = відпрацьовано), або відпрацьовані години. Вартість = мотогодини × (витрата × ціна
+    бензину + амортизація) — за налаштуваннями на момент внесення."""
+    actor.require(Role.DIRECTOR, Role.ADMIN)
+    if (current is None) == (hours is None):
+        raise ValidationError("Вкажіть показник лічильника мотогодин або кількість відпрацьованих годин")
+    if on > clock.now().date():
+        raise ValidationError("Дата не може бути в майбутньому")
+    if current is not None:
+        target = _milli(current, "Показник лічильника")
+        was = int(round(generator_state(s, actor)["motohours"] * 1000))
+        hm = target - was
+        if hm <= 0:
+            raise ValidationError(f"Показник має бути більший за попередній ({_hours(was)} мотогод.)")
+        note = note or f"Лічильник: {_hours(was)} → {_hours(target)} мотогод."
+    else:
+        hm = _milli(hours, "Мотогодини")
+    if hm <= 0 or hm > 24 * 31 * 1000:
+        raise ValidationError("Мотогодини: більше 0 і не більше місяця")
+    st = generator_settings(s)
+    start = datetime.combine(on, datetime.min.time()).replace(hour=9)
+    g = GeneratorRun(started_at=start, ended_at=start + timedelta(seconds=hm * 3600 // 1000), running=None, hours_milli=hm,
+                     fuel_lph_milli=st["fuel_lph_milli"], fuel_price=st["fuel_price"], amort_per_hour=st["amort_per_hour"],
+                     power_outage=False, note=note, started_by=actor.user_id, ended_by=actor.user_id)
+    for k, v in _costs(hm, g.fuel_lph_milli, g.fuel_price, g.amort_per_hour).items():
+        setattr(g, k, v)
+    s.add(g)
+    s.flush()
+    audit(s, actor, "generator", g.id, "hours", None, run_public(g), note)
+    return g
+
+
+def generator_history(s: Session, actor: Actor, months: int = 6) -> list[dict]:
+    """Підсумки генератора по місяцях (від старого до поточного): мотогодини, літри, бензин, амортизація."""
+    actor.require(Role.DIRECTOR)
+    months = max(1, min(int(months), 24))
+    cur = month_start(clock.now().date())
+    out = []
+    for i in range(months - 1, -1, -1):
+        y, mth = divmod(cur.year * 12 + cur.month - 1 - i, 12)
+        m = date(y, mth + 1, 1)
+        a, b = _month_bounds(m)
+        g = generator_totals(s, a, b)
+        out.append({"month": m.isoformat(), "runs": g["runs"], "hours": g["hours_milli"] / 1000, "fuel_l": g["fuel_milli"] / 1000,
+                    "fuel_cost": g["fuel_cost"], "amort_cost": g["amort_cost"], "total": g["total_cost"]})
+    return out
 
 
 def correct_run(s: Session, actor: Actor, run_id: int, data: dict, reason: str) -> GeneratorRun:

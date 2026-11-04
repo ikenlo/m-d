@@ -132,6 +132,24 @@ def generator_correct_run(run_id: int, body: RunPatch, actor: Actor = Depends(ge
     return u.run_public(u.correct_run(s, actor, run_id, data, body.reason))
 
 
+class HoursIn(BaseModel):
+    on: date
+    current: str | float | None = None
+    hours: str | float | None = None
+    note: str | None = Field(default=None, max_length=300)
+
+
+@router.post("/generator/hours", status_code=201)
+def generator_hours(body: HoursIn, actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
+    g = u.record_hours(s, actor, on=body.on, current=body.current, hours=body.hours, note=body.note)
+    return {"run": u.run_public(g), "state": u.generator_state(s, actor)}
+
+
+@router.get("/generator/history")
+def generator_history(months: int = 6, actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
+    return u.generator_history(s, actor, months)
+
+
 @router.post("/generator/motohours")
 def generator_motohours(body: MotohoursIn, actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
     return u.set_motohours(s, actor, body.current)
