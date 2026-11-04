@@ -79,7 +79,7 @@ jobs:
             adb shell svc power stayon true; adb shell input keyevent 224; adb shell wm dismiss-keyguard; sleep 3; true
             adb install -r MDS-Connect-0.1.0.apk
             adb shell am start -n ua.md.connect/.MainActivity
-            for i in $(seq 1 18); do sleep 5; adb shell uiautomator dump /sdcard/ui.xml >/dev/null; adb pull /sdcard/ui.xml ui.xml >/dev/null; grep -q "Увійти" ui.xml && break; done
+            for i in $(seq 1 24); do sleep 5; adb shell am broadcast -a android.intent.action.CLOSE_SYSTEM_DIALOGS >/dev/null 2>&1; adb shell am start -n ua.md.connect/.MainActivity >/dev/null 2>&1; adb shell uiautomator dump /sdcard/ui.xml >/dev/null; adb pull /sdcard/ui.xml ui.xml >/dev/null; grep -q "Увійти" ui.xml && break; echo "спроба $i:"; grep -o 'text="[^"]*"' ui.xml | head -8; done
             adb exec-out screencap -p > screen.png || true
             grep -q "Увійти" ui.xml && echo "OK: сторінка входу відкрилась" || (echo "FAIL: немає сторінки входу"; head -c 3000 ui.xml; exit 1)
       - uses: actions/upload-artifact@v4
