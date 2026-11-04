@@ -514,3 +514,35 @@ __all__ = [
     "ShiftStatus",
     "User",
 ]
+
+
+class CardPayment(Base):
+    """Оплата карткою через застосунок «Термінал» ПриватБанку (NFC на планшеті).
+
+    Створюється ДО оплати (статус pending, токен банку); замовлення закривається лише після того, як
+    сервер сам перевірив результат у банку (check.php, response_code "00"). Повторна перевірка не задвоює оплату.
+    """
+
+    __tablename__ = "card_payments"
+    __table_args__ = (Index("ix_card_payment_appt", "appointment_id", "status"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    appointment_id: Mapped[int] = mapped_column(ForeignKey("appointments.id"))
+    order_id: Mapped[int | None] = mapped_column(ForeignKey("orders.id"))
+    amount: Mapped[int] = mapped_column(Integer)  # копійки
+    status: Mapped[str] = mapped_column(String(16), default="pending")  # pending | paid | failed
+    mode: Mapped[str] = mapped_column(String(8))  # mock | live
+    jwt: Mapped[str | None] = mapped_column(Text)  # токен операції банку (одноразовий, не ключ)
+    rid: Mapped[str | None] = mapped_column(String(64))
+    close_params: Mapped[dict | None] = mapped_column(JSON)  # матеріали, ім'я клієнта — для закриття після оплати
+    transaction_id: Mapped[str | None] = mapped_column(String(64))
+    rrn: Mapped[str | None] = mapped_column(String(32))
+    approval_code: Mapped[str | None] = mapped_column(String(16))
+    masked_pan: Mapped[str | None] = mapped_column(String(32))
+    payment_system: Mapped[str | None] = mapped_column(String(32))
+    response_code: Mapped[str | None] = mapped_column(String(8))
+    message: Mapped[str | None] = mapped_column(String(255))
+    receipt: Mapped[str | None] = mapped_column(Text)  # HTML-чек банку
+    created_by: Mapped[int | None] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=_now)

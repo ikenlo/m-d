@@ -152,6 +152,8 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "utilities_fixed_per": "shift",  # fixed: shift (за зміну) | month (за місяць)
     # ліміт доходу групи ФОП за рік, копійки (0 — не задано); вносить директор/бухгалтер
     "fop_income_limit": 0,
+    # оплата карткою через «Термінал» ПриватБанку на планшеті: off | mock (імітація) | live (ключі — змінні сервера)
+    "card_terminal_mode": "off",
     # профіль ФОП для XML-декларації (services/tax_declaration.py); ставки вносить директор/бухгалтер
     "fop_tin": "",
     "fop_name": "",
@@ -244,6 +246,13 @@ def update_settings(s: Session, actor: Actor, data: dict[str, Any]) -> dict[str,
             raise ValidationError("Розподіл: пропорційно виручці або порівну")
         if key == "utilities_fixed_per" and value not in ("shift", "month"):
             raise ValidationError("Фіксована ставка: за зміну або за місяць")
+        if key == "card_terminal_mode":
+            from .card_terminal_providers import MODES, configured
+
+            if value not in MODES:
+                raise ValidationError("Режим «Термінала»: вимкнено, імітація або реальний")
+            if value == "live" and not configured():
+                raise ValidationError("Для реальних оплат задайте ключі «Термінала» на сервері (MDS_PRIVAT_TERMINAL_*)")
         if key.startswith("fop_") and key != "fop_income_limit":
             from .tax_declaration import validate_profile_value
 

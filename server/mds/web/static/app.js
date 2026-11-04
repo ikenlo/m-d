@@ -687,8 +687,16 @@ function closeOrderSheet(a, onChange) {
   const custom = [];
   const amount = h("input", { class: "huge", inputmode: "decimal", value: kopToInput(a.price) });
   const PAY_ICON = { cash: "banknote", card: "card", transfer: "transfer" };
+  const pick = (k) => (e) => { method = k; [...methods.children].forEach((b) => b.classList.remove("on")); e.currentTarget.classList.add("on");
+    btn.replaceChildren(icon("ok"), k === "terminal" ? "Оплатити на терміналі" : "Закрити замовлення"); };
   const methods = h("div", { class: "choice", style: { gridTemplateColumns: "1fr 1fr" } }, Object.entries(PAY_CHOICES).map(([k, t]) =>
-    h("button", { type: "button", onclick: (e) => { method = k; [...methods.children].forEach((b) => b.classList.remove("on")); e.currentTarget.classList.add("on"); } }, icon(PAY_ICON[k]), t)));
+    h("button", { type: "button", onclick: pick(k) }, icon(PAY_ICON[k]), t)));
+  // «Термінал» ПриватБанку на планшеті (NFC): показуємо, якщо увімкнено в налаштуваннях
+  api.get("/api/card-terminal/status").then((st) => {
+    if (st.mode === "off") return;
+    methods.style.gridTemplateColumns = "1fr 1fr 1fr";
+    methods.append(h("button", { type: "button", onclick: pick("terminal") }, icon("card"), st.mode === "mock" ? "Термінал (імітація)" : "Термінал (NFC)"));
+  }).catch(() => {});
   // ім'я та прізвище клієнта — для нормальної бази (з Telegram часто приходить нікнейм)
   const [first0, ...rest0] = (a.client.name || "").split(/\s+/).filter(Boolean);
   const firstName = h("input", { value: first0 || "", placeholder: "Ім'я", autocomplete: "off", autocapitalize: "words", id: "close-first" });
@@ -710,6 +718,16 @@ function closeOrderSheet(a, onChange) {
     const clientName = [firstName.value, lastName.value].map((x) => x.trim()).filter(Boolean).join(" ");
     if (firstName.value.trim().length < 2) { firstName.focus(); return toast("Вкажіть ім'я клієнта", true); }
     const materials = [...mats.entries()].filter(([, q]) => q > 0).map(([id, q]) => ({ material_id: id, qty: q })).concat(custom);
+    if (method === "terminal") {
+      if (kop < 100) return toast("Оплата карткою — від 1 грн", true);
+      btn.disabled = true;
+      try {
+        const p = await run(() => api.post("/api/card-payments", { appointment_id: a.id, amount: kop, materials, client_name: clientName }));
+        closeSheet();
+        terminalPaySheet(p, onChange);
+      } catch (_) { btn.disabled = false; }
+      return;
+    }
     btn.disabled = true;
     try {
       const o = await run(() => api.post(`/api/appointments/${a.id}/close`, { amount: kop, payment_method: method, materials, idempotency_key: key, client_name: clientName }));
@@ -726,6 +744,58 @@ function closeOrderSheet(a, onChange) {
   autoFocus(amount, true);
   // на телефоні: торкнулися суми — одразу виділяємо її, щоб ввести нову
   amount.addEventListener("focus", () => setTimeout(() => amount.select(), 0));
+}
+
+// ---- оплата карткою через «Термінал» ПриватБанку (NFC на планшеті). Фінальний статус перевіряє СЕРВЕР у банку.
+function terminalPaySheet(p, onChange) {
+  const bridge = window.MDSAndroid && typeof window.MDSAndroid.startTerminal === "function" ? window.MDSAndroid : null;
+  const msg = h("p", { class: "muted" });
+  let busy = false;
+  const done = (r) => {
+    if (r.status === "paid") {
+      window.mdsTerminalResult = null;
+      closeSheet();
+      toast(`Оплачено карткою ${money(r.amount)}${r.masked_pan ? " · " + r.masked_pan : ""}. Замовлення закрито`);
+      onChange();
+      return true;
+    }
+    if (r.status === "failed") {
+      window.mdsTerminalResult = null;
+      msg.textContent = "Оплата не пройшла: " + (r.message || "відмова") + ". Закрийте вікно і спробуйте ще раз або оберіть інший спосіб.";
+      actions.replaceChildren(h("button", { class: "btn", onclick: closeSheet }, "Закрити"));
+      return true;
+    }
+    msg.textContent = r.message || "Очікуємо оплату на терміналі…";
+    return false;
+  };
+  const check = async () => {
+    if (busy) return;
+    busy = true;
+    try { done(await run(() => api.post(`/api/card-payments/${p.id}/check`))); } catch (_) { /* повідомлення вже показано */ }
+    busy = false;
+  };
+  const launch = () => { if (bridge) bridge.startTerminal(p.deeplink); };
+  window.mdsTerminalResult = () => { check(); }; // відповідь застосунку — лише сигнал «перевір у банку»
+  const actions = h("div", { class: "row" },
+    p.mode === "mock" ? [
+      h("button", { class: "btn primary", onclick: async () => { try { done(await run(() => api.post(`/api/card-payments/${p.id}/mock-complete?ok=true`))); } catch (_) {} } }, "Імітувати оплату"),
+      h("button", { class: "btn", onclick: async () => { try { done(await run(() => api.post(`/api/card-payments/${p.id}/mock-complete?ok=false`))); } catch (_) {} } }, "Імітувати відмову")]
+      : bridge ? h("button", { class: "btn primary", onclick: launch }, icon("card"), "Відкрити «Термінал»") : null,
+    h("button", { class: "btn", onclick: check }, "Перевірити оплату"),
+    h("button", { class: "btn", onclick: async () => {
+      try {
+        const r = await run(() => api.post(`/api/card-payments/${p.id}/cancel`));
+        if (r.status === "failed") { window.mdsTerminalResult = null; closeSheet(); toast("Оплату скасовано"); } else done(r);
+      } catch (_) { /* банк недоступний — скасування неможливе, поки не перевіримо */ }
+    } }, "Скасувати"));
+  openSheet("Оплата карткою",
+    h("div", { class: "stack" },
+      h("div", { class: "huge", style: { textAlign: "center", fontWeight: 700 } }, money(p.amount)),
+      p.mode === "mock" ? h("p", { class: "muted small" }, "Режим імітації: гроші не списуються.")
+        : bridge ? h("p", { class: "muted small" }, "Відкриється «Термінал» ПриватБанку — клієнт прикладає картку або телефон до планшета.")
+        : h("p", { class: "muted small" }, "Відкрийте MDS на планшеті з застосунком «Термінал» ПриватБанку, щоб прийняти оплату. Після оплати натисніть «Перевірити оплату»."),
+      msg, actions));
+  if (p.mode !== "mock") launch();
 }
 
 function apptForm({ appt = null, master_id = null, date = today(), time = "10:00" } = {}, onChange) {
@@ -2167,6 +2237,7 @@ VIEWS.settings = async (main) => {
   const takesCash = h("input", { type: "checkbox", checked: s.master_takes_cash !== false });
   const favVisits = h("input", { type: "number", min: 1, max: 50, value: s.favorite_master_visits || 3 });
   const remind = h("input", { type: "checkbox", checked: s.reminders_enabled !== false });
+  const termMode = select([["off", "Вимкнено"], ["mock", "Імітація (без списання грошей)"], ["live", "Реальні оплати (ключі на сервері)"]], s.card_terminal_mode || "off");
   const staffCode = h("input", { inputmode: "numeric", maxlength: 8, value: s.bot_staff_code || "" });
   const addr = h("input", { value: s.salon_address || "" });
   const phone = h("input", { value: s.salon_phone || "", type: "tel" });
@@ -2188,6 +2259,10 @@ VIEWS.settings = async (main) => {
       h("label", { class: "row" }, auto, "Записи з Telegram одразу підтверджені"),
       field("Улюблений майстер клієнта — після скількох візитів", favVisits),
       h("label", { class: "row" }, remind, "Нагадування клієнтам у Telegram за добу і за 2 години (бот питає згоду)")),
+    h("div", { class: "card stack" }, h("h3", {}, "Оплата карткою — «Термінал» ПриватБанку (NFC)"),
+      field("Режим", termMode),
+      h("p", { class: "muted small" }, "Планшет з NFC і застосунком «Термінал» ПриватБанку стає платіжним терміналом: у закритті замовлення обираєте «Термінал», " +
+        "клієнт прикладає картку, замовлення закривається саме після підтвердження банку. Для реальних оплат ключі інтеграції задаються лише на сервері.")),
     h("div", { class: "card stack" }, h("h3", {}, "Telegram-бот"),
       field("Код входу в розділ «Для майстрів»", staffCode),
       h("p", { class: "muted small" }, "Після коду кожен обирає себе й вводить особистий PIN (задається в розділі «Персонал»)."),
@@ -2202,7 +2277,7 @@ VIEWS.settings = async (main) => {
       const body = {
         salon_name: name.value, default_share_bp: Math.round(parseFloat(share.value) * 100), default_materials_mode: mode.value,
         slot_step_min: +step.value, booking_horizon_days: +horizon.value, booking_min_lead_min: +lead.value, telegram_auto_confirm: auto.checked,
-        master_takes_cash: takesCash.checked, reminders_enabled: remind.checked, favorite_master_visits: Math.max(1, parseInt(favVisits.value || "3", 10)),
+        master_takes_cash: takesCash.checked, reminders_enabled: remind.checked, card_terminal_mode: termMode.value, favorite_master_visits: Math.max(1, parseInt(favVisits.value || "3", 10)),
         bot_staff_code: staffCode.value.trim(), salon_address: addr.value.trim(), salon_phone: phone.value.trim(), salon_instagram: insta.value.trim(),
         schedule: Object.fromEntries(days.map((d) => [String(d.i), d.on.checked ? [d.a.value, d.b.value] : null])),
       };

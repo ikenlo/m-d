@@ -10,6 +10,7 @@ import android.os.Bundle;
 import android.view.View;
 import android.view.Window;
 import android.webkit.CookieManager;
+import android.webkit.JavascriptInterface;
 import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceError;
@@ -17,6 +18,8 @@ import android.webkit.WebResourceRequest;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
+
+import org.json.JSONObject;
 
 /**
  * MDS Connect для Android: один екран з веб-панеллю салону.
@@ -26,9 +29,14 @@ import android.webkit.WebViewClient;
  * - Вхід зберігається між запусками (localStorage WebView).
  * - Без інтернету — екран «Немає з'єднання» з кнопкою «Спробувати ще».
  * - Вибір файлу (знімок екрана в баг-репорті) працює через системний вибір файлів.
+ * - Оплата карткою: панель викликає MDSAndroid.startTerminal(deeplink) → відкривається «Термінал» ПриватБанку
+ *   (NFC), після оплати результат повертається в панель (window.mdsTerminalResult). Фінальний статус сервер
+ *   завжди перевіряє сам у банку — відповідь застосунку лише сигнал «перевір».
  */
 public class MainActivity extends Activity {
     private static final int FILE_REQUEST = 1001;
+    private static final int TERMINAL_REQUEST = 1002;
+    private static final String TERMINAL_PACKAGE = "ua.privatbank.pterminal";
     private WebView web;
     private ValueCallback<Uri[]> fileCallback;
     private String appHost;
@@ -97,6 +105,8 @@ public class MainActivity extends Activity {
             }
         });
 
+        web.addJavascriptInterface(new TerminalBridge(), "MDSAndroid");
+
         // файли для завантаження (напр. звіти) — відкриваємо в браузері
         web.setDownloadListener((url, ua, cd, mime, len) -> openExternal(Uri.parse(url)));
 
@@ -149,8 +159,47 @@ public class MainActivity extends Activity {
         view.loadDataWithBaseURL(null, html, "text/html", "utf-8", null);
     }
 
+    /** Міст для веб-панелі: лише запуск «Термінала» за deeplink від нашого сервера. */
+    private class TerminalBridge {
+        @JavascriptInterface
+        public boolean available() {
+            return true;
+        }
+
+        @JavascriptInterface
+        public void startTerminal(final String url) {
+            runOnUiThread(() -> {
+                Uri u = Uri.parse(url == null ? "" : url);
+                // приймаємо лише deeplink «Термінала» ПриватБанку
+                if (!"nfcterminal".equals(u.getScheme()) || !"executor".equals(u.getHost())) {
+                    deliverTerminalResult("{\"result\":false,\"error\":\"bad_link\"}");
+                    return;
+                }
+                try {
+                    startActivityForResult(new Intent(Intent.ACTION_VIEW, u), TERMINAL_REQUEST);
+                } catch (ActivityNotFoundException e) {
+                    deliverTerminalResult("{\"result\":false,\"error\":\"not_installed\"}");
+                    openExternal(Uri.parse("https://play.google.com/store/apps/details?id=" + TERMINAL_PACKAGE));
+                }
+            });
+        }
+    }
+
+    private void deliverTerminalResult(String json) {
+        if (web == null) {
+            return;
+        }
+        String arg = JSONObject.quote(json == null ? "" : json);
+        web.evaluateJavascript("window.mdsTerminalResult && window.mdsTerminalResult(" + arg + ")", null);
+    }
+
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        if (requestCode == TERMINAL_REQUEST) {
+            String r = data != null ? data.getStringExtra("result") : null;
+            deliverTerminalResult(r != null ? r : "{\"result\":false,\"error\":\"no_result\"}");
+            return;
+        }
         if (requestCode == FILE_REQUEST && fileCallback != null) {
             fileCallback.onReceiveValue(WebChromeClient.FileChooserParams.parseResult(resultCode, data));
             fileCallback = null;
