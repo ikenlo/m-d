@@ -58,3 +58,9 @@ alembic revision --autogenerate -m "опис"   # після зміни models.p
   вони відкривають веб-панель; нові функції робляться на сервері/в `app.js`.
 - Збірка й перевірка: `.github/workflows/apps.yml` (APK + запуск на емуляторі, EXE на windows-latest). Деталі — `docs/APPS.md`.
 - Ключ підпису Android — лише в секретах GitHub, ніколи не комітити `.jks`.
+## Версії
+
+- Кожне оновлення (PR у `main`) — нова версія `0.1.N`: підняти `__version__` у `server/mds/__init__.py`
+  і `version` у `server/pyproject.toml`, додати зверху `CHANGELOG.md` розділ `## [0.1.N] — дата`.
+  Тест `test_version.py` перевіряє узгодженість.
+- Після злиття `.github/workflows/release.yml` сам створює тег `v0.1.N` і GitHub Release (архів версії).

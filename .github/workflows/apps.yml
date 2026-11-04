@@ -71,15 +71,17 @@ jobs:
           sudo udevadm trigger --name-match=kvm
       - uses: reactivecircus/android-emulator-runner@v2
         with:
-          api-level: 34
+          api-level: 33
           arch: x86_64
           target: google_apis
           disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot
           script: |
+            adb shell svc power stayon true; adb shell input keyevent 224; adb shell wm dismiss-keyguard; sleep 3; true
             adb install -r MDS-Connect-0.1.0.apk
             adb shell am start -n ua.md.connect/.MainActivity
             for i in $(seq 1 18); do sleep 5; adb shell uiautomator dump /sdcard/ui.xml >/dev/null; adb pull /sdcard/ui.xml ui.xml >/dev/null; grep -q "Увійти" ui.xml && break; done
-            adb exec-out screencap -p > screen.png
+            adb exec-out screencap -p > screen.png || true
             grep -q "Увійти" ui.xml && echo "OK: сторінка входу відкрилась" || (echo "FAIL: немає сторінки входу"; head -c 3000 ui.xml; exit 1)
       - uses: actions/upload-artifact@v4
         if: always()
