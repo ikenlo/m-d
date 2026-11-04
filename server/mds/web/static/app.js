@@ -2394,30 +2394,36 @@ VIEWS.taxreport = async (main) => {
   const nowY = Number(today().slice(0, 4));
   const year = Number(params.get("y")) || nowY;
   const quarter = params.get("q") ? Number(params.get("q")) : null;
+  const dFrom = params.get("f"), dTo = params.get("t");
+  const custom = !!(dFrom && dTo);
   const go = (y, q) => { location.hash = "#/taxreport?y=" + y + (q ? "&q=" + q : ""); };
-  const qs = "year=" + year + (quarter ? "&quarter=" + quarter : "");
+  const qs = custom ? `date_from=${dFrom}&date_to=${dTo}` : "year=" + year + (quarter ? "&quarter=" + quarter : "");
   const [r, st] = await Promise.all([api.get("/api/reports/accountant?" + qs), api.get("/api/settings")]);
-  const period = quarter ? `${quarter} квартал ${year}` : `${year} рік`;
+  const masters = await api.get(`/api/reports/masters?date_from=${r.from}&date_to=${r.to}`);
+  const period = custom ? `${dmy(r.from)} — ${dmy(r.to)}` : quarter ? `${quarter} квартал ${year}` : `${year} рік`;
 
   const qSel = h("select", { "aria-label": "Період", onchange: (e) => go(year, e.target.value ? Number(e.target.value) : null) },
     h("option", { value: "" }, "Увесь рік"), [1, 2, 3, 4].map((q) => h("option", { value: q }, `${q} квартал`)));
   qSel.value = quarter ? String(quarter) : "";
-  main.append(topbar("Звітність для бухгалтера", period,
+  main.append(topbar("Для бухгалтера", period,
     h("button", { class: "btn", "aria-label": "Попередній рік", onclick: () => go(year - 1, quarter) }, icon("left", "sm")),
     h("b", {}, String(year)),
     h("button", { class: "btn", "aria-label": "Наступний рік", onclick: () => go(year + 1, quarter) }, icon("right", "sm")),
     qSel));
 
+  const fIn = h("input", { type: "date", value: r.from }), tIn = h("input", { type: "date", value: r.to });
   const inc = r.income;
   main.append(h("div", { class: "card stack", style: { borderLeft: "4px solid var(--gold, #b8893a)" } },
-    h("div", { class: "card-head" }, h("h3", {}, `Пакет для бухгалтера — ${period}`)),
-    h("p", { class: "muted small" }, "Один файл Excel: підсумок і реквізити, дохід по місяцях і кварталах (каса + банк), книга доходів по днях, усі оплати, " +
-      "зарплата найманих і податки ФОП. Бухгалтер складає й подає звітність на його основі."),
-    h("div", { class: "row" },
-      h("button", { class: "btn primary big", onclick: () => run(() => downloadFile("/api/reports/accountant.xlsx?" + qs, "dlia-bukhgaltera.xlsx")) }, icon("receipt"), "Завантажити пакет (Excel)"))));
+    h("div", { class: "card-head" }, h("h3", {}, "Сформувати звіт для бухгалтера")),
+    h("div", { class: "row", style: { flexWrap: "wrap", alignItems: "end" } }, field("З", fIn), field("По", tIn),
+      h("button", { class: "btn", onclick: () => { if (fIn.value && tIn.value) location.hash = `#/taxreport?f=${fIn.value}&t=${tIn.value}`; } }, "Показати період"),
+      h("button", { class: "btn primary big", onclick: () => run(() => downloadFile(`/api/reports/accountant.xlsx?date_from=${fIn.value || r.from}&date_to=${tIn.value || r.to}`, "zvit-dlia-bukhgaltera.xlsx")) },
+        icon("receipt"), "Сформувати звіт (Excel)")),
+    h("p", { class: "muted small" }, "Один файл: 1. Доходи ФОП · 2. Готівкові надходження · 3. Банківські надходження · 4. Фіскальні чеки та повернення · " +
+      "5. Витрати салону · 6. Майстри: нараховано й виплачено · 7. Підсумок за період.")));
 
   main.append(h("div", { class: "grid kpi" },
-    kpi("Дохід (каса + банк)", inc.total, "dark", { ico: "wallet", sub: `${inc.count} оплат` }),
+    kpi("Дохід ФОП (каса + банк)", inc.total, "dark", { ico: "wallet", sub: `${inc.count} оплат` + (inc.refunds ? ` · повернено ${money(inc.refunds)}` : "") }),
     kpi("Готівка (каса)", inc.cash, "", { ico: "banknote" }),
     kpi("Безготівка (банк)", inc.noncash, "", { ico: "receipt" }),
     kpi("З початку року", r.year_to_date, "accent", { ico: "trend",
@@ -2435,10 +2441,24 @@ VIEWS.taxreport = async (main) => {
   const head = () => h("tr", {}, h("th", {}, ""), h("th", {}, "Готівка (каса)"), h("th", {}, "Безготівка (банк)"), h("th", {}, "Дохід"), h("th", {}, "Оплат"));
   const headPad = { padding: "14px 16px 8px" };
   main.append(h("div", { class: "card table-wrap" }, h("div", { class: "card-head", style: headPad }, h("h3", {}, "По місяцях")),
-    h("table", {}, head(), r.months.map((m) => row(MONTHS_UA[Number(m.month.slice(5)) - 1], m)), row("Разом", inc, true))));
-  if (!quarter) {
+    h("table", {}, head(), r.months.map((m) => row(`${MONTHS_UA[Number(m.month.slice(5)) - 1]} ${m.month.slice(0, 4)}`, m)), row("Разом", inc, true))));
+  if (r.quarters.length > 1) {
     main.append(h("div", { class: "card table-wrap" }, h("div", { class: "card-head", style: headPad }, h("h3", {}, "По кварталах")),
-      h("table", {}, head(), r.quarters.map((q) => row(`${q.quarter} квартал`, q)), row(`${year} рік`, inc, true))));
+      h("table", {}, head(), r.quarters.map((q) => row(q.label, q)), row("Разом", inc, true))));
+  }
+  const mg = r.management;
+  main.append(h("div", { class: "card" }, h("div", { class: "card-head" }, h("h3", {}, "Управлінський облік (НЕ зменшує дохід ФОП)")),
+    [["Виручка салону", mg.revenue], ["Частки майстрів", -mg.masters_share], ["Матеріали", -mg.materials], ["Операційні витрати", -mg.expenses]].map(([l, v]) =>
+      h("div", { class: "sum-line" }, h("span", {}, l), h("span", {}, money(v)))),
+    h("div", { class: "sum-line total" }, h("span", {}, "Управлінський прибуток"), h("b", {}, money(mg.net_profit)))));
+  if (masters.length) {
+    main.append(h("div", { class: "card table-wrap" }, h("div", { class: "card-head", style: headPad }, h("h3", {}, "Майстри: нараховано й виплачено")),
+      h("table", {}, h("tr", {}, h("th", {}, "Майстер"), h("th", { class: "num" }, "Нараховано"), h("th", { class: "num" }, "Виплачено"),
+        h("th", { class: "num" }, "Списано"), h("th", { class: "num" }, "Залишок до виплати"), h("th", {}, "Остання виплата")),
+      masters.map((m) => h("tr", {}, h("td", {}, m.name), h("td", { class: "num" }, money(m.accrued)), h("td", { class: "num" }, money(m.paid)),
+        h("td", { class: "num" }, money(m.charged)), h("td", { class: "num" }, h("b", {}, money(m.balance_end))),
+        h("td", { class: "small" }, m.payouts.length ? dmy(m.payouts[m.payouts.length - 1].date) : "—")))),
+      h("p", { class: "muted small", style: { padding: "0 16px 12px" } }, "Частка майстра — управлінський розрахунок, не офіційна зарплата. Офіційна зарплата найманих — «Податки і зарплата».")));
   }
   if (r.employees) main.append(h("div", { class: "card" }, h("p", { class: "small" }, `Наймані працівники у періоді: ${r.employees}. `,
     h("a", { href: "#/taxes?t=quarter" }, "Квартальна відомість зарплати →"))));
@@ -2452,10 +2472,10 @@ VIEWS.taxreport = async (main) => {
         if (!Number.isFinite(v) || v < 0) { toast("Вкажіть суму в гривнях", true); return; }
         state.settings = await run(() => api.put("/api/settings", { fop_income_limit: v }), "Ліміт збережено"); reload();
       } }, "Зберегти"))));
-  if (!quarter) main.append(declarationXmlCard(year, st));
+  if (!custom && !quarter) main.append(declarationXmlCard(year, st));
   main.append(h("p", { class: "muted small" },
-    "Дохід ФОП = готівка (каса) + безготівка (банк): усе, що заплатили клієнти, на дату оплати. Комісія банку і витрати дохід не зменшують. " +
-    "Програма нічого не подає в ДПС — звітність складає й подає бухгалтер."));
+    "Дохід ФОП = готівка (каса) + безготівка (банк): усе, що заплатили клієнти, на дату оплати; повернення вже враховано. " +
+    "Частка майстра, комісія банку і витрати дохід не зменшують. Програма нічого не подає в ДПС — звітність складає й подає бухгалтер."));
 };
 
 const TAX_KEYS = { min_wage: "Мінімальна зарплата", single_tax: "Єдиний податок", military_fop: "Військовий збір (ФОП)", esv_fop: "ЄСВ (ФОП)",
