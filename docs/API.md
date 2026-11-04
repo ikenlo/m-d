@@ -51,4 +51,4 @@
 - `GET /api/reports/income.csv?year=&quarter=&detail=day|order` — CSV для Excel (UTF-8 з BOM, «;», суми з комою).
 - Дохід = сума закритих замовлень на дату закриття (після виправлень — остання сума). Нічого не подає в ДПС.
 - `GET /api/reports/declaration?year=` — цифри декларації ФОП 1 групи і чого бракує в даних ФОП;
-  `GET /api/reports/declaration.zip?year=` — ZIP з двома XML (F0103309 + Додаток 1 F0133109) для Електронного кабінету.
+  `GET /api/reports/declaration.zip?year=` — ZIP з двома XML (річна F0103407 + Додаток 1 F0134107) для Електронного кабінету.

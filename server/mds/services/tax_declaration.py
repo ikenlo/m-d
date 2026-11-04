@@ -1,4 +1,5 @@
-"""Декларація платника єдиного податку — ФОП 1 групи (F0103309) + Додаток 1 про ЄСВ (F0133109) у форматі XML ДПС.
+"""Річна декларація платника єдиного податку — ФОП 1 групи (F0103407, «у якого податковий (звітний) період рік»)
++ Додаток 1 про ЄСВ (F0134107) у форматі XML ДПС. (F0103309 — квартальна форма для 3 групи, тут НЕ використовується.)
 
 Програма лише ГОТУЄ файли: ФОП завантажує їх в Електронний кабінет, перевіряє, підписує КЕП / Дія.Підписом і
 відправляє сам. Ключі й підписи програма не зберігає і нічого в ДПС не надсилає.
@@ -111,15 +112,15 @@ def declaration_data(s, actor: Actor, year: int) -> dict:
 
 
 def _head(st: dict, year: int, c_doc_sub: str, today: date, linked: tuple[str, str, int] | None) -> str:
-    """Шапка DECLARHEAD. linked = (C_DOC_SUB пов'язаного документа, ім'я файлу, TYPE)."""
+    """Шапка DECLARHEAD (версія форм — 7). linked = (C_DOC_SUB пов'язаного документа, ім'я файлу, TYPE)."""
     lk = ""
     if linked:
         sub, fname, typ = linked
         lk = (f'<LINKED_DOCS><DOC NUM="1" TYPE="{typ}"><C_DOC>F01</C_DOC><C_DOC_SUB>{sub}</C_DOC_SUB>'
-              f"<C_DOC_VER>9</C_DOC_VER><C_DOC_TYPE>0</C_DOC_TYPE><C_DOC_CNT>1</C_DOC_CNT>"
+              f"<C_DOC_VER>7</C_DOC_VER><C_DOC_TYPE>0</C_DOC_TYPE><C_DOC_CNT>1</C_DOC_CNT>"
               f"<C_DOC_STAN>1</C_DOC_STAN><FILENAME>{fname}</FILENAME></DOC></LINKED_DOCS>")
     return (f"<DECLARHEAD><TIN>{st['fop_tin']}</TIN><C_DOC>F01</C_DOC><C_DOC_SUB>{c_doc_sub}</C_DOC_SUB>"
-            f"<C_DOC_VER>9</C_DOC_VER><C_DOC_TYPE>0</C_DOC_TYPE><C_DOC_CNT>1</C_DOC_CNT>"
+            f"<C_DOC_VER>7</C_DOC_VER><C_DOC_TYPE>0</C_DOC_TYPE><C_DOC_CNT>1</C_DOC_CNT>"
             f"<C_REG>{st['fop_c_reg']}</C_REG><C_RAJ>{st['fop_c_raj']}</C_RAJ>"
             f"<PERIOD_MONTH>12</PERIOD_MONTH><PERIOD_TYPE>5</PERIOD_TYPE><PERIOD_YEAR>{year}</PERIOD_YEAR>"
             f"<C_STI_ORIG>{st['fop_c_sti']}</C_STI_ORIG><C_DOC_STAN>1</C_DOC_STAN>{lk}"
@@ -128,7 +129,7 @@ def _head(st: dict, year: int, c_doc_sub: str, today: date, linked: tuple[str, s
 
 def filename(st: dict, year: int, c_doc_sub: str) -> str:
     """Ім'я файлу за стандартом ДПС (тип DGFilename): РЕГ РАЙ ТІН(10) F01 ПІДТИП ВЕР СТАН ТИП НОМЕР ПЕРІОД МІС РІК ДПІ."""
-    return (f"{int(st['fop_c_reg']):02d}{int(st['fop_c_raj']):02d}{st['fop_tin']:0>10}F01{c_doc_sub}09"
+    return (f"{int(st['fop_c_reg']):02d}{int(st['fop_c_raj']):02d}{st['fop_tin']:0>10}F01{c_doc_sub}07"
             f"1000000001512{year}{int(st['fop_c_sti']):04d}.xml")
 
 
@@ -140,13 +141,13 @@ def _wrap(xsd: str, head: str, body: str) -> bytes:
 
 
 def declaration_files(s, actor: Actor, year: int, today: date) -> list[tuple[str, bytes]]:
-    """Два XML: декларація F0103309 і Додаток 1 F0133109 (ЄСВ). Лише 1 група, тип «Звітна», рік."""
+    """Два XML: річна декларація F0103407 і Додаток 1 F0134107 (ЄСВ). Лише 1 група, тип «Звітна», рік."""
     d = declaration_data(s, actor, year)
     if not d["ready"]:
         raise ValidationError("Заповніть дані ФОП: " + ", ".join(d["missing"]))
     st = all_settings(s)
     e = {k: escape(str(st.get(k) or "")) for k in PROFILE}
-    main_name, app_name = filename(st, year, "033"), filename(st, year, "331")
+    main_name, app_name = filename(st, year, "034"), filename(st, year, "341")
 
     rows = "".join(f"<R08G{m}>1</R08G{m}>" for m in d["months"])
     body = (
@@ -166,7 +167,7 @@ def declaration_files(s, actor: Actor, year: int, today: date) -> list[tuple[str
         "<HD1>1</HD1>"
         f"<HFILL>{_ddmmyyyy(today)}</HFILL><HBOS>{e['fop_name']}</HBOS>"
     )
-    main = _wrap("F0103309.xsd", _head(st, year, "033", today, ("331", app_name, 1)), body)
+    main = _wrap("F0103407.xsd", _head(st, year, "034", today, ("341", app_name, 1)), body)
 
     m_rows = "".join(
         f"<R09{m}G2>{_d2(d['esv_month_base'])}</R09{m}G2><R09{m}G3>22.00</R09{m}G3><R09{m}G4>{_d2(d['esv_month'])}</R09{m}G4>"
@@ -181,7 +182,7 @@ def declaration_files(s, actor: Actor, year: int, today: date) -> list[tuple[str
         + f"<R09G2>{_d2(d['esv_month_base'] * len(d['months']))}</R09G2><R09G4>{_d2(d['esv_year'])}</R09G4>"
         f"<HBOS>{e['fop_name']}</HBOS>"
     )
-    app = _wrap("F0133109.xsd", _head(st, year, "331", today, ("033", main_name, 2)), app_body)
+    app = _wrap("F0134107.xsd", _head(st, year, "341", today, ("034", main_name, 2)), app_body)
     return [(main_name, main), (app_name, app)]
 
 

@@ -29,8 +29,8 @@
 		<xs:sequence>
 			<xs:element name="TIN" type="DGLong"/>
 			<xs:element name="C_DOC" type="xs:string" fixed="F01"/>
-			<xs:element name="C_DOC_SUB" type="xs:string" fixed="033"/>
-			<xs:element name="C_DOC_VER" type="xs:string" fixed="9"/>
+			<xs:element name="C_DOC_SUB" type="xs:string" fixed="034"/>
+			<xs:element name="C_DOC_VER" type="xs:string" fixed="7"/>
 			<xs:element name="C_DOC_TYPE" type="xs:nonNegativeInteger"/>
 			<xs:element name="C_DOC_CNT" type="xs:nonNegativeInteger"/>
 			<xs:element name="C_REG" type="DGsti"/>
@@ -78,9 +78,6 @@
 				<xs:element name="HZU" type="DGchk"/>
 			</xs:choice>
 			<xs:choice>
-				<xs:element name="H1KV" type="DGchk"/>
-				<xs:element name="HHY" type="DGchk"/>
-				<xs:element name="H3KV" type="DGchk"/>
 				<xs:element name="HY" type="DGchk"/>
 				<xs:sequence>
 					<xs:element name="HZM" type="DGMonth"/>
@@ -88,12 +85,7 @@
 				</xs:sequence>
 			</xs:choice>
 			<xs:element name="HZY" type="DGYear"/>
-			<xs:choice minOccurs="0">
-				<xs:element name="H1KVP" type="DGchk"/>
-				<xs:element name="HHYP" type="DGchk"/>
-				<xs:element name="H3KVP" type="DGchk"/>
-				<xs:element name="HYP" type="DGchk"/>
-			</xs:choice>
+			<xs:element name="HYP" type="DGchk" nillable="true" minOccurs="0"/>
 			<xs:element name="HZYP" type="DGYear" nillable="true" minOccurs="0"/>
 			<xs:element name="HSTI" type="DGHSTI"/>
 			<xs:element name="HNAME" type="DGHNAME"/>
@@ -101,10 +93,7 @@
 			<xs:element name="HEMAIL" type="DGHEMAIL" nillable="true" minOccurs="0"/>
 			<xs:element name="HTEL" type="DGHTEL" nillable="true" minOccurs="0"/>
 			<xs:element name="HTIN" type="DGHTINF"/>
-			<xs:choice minOccurs="0">
-				<xs:element name="M081" type="DGchk"/>
-				<xs:element name="M082" type="DGchk"/>
-			</xs:choice>
+			<xs:element name="M081" type="DGchk" nillable="true" minOccurs="0"/>
 			<!--BODY-->
 			<xs:element name="HNACTL" type="xs:nonNegativeInteger"/>
 			<!--TABLE ¹1-->

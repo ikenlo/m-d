@@ -2334,7 +2334,7 @@ async function downloadFile(path, fallbackName) {
   setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 1000);
 }
 
-// ---- XML-декларація ФОП 1 групи для Електронного кабінету (F0103309 + Додаток 1)
+// ---- XML-декларація ФОП 1 групи для Електронного кабінету (F0103407 + Додаток 1)
 async function declarationCard(year) {
   const d = await api.get("/api/reports/declaration?year=" + year);
   const st = state.settings || await api.get("/api/settings");
@@ -2366,7 +2366,7 @@ async function declarationCard(year) {
   };
   const line = (label, v) => h("div", { class: "sum-line" }, h("span", {}, label), h("b", {}, money(v)));
   return h("div", { class: "card stack" },
-    h("div", { class: "card-head" }, h("h3", {}, `Декларація ФОП 1 групи за ${year} рік (XML)`),
+    h("div", { class: "card-head" }, h("h3", {}, `Річна декларація ФОП 1 групи за ${year} рік (XML, F0103407)`),
       h("span", { class: "chip " + (d.ready ? "st-completed" : "st-pending") }, d.ready ? "готово до завантаження" : "заповніть дані")),
     line("Дохід за рік (рядок 01)", d.income),
     line("Єдиний податок за рік (авансові внески)", d.single_tax_year),
@@ -2379,7 +2379,7 @@ async function declarationCard(year) {
       h("button", { class: "btn primary", disabled: !d.ready || null,
         onclick: () => run(() => downloadFile("/api/reports/declaration.zip?year=" + year, `deklaratsiia-fop-${year}.zip`)) },
         "Завантажити декларацію (XML)")),
-    h("p", { class: "muted small" }, "В архіві два файли: декларація і Додаток 1 (ЄСВ). Розпакуйте, у Електронному кабінеті ДПС оберіть " +
+    h("p", { class: "muted small" }, "В архіві два файли: річна декларація F0103407 і Додаток 1 F0134107 (ЄСВ) — для ФОП 1 групи без найманих працівників. Розпакуйте, у Електронному кабінеті ДПС оберіть " +
       "«Введення звітності → Завантажити файл», завантажте обидва, перевірте цифри, підпишіть Дія.Підписом і відправте. " +
       "Програма нічого не відправляє сама. Ставки й коди податкової звірте з бухгалтером або кабінетом."),
     h("details", {}, h("summary", {}, "Дані ФОП для декларації"), form,
