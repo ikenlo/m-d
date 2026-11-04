@@ -2,8 +2,7 @@ from __future__ import annotations
 
 from datetime import date
 
-from fastapi import APIRouter, Depends, Request
-from fastapi.responses import Response
+from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from ...errors import Forbidden
@@ -123,9 +122,7 @@ def my_finance(master_id: int | None = None, actor: Actor = Depends(get_actor), 
 def list_expenses(period: str | None = None, date_from: date | None = None, date_to: date | None = None,
                   actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
     a, b = _range(period, date_from, date_to)
-    items = expenses.list_expenses(s, actor, a, b)
-    files = expenses.files_for(s, [e.id for e in items])
-    return [expenses.expense_public(e) | {"files": files.get(e.id, [])} for e in items]
+    return [expenses.expense_public(e) for e in expenses.list_expenses(s, actor, a, b)]
 
 
 @router.post("/expenses", status_code=201)
@@ -143,37 +140,3 @@ def update_expense(expense_id: int, body: ExpensePatch, actor: Actor = Depends(g
 def delete_expense(expense_id: int, reason: str | None = None, actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
     expenses.delete_expense(s, actor, expense_id, reason)
     return {"ok": True}
-
-
-@router.post("/expenses/{expense_id}/files", status_code=201)
-async def add_expense_file(expense_id: int, request: Request, filename: str = "",
-                           actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
-    """Фото/PDF документа: тіло запиту — сам файл, тип — заголовок Content-Type (до 5 МБ)."""
-    if int(request.headers.get("content-length") or 0) > expenses.MAX_FILE + 1024:
-        from ...errors import ValidationError
-
-        raise ValidationError("Файл завеликий — до 5 МБ")
-    data = await request.body()
-    f = expenses.add_file(s, actor, expense_id, filename=filename, content_type=request.headers.get("content-type", ""),
-                          data=data)
-    return expenses.file_public(f)
-
-
-@router.get("/expense-files/{file_id}")
-def get_expense_file(file_id: int, actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
-    from urllib.parse import quote
-
-    f = expenses.get_file(s, actor, file_id)
-    return Response(f.data, media_type=f.content_type,
-                    headers={"Content-Disposition": f"inline; filename*=UTF-8''{quote(f.filename)}",
-                             "X-Content-Type-Options": "nosniff", "Cache-Control": "private, max-age=3600"})
-
-
-@router.delete("/expense-files/{file_id}", status_code=204)
-def delete_expense_file(file_id: int, actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
-    expenses.delete_file(s, actor, file_id)
-
-
-@router.get("/finance/control")
-def finance_control(actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
-    return analytics.owner_control(s, actor)

@@ -56,18 +56,7 @@
 ## Податки і зарплата (директор) — docs/PAYROLL.md
 - Ставки: `GET/POST /api/taxes/rates`; податки ФОП: `GET /api/taxes/fop?year=`, `POST /api/taxes/fop/accrue`,
   `POST /api/taxes/fop/{id}/correct`, `POST /api/taxes/payments`.
-- Календар податків і звітності: `GET /api/taxes/calendar?year=` (строк, сума, статус paid/due/overdue/planned/check).
-- Екран керівника: `GET /api/finance/control` (сьогодні, дохід з початку року, ліміт, найближчий строк, попередження).
 - Працівники: `GET /api/employees`, `PUT /api/employees/{user_id}`.
 - Зарплата: `GET /api/payroll?month=`, `GET /api/payroll/calc?gross=&month=&user_id=`, `POST /api/payroll`,
   `POST /api/payroll/{id}/correct`, `POST /api/payroll/payments`, `GET /api/payroll/history/{user_id}`,
   `GET /api/payroll/quarter?year=&quarter=`, `GET /api/payroll/quarter.csv?year=&quarter=`.
-
-## Для бухгалтера (директор)
-- `GET /api/reports/accountant?year=&quarter=` — дохід (каса + банк) по місяцях/кварталах, реквізити ФОП, ліміт, працівники.
-- `GET /api/reports/accountant.xlsx?year=&quarter=` — пакет Excel для бухгалтера.
-
-## Документи до витрат (директор)
-- `POST /api/expenses/{id}/files?filename=` — тіло = файл (jpg/png/webp/pdf, до 5 МБ), тип — `Content-Type`.
-- `GET /api/expense-files/{file_id}` — файл; `DELETE /api/expense-files/{file_id}`.
-- `POST/PATCH /api/expenses` приймають `payment_method`: cash | card | account; категорії + equipment, household.
