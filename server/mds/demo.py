@@ -76,7 +76,7 @@ def seed_year(db: Database, start: date = date(2025, 11, 1), end: date = date(20
         with db.session() as s:
             for login, name, share, cats, off in MASTERS:
                 ids = [i for i, v in svc.items() if any(c in v[3] for c in cats)] or list(svc)
-                u = users.create_user(s, Actor.system(), username=DEMO_PREFIX + login, password=secrets.token_urlsafe(12),
+                u = users.create_user(s, Actor.system(), username=DEMO_PREFIX + login, password=secrets.token_urlsafe(12) + "a1",
                                       full_name=name, role=Role.MASTER, share_bp=share)
                 masters.append({"id": u.id, "actor": Actor.of(u), "services": ids, "off": off})
         people = [(f"{R.choice(FIRST)} {R.choice(LAST)}", f"0{PHONE_BASE + i}") for i in range(clients)]
@@ -220,7 +220,7 @@ def seed_extra(db: Database, start: date = date(2025, 11, 1), end: date = date(2
     try:
         clock.set_now(datetime.combine(start, datetime.min.time()).replace(hour=8))
         with db.session() as s:
-            users.create_user(s, Actor.system(), username=DEMO_PREFIX + "admin", password=secrets.token_urlsafe(12),
+            users.create_user(s, Actor.system(), username=DEMO_PREFIX + "admin", password=secrets.token_urlsafe(12) + "a1",
                               full_name="Христина (демо, адміністратор)", role=Role.ADMIN)
             # графік (6 днів, свій вихідний) і послуги кожної майстрині
             for mid, login in mlist:
