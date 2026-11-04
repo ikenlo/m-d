@@ -44,7 +44,7 @@ async def _reminders_loop(db: Database) -> None:
     while True:
         try:
             with db.session() as s:
-                n = reminders.send_due(s)
+                n = reminders.send_due(s) + reminders.remind_unclosed(s)
                 if tick % 12 == 0:  # щогодини — строки сплати податків ФОП (директору)
                     taxes.tax_reminders(s)
             if n:

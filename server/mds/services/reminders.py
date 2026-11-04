@@ -95,3 +95,20 @@ def set_choice(s: Session, actor: Actor, enabled: bool) -> Client:
         c.reminders = enabled
         audit(s, actor, "client", c.id, "reminders", {"reminders": before}, {"reminders": enabled})
     return c
+
+
+UNCLOSED_AFTER = timedelta(minutes=15)
+
+
+def remind_unclosed(s: Session) -> int:
+    """Час запису минув 15+ хв тому, а замовлення не закрито — один раз нагадати майстру в Telegram."""
+    now = clock.now()
+    q = select(Appointment).where(Appointment.status.in_(ApptStatus.CLOSABLE), Appointment.close_reminded.is_(False),
+                                  Appointment.ends_at <= now - UNCLOSED_AFTER, Appointment.ends_at >= now - timedelta(days=1))
+    n = 0
+    for a in s.scalars(q):
+        a.close_reminded = True
+        n += notifications.enqueue(s, a.master.telegram_chat_id,
+                                   f"🧾 Не закрито замовлення: {a.client.name}, {a.starts_at:%H:%M} — {a.service.name}.\n"
+                                   "Закрийте його в програмі («Сьогодні» → «Не закрито»), щоб виручка й ваш заробіток порахувались.")
+    return n

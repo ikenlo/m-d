@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import date
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, BackgroundTasks, Depends
 from sqlalchemy.orm import Session
 
 from ...services import bookings, orders
@@ -18,6 +18,39 @@ class ProposeIn(BaseModel):
     starts_at: datetime
 
 router = APIRouter(prefix="/api", tags=["calendar"])
+
+
+class ShiftIn(BaseModel):
+    master_id: int
+    minutes: int
+    from_appt_id: int | None = None
+    notify_clients: bool = True
+
+
+@router.post("/appointments/shift")
+def shift_appointments(body: ShiftIn, background: BackgroundTasks, actor: Actor = Depends(get_actor),
+                       s: Session = Depends(get_session)):
+    """Запізнення: зсунути наступні записи майстра на N хв і повідомити клієнтів
+    (Telegram — одразу через чергу бота; SMS/Viber — після збереження, якщо TurboSMS налаштовано)."""
+    from ...services import sms
+    from ...services.common import get_setting
+
+    r = bookings.shift_appointments(s, actor, master_id=body.master_id, minutes=body.minutes,
+                                    from_appt_id=body.from_appt_id, notify_clients=body.notify_clients)
+    to_sms = r.pop("sms")
+    can_sms = bool(get_setting(s, "sms_enabled")) and sms.configured()
+    if to_sms and can_sms:
+        for x in to_sms:  # кожному свій текст (свій новий час)
+            background.add_task(sms.send, [x["phone"]], x["text"])
+    r["sms_sent"] = len(to_sms) if can_sms else 0
+    r["call"] = [] if can_sms else [x for x in r["shifted"] if x["channel"] == "sms"]  # кому подзвонити
+    return r
+
+
+@router.get("/appointments/unclosed")
+def unclosed(master_id: int | None = None, actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
+    """Час запису минув, а замовлення не закрито (за 7 днів)."""
+    return [bookings.appt_public(a) for a in bookings.unclosed(s, actor, master_id)]
 
 
 @router.get("/appointments")
@@ -87,3 +120,4 @@ def close_order(appt_id: int, body: CloseOrderIn, actor: Actor = Depends(get_act
         client_name=body.client_name,
     )
     return orders.order_public(o)
+

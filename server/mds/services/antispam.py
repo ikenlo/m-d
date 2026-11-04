@@ -35,8 +35,15 @@ def _n(s: Session, key: str) -> int:
     return int(get_setting(s, key) or 0)
 
 
+def whitelisted(s: Session, phone_n: str | None) -> bool:
+    """Номери з білого списку (власниця, персонал) — без обмежень захисту від спаму."""
+    return bool(phone_n) and phone_n in (get_setting(s, "antispam_whitelist") or [])
+
+
 def check_booking(s: Session, client: Client, source: str) -> None:
     """Перевірка перед створенням запису клієнтом (бот або сайт). Кидає TooMany з людським поясненням."""
+    if whitelisted(s, client.phone):
+        return
     now = clock.now()
     if client.blocked:
         raise TooMany("Онлайн-запис для цього номера недоступний. Зателефонуйте, будь ласка, в салон.")
@@ -79,6 +86,8 @@ def needs_confirmation(s: Session, client: Client) -> bool:
 
 def check_callback(s: Session, phone_n: str, telegram_user_id: int | None) -> None:
     """Заявки «передзвоніть»: не більше N за добу з одного номера / Telegram і N на годину загалом."""
+    if whitelisted(s, phone_n):
+        return
     now = clock.now()
     c = s.scalar(select(Client).where(Client.phone == phone_n))
     if c is not None and c.blocked:

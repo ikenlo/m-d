@@ -158,3 +158,12 @@ def gdrive_disconnect(request: Request, actor: Actor = Depends(get_actor), s: Se
 def sync_changes(since: int | None = None, actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
     """Живе оновлення: версія даних, які сутності змінились і нові записи (для сповіщень)."""
     return sync.changes(s, actor, since)
+
+
+@router.get("/sms/status")
+def sms_status(actor: Actor = Depends(get_actor)):
+    """Чи задано ключ TurboSMS (змінні сервера) — для налаштувань."""
+    from ...services import sms as sms_svc
+
+    actor.require(Role.DIRECTOR)
+    return {"configured": sms_svc.configured()}

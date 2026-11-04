@@ -167,7 +167,13 @@ class BookingIn(BaseModel):
 @router.post("/bookings", status_code=201)
 def create_booking(body: BookingIn, request: Request, s: Session = Depends(get_session)):
     _enabled(s)
-    if not BOOK_LIMIT.hit(client_ip(request)):
+    from ...services.antispam import whitelisted
+
+    try:
+        trusted = whitelisted(s, normalize_phone(body.phone))
+    except DomainError:
+        trusted = False
+    if not trusted and not BOOK_LIMIT.hit(client_ip(request)):
         raise TooMany("Забагато спроб запису. Спробуйте пізніше або зателефонуйте.")
     if body.website or (body.elapsed_ms is not None and body.elapsed_ms < MIN_FILL_MS) or body.elapsed_ms is None:
         raise ValidationError("Не вдалося надіслати запис. Оновіть сторінку й спробуйте ще раз.")

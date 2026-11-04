@@ -806,6 +806,9 @@ function apptSheet(a, onChange) {
       secondary.append(h("button", { class: "btn", onclick: () => done(() => api.post(`/api/appointments/${a.id}/status`, { status: "in_progress" }), "Клієнта прийнято") }, icon("play", "sm"), "Клієнт прийшов"));
     }
     secondary.append(h("button", { class: "btn", onclick: () => apptForm({ appt: a }, onChange) }, icon("move", "sm"), "Перенести"));
+    if (a.starts_at.slice(0, 10) === today() && a.status !== "in_progress") {
+      secondary.append(h("button", { class: "btn", title: "Майстер запізнюється — зсунути цей і всі наступні записи", onclick: () => shiftForm(a.master_id, a, onChange) }, icon("clock", "sm"), "Зсунути наступні"));
+    }
     if (a.status !== "in_progress") {
       secondary.append(h("button", { class: "btn", onclick: () => confirmSheet("Клієнт не прийшов?", `${a.client.name}, ${hm(a.starts_at)}`, "Так, не прийшов",
         async () => { await run(() => api.post(`/api/appointments/${a.id}/status`, { status: "no_show" })); onChange(); }) }, icon("noshow", "sm"), "Не прийшов"));
@@ -1210,6 +1213,7 @@ VIEWS.today = async (main) => {
   const left = active.filter((a) => a.status !== "completed");
   main.append(topbar(`Добрий день, ${state.user.full_name.split(" ")[0]}`,
     `${WD_LONG[(new Date().getDay() + 6) % 7]}, ${dm(d)} · записів: ${active.length}, залишилось: ${left.length}`,
+    left.length ? h("button", { class: "btn", onclick: () => shiftForm(state.user.id, null, reload) }, icon("clock", "sm"), "Запізнююсь") : null,
     h("button", { class: "btn primary", onclick: () => apptForm({ date: d }, reload) }, icon("plus", "sm"), "Запис")));
   main.append(h("div", { class: "grid kpi", style: { marginBottom: "16px" } },
     kpi("Мій заробіток сьогодні", my.day.earning, "dark", { ico: "wallet" }),
@@ -1222,8 +1226,10 @@ VIEWS.today = async (main) => {
   if (pend) main.querySelector(".topbar").after(pend);
   if (!active.length) { main.append(h("div", { class: "card" }, emptyState("На сьогодні записів немає", "calendar"))); return; }
   // угорі — запис, з яким зараз працювати: той, що триває / вже настав, або найближчий
-  const focus = focusAppt(active);
-  if (focus) main.querySelector(".topbar").after(nowCard(focus)); // найвище — вище за непідтверджені
+  const unc = await api.get("/api/appointments/unclosed").catch(() => []);
+  if (unc.length) main.querySelector(".topbar").after(unclosedBlock(unc, reload));
+  const focus = focusAppt(active.filter((a) => !unc.some((u) => u.id === a.id)));
+  if (focus) main.querySelector(".topbar").after(nowCard(focus, unc)); // найвище — вище за непідтверджені
   const focusId = focus?.id;
   const tick = setInterval(() => { // о 13:00 картка сама переходить на наступного клієнта
     if (!main.isConnected) return clearInterval(tick);
@@ -1242,6 +1248,73 @@ VIEWS.today = async (main) => {
   }
 };
 
+// «Клієнт прийшов»: якщо попереднє замовлення ще не закрите — спершу запропонувати закрити його (в один дотик)
+async function clientArrived(a, unc, onChange) {
+  const prev = (unc || []).filter((u) => u.master_id === a.master_id && u.id !== a.id);
+  const start = async () => { await run(() => api.post(`/api/appointments/${a.id}/status`, { status: "in_progress" }), "Клієнта прийнято"); closeSheet(); onChange(); };
+  if (!prev.length) return start();
+  openSheet("Спершу закрийте попереднє замовлення", h("div", { class: "stack" },
+    h("p", { class: "muted", style: { margin: 0 } }, "Щоб виручка й ваш заробіток не загубились — закрийте попереднього клієнта. Це один дотик:"),
+    unclosedBlock(prev, async () => { const left = await api.get("/api/appointments/unclosed").catch(() => []); if (!left.some((u) => u.master_id === a.master_id && u.id !== a.id)) start(); else clientArrived(a, left, onChange); }, true),
+    h("button", { class: "btn ghost", onclick: start }, "Закрити пізніше — прийняти ", a.client.name)));
+}
+// незакриті замовлення: закрити за ціною запису готівкою / карткою або детально (матеріали, інша сума)
+function unclosedBlock(list, onChange, bare = false) {
+  const quick = async (u, method, btn) => {
+    btn.disabled = true;
+    try {
+      await run(() => api.post(`/api/appointments/${u.id}/close`, { amount: u.price, payment_method: method, materials: [], idempotency_key: uuid() }), "Замовлення закрито");
+      onChange();
+    } finally { btn.disabled = false; }
+  };
+  const rows = list.map((u) => h("div", { class: "unc-row" },
+    h("div", { class: "grow" }, h("b", {}, u.client.name), h("div", { class: "muted small" }, `${dm(u.starts_at)} ${hm(u.starts_at)} · ${u.service_name} · ${money(u.price)}`)),
+    h("div", { class: "unc-actions" },
+      h("button", { class: "btn sm", onclick: (e) => quick(u, "cash", e.currentTarget) }, icon("banknote", "sm"), "Готівка"),
+      h("button", { class: "btn sm", onclick: (e) => quick(u, "card", e.currentTarget) }, icon("card", "sm"), "Картка"),
+      h("button", { class: "btn sm ghost", title: "Інша сума, матеріали", onclick: () => closeOrderSheet(u, onChange) }, icon("edit", "sm")))));
+  if (bare) return h("div", { class: "stack" }, rows);
+  return h("div", { class: "card unc-card" }, h("div", { class: "card-head" }, h("h3", { class: "row", style: { gap: "8px" } }, icon("receipt"), `Не закрито: ${list.length}`),
+    h("span", { class: "muted small" }, "Час минув — закрийте одним дотиком (сума за записом) або ✎ детально")), rows);
+}
+// запізнення / сеанс затягнувся: зсунути наступні записи майстра на N хв і повідомити клієнтів
+async function shiftForm(masterId, fromAppt, onChange) {
+  const d = today();
+  const list = (await api.get(`/api/appointments?date_from=${d}&master_id=${masterId}`).catch(() => []))
+    .filter((a) => ["pending", "confirmed"].includes(a.status)).sort((x, y) => x.starts_at.localeCompare(y.starts_at));
+  const now = new Date();
+  const from = fromAppt || list.find((a) => new Date(a.starts_at) >= now);
+  if (!from) return toast("Немає наступних записів, які можна зсунути", true);
+  let minutes = 15;
+  const affected = list.filter((a) => a.starts_at >= from.starts_at);
+  const notify = h("input", { type: "checkbox", checked: true });
+  const preview = h("div", { class: "stack" });
+  const draw = () => preview.replaceChildren(...affected.map((a) => {
+    const t2 = new Date(new Date(a.starts_at).getTime() + minutes * 60000);
+    return h("div", { class: "sum-line" }, h("span", {}, a.client.name, h("span", { class: "muted small" }, " · " + a.service_name)),
+      h("span", {}, h("s", { class: "muted" }, hm(a.starts_at)), " → ", h("b", {}, `${pad(t2.getHours())}:${pad(t2.getMinutes())}`)));
+  }));
+  draw();
+  openSheet("Зсунути записи", h("div", { class: "stack" },
+    h("p", { class: "muted", style: { margin: 0 } }, `Записи з ${hm(from.starts_at)} і всі наступні сьогодні зсунуться на обраний час.`),
+    seg([[10, "10 хв"], [15, "15 хв"], [20, "20 хв"], [30, "30 хв"], [45, "45 хв"], [60, "1 год"]], minutes, (v) => { minutes = Number(v); draw(); }),
+    preview,
+    h("label", { class: "row" }, notify, "Повідомити клієнтів (Telegram; іншим — SMS/Viber, якщо підключено)"),
+    h("button", { class: "btn primary big", onclick: async () => {
+      const r = await run(() => api.post("/api/appointments/shift", { master_id: masterId, minutes, from_appt_id: from.id, notify_clients: notify.checked }), "Записи зсунуто");
+      closeSheet();
+      const call = r.call || [];
+      openSheet("Записи зсунуто", h("div", { class: "stack" },
+        h("div", { class: "sum-line" }, h("span", {}, "Зсунуто записів"), h("b", {}, String(r.shifted.length))),
+        h("div", { class: "sum-line" }, h("span", {}, "Повідомлено в Telegram"), h("b", {}, String(r.telegram))),
+        r.sms_sent ? h("div", { class: "sum-line" }, h("span", {}, "Надіслано SMS / Viber"), h("b", {}, String(r.sms_sent))) : null,
+        call.length ? h("div", { class: "callout", style: { margin: 0 } }, icon("phone"), h("div", { class: "grow" },
+          h("b", {}, "Подзвоніть цим клієнтам (немає Telegram, SMS не підключено):"),
+          call.map((c) => h("div", { class: "sum-line" }, h("span", {}, c.client, " · ", hm(c.starts_at)), h("a", { href: "tel:" + c.phone }, c.phone))))) : null,
+        h("button", { class: "btn primary", onclick: () => { closeSheet(); onChange(); } }, "Готово")));
+    } }, "Зсунути")));
+}
+
 // запис «зараз»: клієнт уже прийшов → той, чий час настав (до кінця) → найближчий наступний
 function focusAppt(list) {
   const now = new Date();
@@ -1253,7 +1326,7 @@ function focusAppt(list) {
     || open.filter((a) => t(a.ends_at) <= now).sort((x, y) => y.starts_at.localeCompare(x.starts_at))[0] // минув, але не закритий
     || null;
 }
-function nowCard(a) {
+function nowCard(a, unc = []) {
   const now = new Date(), st = new Date(a.starts_at), en = new Date(a.ends_at);
   const mins = Math.round((st - now) / 60000);
   const label = a.status === "in_progress" ? "Зараз у кріслі"
@@ -1268,8 +1341,7 @@ function nowCard(a) {
       h("div", { class: "grow" }, h("div", { class: "now-client" }, a.client.name), h("div", { class: "muted" }, a.service_name, " · ", money(a.price)),
         a.comment ? h("div", { class: "small muted" }, icon("edit", "sm"), " ", a.comment) : null)),
     h("div", { class: "now-actions" },
-      a.status !== "in_progress" ? h("button", { class: "btn", onclick: async () => { await run(() => api.post(`/api/appointments/${a.id}/status`, { status: "in_progress" }), "Клієнта прийнято"); reload(); } },
-        icon("play", "sm"), "Клієнт прийшов") : null,
+      a.status !== "in_progress" ? h("button", { class: "btn", onclick: () => clientArrived(a, unc, reload) }, icon("play", "sm"), "Клієнт прийшов") : null,
       h("button", { class: "btn primary", onclick: () => closeOrderSheet(a, reload) }, icon("banknote", "sm"), "Закрити замовлення"),
       h("a", { class: "btn", href: "tel:" + a.client.phone }, icon("phone", "sm"), "Подзвонити")));
 }
@@ -1963,14 +2035,21 @@ function antispamSettingsCard(st) {
     antispam_max_pending_total: num("antispam_max_pending_total", 20), antispam_site_per_hour: num("antispam_site_per_hour", 15),
     antispam_callbacks_per_day: num("antispam_callbacks_per_day", 2) };
   const site = h("input", { type: "checkbox", checked: !!st.public_booking_enabled });
+  const wl = h("input", { value: (st.antispam_whitelist || []).join(", "), placeholder: "+380687166910" });
+  const smsOn = h("input", { type: "checkbox", checked: !!st.sms_enabled });
+  const smsNote = h("p", { class: "muted small", style: { margin: 0 } }, "Перевіряю підключення TurboSMS…");
+  api.get("/api/sms/status").then((r) => { smsNote.textContent = r.configured ? "✓ TurboSMS підключено" : "TurboSMS не підключено: зареєструйтесь на turbosms.ua (Viber + SMS), задайте на сервері MDS_TURBOSMS_TOKEN і MDS_TURBOSMS_SENDER. Поки — клієнтам без Telegram програма покаже, кому подзвонити."; }).catch(() => { smsNote.textContent = ""; });
   return h("div", { class: "card stack" }, h("h3", { class: "row", style: { gap: "8px" } }, icon("lock"), "Захист онлайн-запису"),
     h("p", { class: "muted small", style: { margin: 0 } }, "Обмеження для записів з Telegram-бота й сайту (персонал записує без обмежень). 0 — без обмеження. Окремого клієнта можна заблокувати в його картці."),
     h("div", { class: "form-grid" }, field("Активних записів на клієнта", f.antispam_max_active), field("Нових записів від клієнта за добу", f.antispam_max_per_day),
       field("Непідтверджених у черзі (усього)", f.antispam_max_pending_total), field("Записів із сайту за годину", f.antispam_site_per_hour),
       field("Заявок «передзвоніть» з номера за добу", f.antispam_callbacks_per_day)),
     h("label", { class: "row" }, site, "Онлайн-запис із сайту відкрито (записи з сайту завжди чекають підтвердження)"),
+    field("Номери без обмежень (власниця, персонал) — через кому", wl),
+    h("label", { class: "row" }, smsOn, "SMS / Viber клієнтам (напр. «запис зсунуто на 15 хв»)"), smsNote,
     h("button", { class: "btn primary", onclick: async () => {
-      const body = { public_booking_enabled: site.checked };
+      const body = { public_booking_enabled: site.checked, sms_enabled: smsOn.checked,
+        antispam_whitelist: wl.value.split(/[,;\n]/).map((x) => x.trim()).filter(Boolean) };
       for (const [k, el] of Object.entries(f)) body[k] = Math.max(0, parseInt(el.value || "0", 10));
       state.settings = await run(() => api.put("/api/settings", body), "Збережено"); reload();
     } }, "Зберегти"));
