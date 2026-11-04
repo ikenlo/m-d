@@ -150,6 +150,8 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "utilities_charge_share_bp": 10000,  # яку частку витрат розподіляти (10000 = 100%)
     "utilities_fixed_amount": 0,  # fixed: сума, копійки
     "utilities_fixed_per": "shift",  # fixed: shift (за зміну) | month (за місяць)
+    # ліміт доходу групи ФОП за рік, копійки (0 — не задано); вносить директор/бухгалтер
+    "fop_income_limit": 0,
     "salon_address": "",
     "salon_phone": "",
     "salon_instagram": "",
@@ -216,7 +218,7 @@ def update_settings(s: Session, actor: Actor, data: dict[str, Any]) -> dict[str,
         if key in ("salon_address", "salon_phone", "salon_instagram", "salon_name") and not isinstance(value, str):
             raise ValidationError(f"{key}: очікується текст")
         if key in ("generator_fuel_lph_milli", "generator_fuel_price", "generator_amort_per_hour",
-                   "generator_hours_initial_milli", "utilities_fixed_amount") and not (
+                   "generator_hours_initial_milli", "utilities_fixed_amount", "fop_income_limit") and not (
             isinstance(value, int) and not isinstance(value, bool) and 0 <= value <= 10**12
         ):
             raise ValidationError(f"{key}: очікується ціле невід'ємне число")

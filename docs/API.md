@@ -44,3 +44,9 @@
 | `GET /api/utilities/summary`, `GET /api/utilities/allocation`, `POST /api/utilities/allocate`, `POST /api/utilities/reverse` | директор | Аналітика місяця, розподіл між майстрами, скасування (сторно) |
 | `GET /api/utilities/charges` | директор; майстер — свої | Списання з майстрів |
 | `GET /api/health` | — | Перевірка роботи; `version` — розгорнута версія |
+
+## Звіт для податкової (директор)
+
+- `GET /api/reports/income?year=&quarter=` — дохід по місяцях/кварталах, готівка/картка/переказ, з початку року, ліміт (`fop_income_limit` у налаштуваннях, копійки).
+- `GET /api/reports/income.csv?year=&quarter=&detail=day|order` — CSV для Excel (UTF-8 з BOM, «;», суми з комою).
+- Дохід = сума закритих замовлень на дату закриття (після виправлень — остання сума). Нічого не подає в ДПС.
