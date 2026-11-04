@@ -228,6 +228,8 @@ def client_public(c: Client) -> dict:
         "phone": c.phone,
         "notes": c.notes,
         "telegram_linked": c.telegram_user_id is not None,
+        "blocked": bool(c.blocked),
+        "blocked_reason": c.blocked_reason,
         "created_at": c.created_at.isoformat(),
     }
 
@@ -281,7 +283,11 @@ def update_client(s: Session, actor: Actor, client_id: int, data: dict) -> Clien
     for k in ("name", "notes"):
         if k in data:
             setattr(c, k, data[k])
-    audit(s, actor, "client", c.id, "update", before, client_public(c))
+    if "blocked" in data and data["blocked"] is not None:
+        # блокування онлайн-запису (бот і сайт) — захист від спаму; записати через адміністратора можна
+        c.blocked = bool(data["blocked"])
+        c.blocked_reason = (data.get("blocked_reason") or "").strip() or None if c.blocked else None
+    audit(s, actor, "client", c.id, "update", before, client_public(c), data.get("blocked_reason"))
     return c
 
 

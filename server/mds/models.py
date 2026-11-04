@@ -213,6 +213,9 @@ class Client(Base):
     notes: Mapped[str | None] = mapped_column(Text)
     # нагадування в Telegram за добу і за 2 години: None — ще не питали, True/False — відповідь клієнта
     reminders: Mapped[bool | None] = mapped_column(Boolean)
+    # захист від спаму: заблокований клієнт не може записатися з бота/сайту (лише через адміністратора)
+    blocked: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
+    blocked_reason: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
 
 
@@ -228,7 +231,7 @@ class Appointment(Base):
     ends_at: Mapped[datetime] = mapped_column(DateTime)
     price: Mapped[int] = mapped_column(Integer)  # планова ціна, копійки
     status: Mapped[str] = mapped_column(String(16), default=ApptStatus.CONFIRMED)
-    source: Mapped[str] = mapped_column(String(16), default="staff")  # staff | telegram
+    source: Mapped[str] = mapped_column(String(16), default="staff")  # staff | telegram | site
     comment: Mapped[str | None] = mapped_column(Text)
     cancel_reason: Mapped[str | None] = mapped_column(Text)
     # майстер запропонував клієнту інший час — чекаємо відповіді в боті

@@ -1,0 +1,61 @@
+{
+  "_comment": "Усі налаштування сайту. Порожні рядки / null — ще не заповнено (TODO для власника, див. site/TODO.md). Нічого не вигадуємо: поки поле порожнє, блок на сайті прихований або показує «уточнюється».",
+  "salon": {
+    "name": "M&D Beauty Salon",
+    "short": "M & D",
+    "subtitle": "BEAUTY SALON",
+    "tagline": "Перукарські послуги та манікюр",
+    "about": "",
+    "opening_note": "Салон незабаром відкривається — запис уже можна залишити онлайн."
+  },
+  "contacts": {
+    "phone": "",
+    "address": "",
+    "city": "",
+    "instagram": "https://www.instagram.com/hairstudio.md",
+    "telegram": "",
+    "viber": "",
+    "map_embed_url": "",
+    "map_link": "",
+    "google_reviews_url": ""
+  },
+  "hours": {
+    "timezone": "Europe/Kyiv",
+    "_comment": "Години роботи: 0 — понеділок … 6 — неділя; [\"09:00\", \"20:00\"] або null (вихідний). Поки порожньо — статус «Відчинено/Зачинено» прихований.",
+    "days": {}
+  },
+  "masters": [
+    { "id": null, "name": "Маргарита", "role": "", "level": null, "photo": "" },
+    { "id": null, "name": "Дмитро", "role": "", "level": null, "photo": "" }
+  ],
+  "levels": {
+    "top": "Топ-майстер",
+    "master": "Майстер",
+    "trainee": "Стажер"
+  },
+  "booking": {
+    "api_mode": "mock",
+    "api_base": "",
+    "_comment": "api_mode: mock — демонстраційний запис у браузері (нічого не надсилається); live — справжній запис через API системи MDS Connect (api_base, напр. https://m-d-production.up.railway.app). Для live у Railway додайте змінну MDS_PUBLIC_ORIGINS з адресою сайту і ввімкніть «Онлайн-запис із сайту» в налаштуваннях.",
+    "slot_step_min": 30,
+    "days_ahead": 14,
+    "min_lead_min": 30
+  },
+  "promos": {
+    "trainee_discount": { "enabled": false, "percent": null, "text": "Стрижка від стажера зі знижкою" },
+    "duo_discount": { "enabled": false, "percent": null, "text": "Знижка «батько і син» / «для двох»" },
+    "loyalty": { "enabled": false, "text": "Програма лояльності" },
+    "gift_certificates": { "enabled": true, "text": "Подарунковий сертифікат на послуги салону" },
+    "reviews": { "enabled": false }
+  },
+  "gallery": {
+    "_comment": "Фото робіт: [{\"src\": \"img/work-1.webp\", \"alt\": \"...\"}]; до/після: [{\"before\": \"...\", \"after\": \"...\", \"alt\": \"...\"}]. Поки порожньо — показуються заглушки.",
+    "works": [],
+    "before_after": []
+  },
+  "seo": {
+    "site_url": "",
+    "description": "M&D Beauty Salon — перукарські послуги (стрижки, фарбування, мелірування, Total blonde, догляд) та манікюр. Онлайн-запис.",
+    "og_image": "img/og.png"
+  }
+}

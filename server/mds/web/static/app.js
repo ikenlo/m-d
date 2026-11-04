@@ -780,6 +780,7 @@ function apptSheet(a, onChange) {
         h("div", { class: "info-row" }, icon("user"), "Майстер: ", h("b", {}, a.master_name)),
         h("div", { class: "info-row" }, icon("banknote"), "Ціна: ", h("b", {}, money(a.price))),
         a.source === "telegram" ? h("div", { class: "info-row" }, icon("send"), "Запис через Telegram-бот") : null,
+        a.source === "site" ? h("div", { class: "info-row" }, icon("search"), "Запис із сайту — зателефонуйте клієнту для підтвердження") : null,
         a.comment ? h("div", { class: "info-row" }, icon("edit"), a.comment) : null,
         a.cancel_reason ? h("div", { class: "info-row" }, icon("cancel"), "Причина: ", a.cancel_reason) : null,
         a.order_id ? h("div", { class: "info-row" }, icon("receipt"), "Замовлення #", a.order_id) : null),
@@ -1062,7 +1063,9 @@ async function clientSheet(id) {
   const notes = h("textarea", { rows: 2 }, c.notes || "");
   openSheet(c.name,
     h("div", { class: "stack" },
-      h("div", {}, h("a", { href: "tel:" + c.phone }, c.phone), c.telegram_linked ? h("span", { class: "chip", style: { marginLeft: "8px" } }, "Telegram") : null),
+      h("div", {}, h("a", { href: "tel:" + c.phone }, c.phone), c.telegram_linked ? h("span", { class: "chip", style: { marginLeft: "8px" } }, "Telegram") : null,
+        c.blocked ? h("span", { class: "chip st-overdue", style: { marginLeft: "8px" } }, "онлайн-запис заблоковано") : null),
+      c.blocked && c.blocked_reason ? h("div", { class: "muted small" }, "Причина: ", c.blocked_reason) : null,
       h("div", { class: "muted" }, `Візитів: ${visits} · записів усього: ${c.history.length}`),
       c.favorite_master ? h("div", { class: "info-row" }, icon("user"), "⭐ Улюблений майстер: ", h("b", {}, c.favorite_master.full_name), ` (${c.favorite_master.visits} візитів)`) : null,
       isMgr ? h("details", {}, h("summary", { class: "muted", style: { cursor: "pointer" } }, "Редагувати"),
@@ -1071,6 +1074,11 @@ async function clientSheet(id) {
             await run(() => api.patch(`/api/clients/${id}`, { name: name.value, phone: phone.value, notes: notes.value }), "Збережено");
             clientSheet(id);
           } }, "Зберегти"))) : (c.notes ? h("div", { class: "muted" }, c.notes) : null),
+      isMgr ? (c.blocked
+        ? h("button", { class: "btn", onclick: async () => { await run(() => api.patch(`/api/clients/${id}`, { blocked: false }), "Онлайн-запис дозволено"); clientSheet(id); } }, icon("ok", "sm"), "Дозволити онлайн-запис")
+        : h("button", { class: "btn danger", onclick: () => confirmSheet("Заблокувати онлайн-запис?", `${c.name} не зможе записатися через Telegram-бот і сайт (записати можна через адміністратора).`, "Заблокувати",
+          async (reason) => { await run(() => api.patch(`/api/clients/${id}`, { blocked: true, blocked_reason: reason || null }), "Заблоковано"); clientSheet(id); }, { danger: true, withReason: true }) },
+          icon("lock", "sm"), "Заблокувати онлайн-запис")) : null,
       h("h3", {}, "Історія відвідувань"),
       c.history.length ? h("div", { class: "table-wrap" }, h("table", {},
         h("tr", {}, h("th", {}, "Дата"), h("th", {}, "Послуга"), h("th", {}, "Майстер"), h("th", {}, "Статус")),
@@ -1134,7 +1142,7 @@ async function pendingBlock(onChange) {
       h("div", { style: { minWidth: "96px" } }, h("b", {}, dayWord(a.starts_at)), h("div", { style: { fontSize: "18px", fontWeight: 700 } }, hm(a.starts_at))),
       h("div", { class: "grow", style: { minWidth: "180px" } },
         h("div", {}, h("b", {}, a.client.name), " · ", h("a", { href: "tel:" + a.client.phone }, a.client.phone)),
-        h("div", { class: "muted small" }, a.service_name, isMgr ? ` · ${a.master_name}` : "", a.source === "telegram" ? " · з Telegram" : ""),
+        h("div", { class: "muted small" }, a.service_name, isMgr ? ` · ${a.master_name}` : "", a.source === "telegram" ? " · з Telegram" : a.source === "site" ? " · з сайту" : ""),
         a.awaiting_client ? h("div", { class: "chip st-in_progress", style: { marginTop: "6px", whiteSpace: "normal", borderRadius: "8px" } }, `Запропоновано ${hm(a.starts_at)} — чекаємо відповіді клієнта в боті`) : null),
       h("div", { class: "row" },
         h("button", { class: "btn sm primary", title: a.awaiting_client ? "Якщо клієнт погодився телефоном, а не в боті" : null,
@@ -1840,6 +1848,24 @@ function genRunsTable(runs, onEdit) {
       h("td", { class: "num" }, h("b", {}, money(x.total_cost))), h("td", { class: "small muted" }, x.note || ""),
       onEdit ? h("td", { class: "right" }, x.running ? null : h("button", { class: "btn sm ghost", "aria-label": "Виправити", onclick: () => onEdit(x) }, icon("edit", "sm"))) : null))))
     : emptyState("Цього місяця генератор не використовувався", "gauge");
+}
+function antispamSettingsCard(st) {
+  const num = (k, d) => h("input", { type: "number", min: 0, max: 1000, value: st[k] ?? d });
+  const f = { antispam_max_active: num("antispam_max_active", 2), antispam_max_per_day: num("antispam_max_per_day", 3),
+    antispam_max_pending_total: num("antispam_max_pending_total", 20), antispam_site_per_hour: num("antispam_site_per_hour", 15),
+    antispam_callbacks_per_day: num("antispam_callbacks_per_day", 2) };
+  const site = h("input", { type: "checkbox", checked: !!st.public_booking_enabled });
+  return h("div", { class: "card stack" }, h("h3", { class: "row", style: { gap: "8px" } }, icon("lock"), "Захист онлайн-запису"),
+    h("p", { class: "muted small", style: { margin: 0 } }, "Обмеження для записів з Telegram-бота й сайту (персонал записує без обмежень). 0 — без обмеження. Окремого клієнта можна заблокувати в його картці."),
+    h("div", { class: "form-grid" }, field("Активних записів на клієнта", f.antispam_max_active), field("Нових записів від клієнта за добу", f.antispam_max_per_day),
+      field("Непідтверджених у черзі (усього)", f.antispam_max_pending_total), field("Записів із сайту за годину", f.antispam_site_per_hour),
+      field("Заявок «передзвоніть» з номера за добу", f.antispam_callbacks_per_day)),
+    h("label", { class: "row" }, site, "Онлайн-запис із сайту відкрито (записи з сайту завжди чекають підтвердження)"),
+    h("button", { class: "btn primary", onclick: async () => {
+      const body = { public_booking_enabled: site.checked };
+      for (const [k, el] of Object.entries(f)) body[k] = Math.max(0, parseInt(el.value || "0", 10));
+      state.settings = await run(() => api.put("/api/settings", body), "Збережено"); reload();
+    } }, "Зберегти"));
 }
 function stockSettingsCard(st) {
   const v = st.stock_auto_writeoff_milli ?? 100;
@@ -2800,6 +2826,7 @@ VIEWS.settings = async (main) => {
       h("p", { class: "muted small" }, "Індивідуальні умови задаються в картці майстра (розділ «Персонал»). Зміни діють для нових замовлень; закриті замовлення зберігають умови на момент закриття.")),
     twofaSettingsCard(s),
     stockSettingsCard(s),
+    antispamSettingsCard(s),
     generatorSettingsCard(s),
     h("div", { class: "card stack" }, h("h3", {}, "Запис клієнтів"), field("Назва салону", name),
       h("div", { class: "form-grid" }, field("Крок слотів, хв", step), field("Запис наперед, днів", horizon), field("Мін. хв до запису (бот)", lead)),

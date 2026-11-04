@@ -173,7 +173,8 @@ def create_appointment(
     service: Service = get_or_404(s, Service, service_id, "Послугу")
     if not service.is_active:
         raise ValidationError("Послуга недоступна")
-    from_bot = actor.role == "client"
+    from_bot = actor.role == "client"  # клієнт сам: Telegram-бот або сайт
+    source = "site" if actor.name == "site" else ("telegram" if from_bot else "staff")
     if from_bot and starts_at < clock.now():
         raise ValidationError("Не можна записатися на минулий час")
 
@@ -186,6 +187,10 @@ def create_appointment(
             s, actor, client_name or "", client_phone, telegram_user_id=actor.telegram_user_id
         )
 
+    if from_bot:
+        from . import antispam
+
+        antispam.check_booking(s, client, source)
     dur = duration_min or service.duration_min
     if price is not None and price < 0:
         raise ValidationError("Ціна не може бути від'ємною")
@@ -194,7 +199,9 @@ def create_appointment(
 
     if status is None:
         if from_bot:
-            status = ApptStatus.CONFIRMED if get_setting(s, "telegram_auto_confirm") else ApptStatus.PENDING
+            # сайт і клієнти з частими неявками — лише з підтвердженням адміністратора
+            auto = get_setting(s, "telegram_auto_confirm") and source == "telegram" and not antispam.needs_confirmation(s, client)
+            status = ApptStatus.CONFIRMED if auto else ApptStatus.PENDING
         else:
             status = ApptStatus.CONFIRMED
     if status not in (ApptStatus.PENDING, ApptStatus.CONFIRMED):
@@ -208,7 +215,7 @@ def create_appointment(
         ends_at=ends_at,
         price=service.price if price is None else price,
         status=status,
-        source="telegram" if from_bot else "staff",
+        source=source,
         comment=comment,
         created_by=actor.user_id,
     )

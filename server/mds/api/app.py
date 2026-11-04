@@ -17,7 +17,7 @@ from ..config import Config
 from ..db import Database
 from ..errors import DomainError
 from ..services import backup
-from .routers import auth, calendar, card_terminal, callbacks, catalog, money, staff, stock_schedule, system, tax_report, taxes, utilities
+from .routers import auth, calendar, card_terminal, callbacks, catalog, money, public, staff, stock_schedule, system, tax_report, taxes, utilities
 
 log = logging.getLogger("mds")
 STATIC = Path(__file__).resolve().parent.parent / "web" / "static"
@@ -100,7 +100,7 @@ def create_app(
             {"error": "validation", "detail": f"Невірні дані: {field} — {first.get('msg', '')}"}, status_code=422
         )
 
-    for r in (auth, card_terminal, staff, catalog, calendar, callbacks, money, stock_schedule, system, tax_report, taxes, utilities):
+    for r in (auth, card_terminal, staff, catalog, calendar, callbacks, money, public, stock_schedule, system, tax_report, taxes, utilities):
         app.include_router(r.router)
 
     app.mount("/static", StaticFiles(directory=STATIC), name="static")
@@ -112,6 +112,29 @@ def create_app(
     @app.get("/sw.js", include_in_schema=False)
     def service_worker():
         return FileResponse(STATIC / "sw.js", media_type="application/javascript", headers={"Cache-Control": "no-cache"})
+
+    # сайт салону (інший домен, напр. GitHub Pages) звертається лише до /api/public/* — CORS тільки для нього,
+    # і лише для доменів зі змінної MDS_PUBLIC_ORIGINS (через кому)
+    import os
+
+    public_origins = {o.strip().rstrip("/") for o in os.environ.get("MDS_PUBLIC_ORIGINS", "").split(",") if o.strip()}
+
+    @app.middleware("http")
+    async def public_cors(request: Request, call_next):
+        origin = request.headers.get("origin", "").rstrip("/")
+        is_public = request.url.path.startswith("/api/public/")
+        allowed = is_public and origin and (origin in public_origins or "*" in public_origins)
+        if allowed and request.method == "OPTIONS":
+            from fastapi.responses import Response
+
+            return Response(status_code=204, headers={
+                "Access-Control-Allow-Origin": origin, "Access-Control-Allow-Methods": "GET, POST",
+                "Access-Control-Allow-Headers": "Content-Type", "Access-Control-Max-Age": "600", "Vary": "Origin"})
+        resp = await call_next(request)
+        if allowed:
+            resp.headers["Access-Control-Allow-Origin"] = origin
+            resp.headers["Vary"] = "Origin"
+        return resp
 
     @app.middleware("http")
     async def security_headers(request: Request, call_next):

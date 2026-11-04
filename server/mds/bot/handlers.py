@@ -12,6 +12,7 @@ from sqlalchemy import select
 from .. import clock
 from ..db import Database
 from ..errors import DomainError
+from ..services.antispam import TooMany
 from ..models import ApptStatus, Client, Role, Service, User
 from ..services import bookings, callbacks, catalog, reminders, users
 from ..services.common import Actor, all_settings, get_setting
@@ -93,6 +94,10 @@ def build_router() -> Router:
         try:
             with db.session() as s:
                 callbacks.create_request(s, Actor.telegram(message.from_user.id), phone, name)
+        except TooMany as e:  # захист від спаму заявок
+            await state.clear()
+            await message.answer(v.e(e.message), reply_markup=v.main_menu())
+            return
         except DomainError:
             await message.answer("Не вдалося розпізнати номер. Напишіть, наприклад, 0671234567 — або натисніть кнопку.",
                                  reply_markup=v.quick_contact_kb())
