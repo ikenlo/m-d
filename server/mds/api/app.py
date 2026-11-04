@@ -105,6 +105,18 @@ def create_app(
 
     app.mount("/static", StaticFiles(directory=STATIC), name="static")
 
+    # сайт-візитка (site/ + shared/ з кореня репозиторію або образу): /site/ — сторінка, /shared/ — config і прайс
+    root = Path(__file__).resolve().parents[3]
+    if (root / "site" / "index.html").exists() and (root / "shared").is_dir():
+        from fastapi.responses import RedirectResponse
+
+        @app.get("/site", include_in_schema=False)
+        def site_redirect():
+            return RedirectResponse("/site/")
+
+        app.mount("/site", StaticFiles(directory=root / "site", html=True), name="site")
+        app.mount("/shared", StaticFiles(directory=root / "shared"), name="shared")
+
     @app.get("/", include_in_schema=False)
     def index():
         return FileResponse(STATIC / "index.html", headers={"Cache-Control": "no-cache"})

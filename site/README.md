@@ -36,6 +36,11 @@ python3 -m http.server 8000
   (поки години не задано — пн–сб 09:00–19:00), запис зберігається лише в браузері відвідувача.
 - `"api_mode": "live"` — запис у систему MDS Connect (спільна база з Telegram-ботом). Як увімкнути — `docs/api.md`.
 
+## Де подивитися
+
+Сайт уже відкривається на сервері системи: **https://m-d-production.up.railway.app/site/**
+(той самий сервер, тож для live-запису там не потрібні CORS і `api_base` — достатньо `"api_mode": "live"`).
+
 ## Публікація на GitHub Pages
 
 1. GitHub → Settings → Pages → Source: **GitHub Actions**.
