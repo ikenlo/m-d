@@ -38,4 +38,9 @@
 | `GET /api/gdrive/callback` | — (підписаний `state`) | Повернення з Google після підключення |
 | `GET /api/finance/insights?period=…` | директор | Аналітика: порівняння з попереднім періодом, прогноз місяця, середній чек по майстрах, нові/повторні клієнти, дні тижня |
 | `GET /api/journal/feed?date_from&date_to&category&q` | директор | Журнал простими словами (стрічка подій, фільтр і пошук) |
+| `GET/POST /api/utilities/readings`, `PATCH /api/utilities/readings/{id}`, `POST …/{id}/confirm` | директор | Показники лічильника, тариф, оплата, підтвердження (витрата «Комунальні») |
+| `GET /api/generator`, `POST /api/generator/start`, `POST /api/generator/stop` | персонал | Стан і перемикач генератора (прогноз — лише директору) |
+| `GET/POST /api/generator/runs`, `PATCH /api/generator/runs/{id}`, `POST /api/generator/motohours` | директор (перегляд — і адміністратор) | Запуски, ручне додавання/коригування, звірка мотогодин |
+| `GET /api/utilities/summary`, `GET /api/utilities/allocation`, `POST /api/utilities/allocate`, `POST /api/utilities/reverse` | директор | Аналітика місяця, розподіл між майстрами, скасування (сторно) |
+| `GET /api/utilities/charges` | директор; майстер — свої | Списання з майстрів |
 | `GET /api/health` | — | Перевірка роботи; `version` — розгорнута версія |

@@ -125,7 +125,7 @@ def test_shift_close_report_and_payout(db, seed):
     with db.session() as s, pytest.raises(Conflict):
         orders.confirm_payout(s, d, master_id=seed["m1"], amount=55000, shift_id=shift_id)
     with db.session() as s:
-        assert orders.master_balance(s, seed["m1"]) == {"accrued": 55000, "paid": 55000, "balance": 0}
+        assert orders.master_balance(s, seed["m1"]) == {"accrued": 55000, "paid": 55000, "charged": 0, "balance": 0}
 
 
 def test_director_correction_reverses_and_updates_balance(db, seed):
@@ -243,7 +243,7 @@ def test_master_takes_earning_from_till_rest_paid_by_director(db, seed):
                      "director_pays": 0, "mode": "take_from_till"}
         assert sh.payout_due == 0 and sh.status == ShiftStatus.PAID
     with db.session() as s:
-        assert orders.master_balance(s, seed["m1"]) == {"accrued": 300000, "paid": 300000, "balance": 0}
+        assert orders.master_balance(s, seed["m1"]) == {"accrued": 300000, "paid": 300000, "charged": 0, "balance": 0}
         p = s.query(Payout).one()
         assert p.cash_shift_id == sh.id and p.shift_id is None and p.method == "cash"
 

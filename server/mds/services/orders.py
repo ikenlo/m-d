@@ -303,7 +303,8 @@ def list_orders(
 
 # ------------------------------------------------------------ звіт зміни
 
-def shift_report(s: Session, sh: Shift) -> dict:
+def shift_report(s: Session, sh: Shift, charge: int | None = None) -> dict:
+    """charge — списання комунальних при закритті зміни (режим fixed); None — попередній розрахунок."""
     orders = list(s.scalars(select(Order).where(Order.shift_id == sh.id).order_by(Order.closed_at)))
     end = sh.closed_at or clock.now()
     day_from = datetime.combine(sh.opened_at.date(), time.min)
@@ -328,9 +329,14 @@ def shift_report(s: Session, sh: Shift) -> dict:
     # Розрахунок готівки: майстер бере заробіток із готівки клієнтів, решту готівки лишає в касі;
     # якщо готівки не вистачило (клієнти платили карткою) — різницю доплачує директор.
     cash = by_payment.get("cash", 0)
+    if charge is None:
+        from .utilities import shift_charge
+
+        charge = shift_charge(s, sh.master_id, sh)[0] if sh.status == ShiftStatus.OPEN else 0
+    net_earning = master_earning - charge  # після списання комунальних (якщо ввімкнено фіксовану ставку)
     takes_cash = bool(get_setting(s, "master_takes_cash"))
-    take = min(max(master_earning, 0), cash) if takes_cash else 0
-    director_pays = master_earning - take
+    take = min(max(net_earning, 0), cash) if takes_cash else 0
+    director_pays = max(net_earning - take, 0)
     return {
         "shift_id": sh.id,
         "master_id": sh.master_id,
@@ -343,6 +349,8 @@ def shift_report(s: Session, sh: Shift) -> dict:
         "revenue": revenue,
         "materials_cost": sum(o.materials_cost for o in orders),
         "master_earning": master_earning,
+        "utilities_charge": charge,
+        "net_earning": net_earning,
         "salon_earning": sum(o.salon_earning for o in orders),
         "by_payment": by_payment,
         "cancellations": cancellations,
@@ -387,7 +395,10 @@ def close_shift(s: Session, actor: Actor, master_id: int) -> Shift:
     sh.closed_at = clock.now()
     sh.status = ShiftStatus.CLOSED
     s.flush()
-    report = shift_report(s, sh)
+    from .utilities import charge_on_shift_close
+
+    charged = charge_on_shift_close(s, actor, sh)  # фіксоване списання комунальних (один раз — dedupe_key)
+    report = shift_report(s, sh, charge=charged)
     sh.report = {k: v for k, v in report.items() if k != "orders"} | {"order_ids": [o["id"] for o in report["orders"]]}
     sh.payout_due = report["payout_due"]
     take = report["cash"]["master_takes"]
@@ -413,7 +424,8 @@ def close_shift(s: Session, actor: Actor, master_id: int) -> Shift:
         f"Клієнтів: {report['clients_count']}, послуг: {report['services_count']}, скасувань: {report['cancellations']}\n"
         f"Виручка: {fmt(report['revenue'])} (готівка {fmt(report['cash']['from_clients'])}, картка/переказ {fmt(report['cash']['noncash'])})\n"
         f"Заробіток майстра: {fmt(report['master_earning'])}\n"
-        f"  • взяв готівкою з каси: {fmt(report['cash']['master_takes'])}\n"
+        + (f"  • списано комунальні/генератор: {fmt(report['utilities_charge'])}\n" if report.get("utilities_charge") else "")
+        + f"  • взяв готівкою з каси: {fmt(report['cash']['master_takes'])}\n"
         f"  • переказати на карту: {fmt(report['payout_due'])}\n"
         f"Лишилось у касі: {fmt(report['cash']['leave_in_till'])}",
         exclude_user_id=actor.user_id,
@@ -500,9 +512,13 @@ def confirm_payout(
 
 def master_balance(s: Session, master_id: int) -> dict:
     """Нараховано за весь час − виплачено = борг салону перед майстром."""
+    from .utilities import charges_total
+
     accrued = s.scalar(select(func.coalesce(func.sum(Order.master_earning), 0)).where(Order.master_id == master_id)) or 0
     paid = s.scalar(select(func.coalesce(func.sum(Payout.amount), 0)).where(Payout.master_id == master_id)) or 0
-    return {"accrued": int(accrued), "paid": int(paid), "balance": int(accrued) - int(paid)}
+    charged = charges_total(s, master_id=master_id)  # списання комунальних/генератора
+    return {"accrued": int(accrued), "paid": int(paid), "charged": charged,
+            "balance": int(accrued) - int(paid) - charged}
 
 
 def list_payouts(s: Session, actor: Actor, *, master_id: int | None = None, limit: int = 200) -> list[Payout]:

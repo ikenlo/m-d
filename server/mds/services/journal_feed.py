@@ -28,12 +28,13 @@ _ENTITY_CAT = {
     "appointment": "records", "callback": "records", "schedule": "records",
     "client": "clients", "material": "stock",
     "user": "staff", "service": "staff", "setting": "staff", "gdrive": "staff", "bug_report": "staff",
+    "meter": "money", "generator": "money", "master_charge": "money",
 }
 STATUS_UA = {"pending": "очікує", "confirmed": "підтверджено", "in_progress": "клієнт прийшов",
              "completed": "завершено", "cancelled": "скасовано", "no_show": "не прийшов"}
 PAY_UA = {"cash": "готівка", "card": "картка", "transfer": "переказ"}
 EXPENSE_UA = {"rent": "Оренда", "utilities": "Комунальні", "advertising": "Реклама",
-              "materials": "Закупівля матеріалів", "other": "Інше"}
+              "materials": "Закупівля матеріалів", "fuel": "Пальне (закупівля)", "other": "Інше"}
 ROLE_UA = {"director": "директор", "admin": "адміністратор", "master": "майстер"}
 MODE_UA = {"salon": "матеріали за рахунок салону", "master": "матеріали платить майстер", "split": "пропорційно"}
 
@@ -54,9 +55,21 @@ FIELD_UA = {
     "favorite_master_visits": "Візитів до улюбленого майстра", "salon_name": "Назва салону",
     "salon_address": "Адреса", "salon_phone": "Телефон салону", "salon_instagram": "Instagram",
     "reminders_enabled": "Нагадування клієнтам",
+    "prev": "Попередній показник", "curr": "Поточний показник", "used": "Використано, кВт·год", "tariff": "Тариф",
+    "paid_amount": "Сплачено", "hours": "Мотогодини", "fuel_l": "Бензин, л", "fuel_cost": "Бензин, ₴",
+    "amort_cost": "Амортизація", "total_cost": "Разом", "fuel_price": "Ціна бензину", "fuel_lph": "Витрата, л/год",
+    "amort_per_hour": "Амортизація за годину", "power_outage": "Без світла",
+    "generator_fuel_lph_milli": "Генератор: витрата (мл/год)", "generator_fuel_price": "Генератор: ціна бензину",
+    "generator_amort_per_hour": "Генератор: амортизація", "generator_hours_initial_milli": "Генератор: початкові мотогодини",
+    "utilities_charge_mode": "Списання комунальних з майстрів", "utilities_split": "Принцип розподілу",
+    "utilities_charge_share_bp": "Частка для розподілу", "utilities_fixed_amount": "Фіксована ставка",
+    "utilities_fixed_per": "Фіксована ставка за",
 }
-_MONEY = {"price", "amount", "master_earning", "salon_earning", "materials_cost", "unit_cost", "cost"}
-_HIDDEN = {"id", "created_at", "materials", "telegram_linked", "display_name", "stock_packs", "low",
+_MONEY = {"price", "amount", "master_earning", "salon_earning", "materials_cost", "unit_cost", "cost",
+          "tariff", "paid_amount", "fuel_cost", "amort_cost", "total_cost", "fuel_price", "amort_per_hour", "hour_cost",
+          "utilities_fixed_amount", "generator_fuel_price", "generator_amort_per_hour"}
+_HIDDEN = {"id", "created_at", "running", "started_at", "ended_at", "corrected", "note", "difference",
+           "confirmed", "expense_id", "read_on", "paid_on", "month", "fuel_lph", "hour_cost", "materials", "telegram_linked", "display_name", "stock_packs", "low",
            "master_name", "shift_id", "from_till", "paid_at", "updated_at", "telegram_chat_id"}
 
 
@@ -140,7 +153,7 @@ def _value(n: _Names, key: str, v: Any) -> str:
         return "—"
     if key in _MONEY:
         return _fmt_money(v)
-    if key in ("share_bp", "default_share_bp"):
+    if key in ("share_bp", "default_share_bp", "utilities_charge_share_bp"):
         return f"{int(v) / 100:g}%"
     if key == "master_id":
         return n.user(v)
@@ -307,6 +320,36 @@ def describe(n: _Names, a: AuditLog) -> dict:
         icon = "lock"
         title = "Google Drive підключено" if act == "connect" else "Google Drive відключено"
         text = af.get("account") or ""
+    elif e == "meter":
+        icon = "zap"
+        title = {"create": "Внесено показники лічильника", "update": "Показники лічильника виправлено",
+                 "confirm": "Електроенергію за місяць підтверджено"}.get(act, "Електроенергія")
+        x = af or {}
+        if act in ("create", "update"):
+            text = f"{_when(x.get('month'))}: {x.get('used', 0):g} кВт·год × {_fmt_money(x.get('tariff'))}"
+            amount = x.get("cost")
+        else:
+            amount = x.get("cost")
+        if act == "update":
+            changes = _changes(n, b, af)
+    elif e == "generator":
+        icon = "zap"
+        title = {"start": "Генератор увімкнено", "stop": "Генератор вимкнено", "add": "Запуск генератора додано вручну",
+                 "correct": "Запуск генератора виправлено"}.get(act, "Генератор")
+        if act in ("stop", "add", "correct"):
+            text = f"{af.get('hours', 0):g} мотогод., бензин {af.get('fuel_l', 0):g} л"
+            amount = af.get("total_cost")
+        elif act == "start":
+            text = "без світла" if af.get("power_outage") else ""
+        if act == "correct":
+            changes = _changes(n, b, af)
+    elif e == "master_charge":
+        icon = "zap"
+        if act == "create":
+            title, amount = "Списано з майстра: комунальні / генератор", af.get("amount")
+            text = n.user(af.get("master_id"))
+        else:
+            title, amount, text = "Списання з майстра скасовано", b.get("amount"), ""
     elif e == "bug_report":
         icon, title, text = "bug", "Повідомлення про помилку", (af.get("text") or "")[:160]
 

@@ -79,8 +79,10 @@ class ExpenseCategory:
     UTILITIES = "utilities"
     ADVERTISING = "advertising"
     MATERIALS = "materials"  # закупівля (грошовий потік, див. docs/FINANCE.md)
+    FUEL = "fuel"  # закупівля бензину для генератора (грошовий потік; витрата — за мотогодинами)
     OTHER = "other"
-    ALL = (RENT, UTILITIES, ADVERTISING, MATERIALS, OTHER)
+    ALL = (RENT, UTILITIES, ADVERTISING, MATERIALS, FUEL, OTHER)
+    CASH_FLOW_ONLY = (MATERIALS, FUEL)  # не входять в операційні витрати (інакше подвійний облік)
 
 
 def _now() -> datetime:
@@ -334,6 +336,78 @@ class Expense(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
 
 
+class MeterReading(Base):
+    """Показники лічильника електроенергії за місяць. Тариф зберігається в записі —
+    зміна тарифу пізніше не змінює історію."""
+
+    __tablename__ = "meter_readings"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    month: Mapped[date] = mapped_column(Date, unique=True)  # перше число місяця
+    read_on: Mapped[date] = mapped_column(Date)
+    prev_milli: Mapped[int] = mapped_column(BigInteger)  # кВт·год × 1000
+    curr_milli: Mapped[int] = mapped_column(BigInteger)
+    used_milli: Mapped[int] = mapped_column(BigInteger)
+    tariff: Mapped[int] = mapped_column(Integer)  # копійок за 1 кВт·год
+    cost: Mapped[int] = mapped_column(Integer)  # копійки
+    paid_amount: Mapped[int | None] = mapped_column(Integer)
+    paid_on: Mapped[date | None] = mapped_column(Date)
+    expense_id: Mapped[int | None] = mapped_column(ForeignKey("expenses.id", name="fk_meter_readings_expense_id"))
+    confirmed_at: Mapped[datetime | None] = mapped_column(DateTime)
+    confirmed_by: Mapped[int | None] = mapped_column(Integer)
+    note: Mapped[str | None] = mapped_column(Text)
+    created_by: Mapped[int] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
+
+
+class GeneratorRun(Base):
+    """Робота генератора. Параметри (витрата, ціна бензину, амортизація) — знімок на момент запуску."""
+
+    __tablename__ = "generator_runs"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime, index=True)
+    ended_at: Mapped[datetime | None] = mapped_column(DateTime)
+    # True лише в одного запису, що зараз працює (UNIQUE) — двох одночасних запусків бути не може
+    running: Mapped[bool | None] = mapped_column(Boolean, unique=True)
+    hours_milli: Mapped[int] = mapped_column(Integer, default=0)  # мотогодини × 1000
+    fuel_lph_milli: Mapped[int] = mapped_column(Integer)  # л/год × 1000
+    fuel_price: Mapped[int] = mapped_column(Integer)  # копійок за 1 л
+    amort_per_hour: Mapped[int] = mapped_column(Integer)  # копійок за мотогодину
+    fuel_milli: Mapped[int] = mapped_column(Integer, default=0)  # літри × 1000
+    fuel_cost: Mapped[int] = mapped_column(Integer, default=0)
+    amort_cost: Mapped[int] = mapped_column(Integer, default=0)
+    total_cost: Mapped[int] = mapped_column(Integer, default=0)
+    power_outage: Mapped[bool] = mapped_column(Boolean, default=True)
+    corrected: Mapped[bool] = mapped_column(Boolean, default=False)
+    note: Mapped[str | None] = mapped_column(Text)
+    started_by: Mapped[int | None] = mapped_column(Integer)
+    ended_by: Mapped[int | None] = mapped_column(Integer)
+
+
+class MasterCharge(Base):
+    """Списання з майстра (частка комунальних/генератора). Лише додавання: скасування — рядок-сторно.
+    dedupe_key (UNIQUE) не дає списати двічі за той самий місяць/зміну."""
+
+    __tablename__ = "master_charges"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    master_id: Mapped[int] = mapped_column(ForeignKey("users.id", name="fk_master_charges_master_id"), index=True)
+    kind: Mapped[str] = mapped_column(String(24))  # utilities_month | utilities_shift | utilities_fixed_month | reversal
+    charged_on: Mapped[date] = mapped_column(Date, index=True)
+    period: Mapped[date] = mapped_column(Date)  # місяць (перше число)
+    shift_id: Mapped[int | None] = mapped_column(ForeignKey("shifts.id", name="fk_master_charges_shift_id"))
+    amount: Mapped[int] = mapped_column(Integer)  # копійки; сторно — від'ємне
+    dedupe_key: Mapped[str | None] = mapped_column(String(64), unique=True)
+    reverses_id: Mapped[int | None] = mapped_column(ForeignKey("master_charges.id", name="fk_master_charges_reverses_id"))
+    reversed: Mapped[bool] = mapped_column(Boolean, default=False)
+    basis: Mapped[dict | None] = mapped_column(JSON)
+    created_by: Mapped[int | None] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
+
+    master: Mapped[User] = relationship()
+
+
 class LedgerEntry(Base):
     """Журнал фінансових операцій. Тільки додавання, ніколи не змінюється."""
 
@@ -425,6 +499,9 @@ __all__ = [
     "ScheduleDay",
     "StockMove",
     "MaterialsMode",
+    "GeneratorRun",
+    "MasterCharge",
+    "MeterReading",
     "Notification",
     "Order",
     "OrderMaterial",
