@@ -16,6 +16,7 @@ import argparse
 import asyncio
 import getpass
 import logging
+import os
 import sys
 
 from . import clock
@@ -121,7 +122,20 @@ def cmd_start(cfg: Config, args) -> None:
     upgrade(cfg.database_url)
     bootstrap_director(cfg)
     bootstrap_catalog(cfg)
+    if os.environ.get("MDS_DEMO_YEAR", "").strip().lower() == "yes":
+        # тестове середовище: демо-рік в окремому процесі (свій годинник), сайт стартує одразу
+        import subprocess
+
+        subprocess.Popen([sys.executable, "-m", "mds", "demo-year"])
     cmd_serve(cfg, args, with_bot=True)
+
+
+def cmd_demo_year(cfg: Config, _args) -> None:
+    from .demo import seed_year
+    from .services.backup import make_backup
+
+    print("Резервна копія перед демо-даними:", make_backup(cfg.database_url, cfg.backup_dir, cfg.backup_keep), flush=True)
+    print(seed_year(_db(cfg)), flush=True)
 
 
 def cmd_create_user(cfg: Config, args) -> None:
@@ -183,6 +197,7 @@ def main(argv: list[str] | None = None) -> None:
 
     sub.add_parser("bot", help="лише Telegram-бот")
     sub.add_parser("backup", help="резервна копія зараз")
+    sub.add_parser("demo-year", help="ДОДАТИ тестовий рік роботи (лише тестове середовище)")
 
     args = p.parse_args(argv)
     cfg = Config()
@@ -195,6 +210,7 @@ def main(argv: list[str] | None = None) -> None:
         "run": lambda c, a: cmd_serve(c, a, with_bot=True),
         "bot": cmd_bot,
         "start": cmd_start,
+        "demo-year": cmd_demo_year,
     }[args.cmd](cfg, args)
 
 
