@@ -5,7 +5,6 @@ from datetime import date, datetime
 from sqlalchemy import func, select
 
 from mds import clock
-from mds.demo import seed_extra, seed_year
 from mds.demo_fop1 import FOP_LOGIN, purge_demo, seed_fop1
 from mds.models import Appointment, Client, Expense, LedgerEntry, Material, Notification, Order, Service, User
 from mds.services import bookings, orders
@@ -26,14 +25,13 @@ def _real_order(db, seed):
 
 def test_purge_removes_only_demo(db, seed):
     real = _real_order(db, seed)
-    seed_year(db, date(2026, 1, 1), date(2026, 1, 31), clients=40)
-    seed_extra(db, date(2026, 1, 1), date(2026, 1, 31), future_days=3)
+    seed_fop1(db, date(2026, 1, 1), date(2026, 1, 31), year_target=60_000_000, future_days=3, clients=40)
     with db.session() as s:
         users_before = {u.username for u in s.scalars(select(User))}
         services = s.scalar(select(func.count(Service.id)))
     assert any(u.startswith("demo_") for u in users_before)
     st = purge_demo(db)
-    assert st["users"] == 5 and st["orders"] > 20
+    assert st["users"] == 1 and st["orders"] > 20 and st["materials"] == 19
     with db.session() as s:
         assert {u.username for u in s.scalars(select(User))} == {u for u in users_before if not u.startswith("demo_")}
         assert s.scalar(select(func.count(Service.id))) == services

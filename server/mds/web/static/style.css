@@ -115,7 +115,6 @@ svg.i.lg { width: 22px; height: 22px; }
 }
 .nav a:hover { background: rgba(255, 255, 255, .06); color: #fff; text-decoration: none; }
 .nav a.active { background: rgba(232, 212, 166, .14); color: #f3e6c4; box-shadow: inset 2px 0 0 var(--gold-soft); }
-.nav .badge { margin-left: auto; background: var(--gold); color: #fff; border-radius: 99px; font-size: 11px; padding: 0 7px; line-height: 18px; }
 .side-foot { margin-top: auto; padding: 12px 8px 4px; border-top: 1px solid rgba(255, 255, 255, .08); display: flex; align-items: center; gap: 10px; }
 .side-foot .who { flex: 1; min-width: 0; }
 .side-foot .who b { display: block; font-size: 13px; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -160,7 +159,6 @@ svg.i.lg { width: 22px; height: 22px; }
 .grid { display: grid; gap: 12px; }
 .grid.kpi { grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); }
 .grid.two { grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); }
-.grid.three { grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
 
 .kpi-tile { padding: 14px 16px; display: flex; flex-direction: column; gap: 6px; }
 .kpi-top { display: flex; align-items: center; gap: 8px; color: var(--ink-3); }
@@ -398,7 +396,6 @@ tr.click:hover td { background: var(--surface-2); }
 .login-foot { font-size: 12px; color: #6f6c63; text-align: center; }
 
 /* ================================================================ різне */
-.mat-row { display: flex; align-items: center; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--line); }
 .qty { display: flex; align-items: center; gap: 6px; }
 .qty button { width: 32px; height: 32px; border-radius: 8px; border: 1px solid var(--line-strong); background: var(--surface); cursor: pointer; font-size: 17px; }
 .empty { text-align: center; color: var(--ink-3); padding: 34px 12px; display: flex; flex-direction: column; align-items: center; gap: 8px; }
