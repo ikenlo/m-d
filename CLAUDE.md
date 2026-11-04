@@ -64,3 +64,8 @@ alembic revision --autogenerate -m "опис"   # після зміни models.p
   і `version` у `server/pyproject.toml`, додати зверху `CHANGELOG.md` розділ `## [0.1.N] — дата`.
   Тест `test_version.py` перевіряє узгодженість.
 - Після злиття `.github/workflows/release.yml` сам створює тег `v0.1.N` і GitHub Release (архів версії).
+
+## Банк (docs/PRIVATBANK.md)
+
+- ПриватБанк «Автоклієнт» — лише читання: запити тільки з білого списку `bank_providers.ALLOWED`; платежі не додавати без окремого погодження.
+- Токен — лише `MDS_PRIVAT_TOKEN` (змінна сервера); реальний режим — лише з `MDS_BANK_LIVE_ALLOWED=yes`. У тестах — `FakeBankProvider` (`set_provider`).

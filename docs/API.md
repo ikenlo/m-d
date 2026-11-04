@@ -44,3 +44,8 @@
 | `GET /api/utilities/summary`, `GET /api/utilities/allocation`, `POST /api/utilities/allocate`, `POST /api/utilities/reverse` | директор | Аналітика місяця, розподіл між майстрами, скасування (сторно) |
 | `GET /api/utilities/charges` | директор; майстер — свої | Списання з майстрів |
 | `GET /api/health` | — | Перевірка роботи; `version` — розгорнута версія |
+
+## Банк (лише читання, директор) — докладно docs/PRIVATBANK.md §6
+
+- `GET /api/bank/status`, `POST /api/bank/check`, `GET /api/bank/balance?on=`, `GET /api/bank/statement?start=&end=`,
+  `GET /api/bank/acquiring?start=&end=`, `GET /api/bank/reconcile?day=`. Налаштування `privat_mode`, `privat_account` — `PUT /api/settings`.

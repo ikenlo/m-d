@@ -150,6 +150,9 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "utilities_charge_share_bp": 10000,  # яку частку витрат розподіляти (10000 = 100%)
     "utilities_fixed_amount": 0,  # fixed: сума, копійки
     "utilities_fixed_per": "shift",  # fixed: shift (за зміну) | month (за місяць)
+    # ---- банк (ПриватБанк «Автоклієнт», лише читання; токен — лише змінна сервера MDS_PRIVAT_TOKEN)
+    "privat_mode": "off",  # off | mock | live (live — лише з MDS_BANK_LIVE_ALLOWED=yes)
+    "privat_account": "",  # IBAN рахунку ФОП, до якого прив'язаний POS-термінал
     "salon_address": "",
     "salon_phone": "",
     "salon_instagram": "",
@@ -228,6 +231,20 @@ def update_settings(s: Session, actor: Actor, data: dict[str, Any]) -> dict[str,
             raise ValidationError("Розподіл: пропорційно виручці або порівну")
         if key == "utilities_fixed_per" and value not in ("shift", "month"):
             raise ValidationError("Фіксована ставка: за зміну або за місяць")
+        if key == "privat_mode":
+            from .bank_providers import MODES, live_allowed
+
+            if value not in MODES:
+                raise ValidationError("Режим банку: вимкнено, імітація або реальний банк")
+            if value == "live" and not live_allowed():
+                from ..errors import Forbidden
+
+                raise Forbidden("Реальне підключення до банку заблоковано на сервері (потрібне окреме погодження)")
+        if key == "privat_account":
+            acc = value.replace(" ", "").upper() if isinstance(value, str) else None
+            if acc is None or (acc and not (acc.startswith("UA") and len(acc) == 29 and acc[2:].isdigit())):
+                raise ValidationError("Рахунок: IBAN у форматі UA + 27 цифр")
+            value = acc
         if key == "slot_step_min" and value < 5:
             raise ValidationError("Крок слотів — щонайменше 5 хвилин")
         set_setting(s, actor, key, value)
