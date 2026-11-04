@@ -407,7 +407,7 @@ const NAV = {
     ["dashboard", "chart", "Огляд", "Огляд"],
     ["calendar", "calendar", "Календар", "Робота"], ["schedule", "clock", "Графік роботи", "Робота"], ["clients", "users", "Клієнти", "Робота"],
     ["stock", "box", "Склад", "Робота"],
-    ["orders", "receipt", "Замовлення", "Фінанси"], ["shifts", "banknote", "Зміни й виплати", "Фінанси"], ["expenses", "wallet", "Витрати", "Фінанси"], ["utilities", "zap", "Комунальні і генератор", "Фінанси"], ["taxreport", "receipt", "Звіт для податкової", "Фінанси"], ["taxes", "percent", "Податки і зарплата", "Фінанси"],
+    ["orders", "receipt", "Замовлення", "Фінанси"], ["shifts", "banknote", "Зміни й виплати", "Фінанси"], ["expenses", "wallet", "Витрати", "Фінанси"], ["utilities", "zap", "Комунальні і генератор", "Фінанси"], ["taxreport", "receipt", "Для бухгалтера", "Фінанси"], ["taxes", "percent", "Податки і зарплата", "Фінанси"],
     ["staff", "user", "Персонал", "Салон"], ["catalog", "scissors", "Послуги", "Салон"],
     ["settings", "settings", "Налаштування", "Салон"], ["journal", "book", "Журнал", "Салон"],
     ["profile", "user", "Профіль"],
@@ -2335,55 +2335,58 @@ async function downloadFile(path, fallbackName) {
 }
 
 // ---- XML-декларація ФОП 1 групи для Електронного кабінету (F0103407 + Додаток 1)
-async function declarationCard(year) {
-  const d = await api.get("/api/reports/declaration?year=" + year);
-  const st = state.settings || await api.get("/api/settings");
-  const F = [ // ключ, назва, тип: t — текст, i — ціле, m — гроші (грн)
-    ["fop_name", "ПІБ ФОП", "t"], ["fop_tin", "РНОКПП (10 цифр)", "t"], ["fop_address", "Податкова адреса", "t"],
-    ["fop_sti_name", "Податкова, до якої подаєте", "t"], ["fop_c_reg", "Код області (C_REG)", "i"],
-    ["fop_c_raj", "Код району (C_RAJ)", "i"], ["fop_c_sti", "Код податкової (C_STI_ORIG)", "i"],
-    ["fop_kved", "КВЕД", "t"], ["fop_kved_name", "Назва КВЕД", "t"],
-    ["fop_single_tax_month", "Єдиний податок на місяць, грн", "m"], ["fop_min_wage", "Мінімальна зарплата на 1 січня, грн", "m"],
-    ["fop_email", "E-mail (необов'язково)", "t"], ["fop_phone", "Телефон (необов'язково)", "t"]];
+// ---- реквізити ФОП (для бухгалтера і XML)
+function fopProfileCard(st) {
+  const F = [ // ключ, назва, тип: t — текст, i — ціле, m — гроші (грн), g — група
+    ["fop_name", "ПІБ ФОП", "t"], ["fop_tin", "РНОКПП (10 цифр)", "t"], ["fop_group", "Група єдиного податку", "g"],
+    ["fop_kved", "КВЕД", "t"], ["fop_kved_name", "Назва КВЕД", "t"], ["fop_address", "Податкова адреса", "t"],
+    ["fop_sti_name", "Податкова (ДПС)", "t"], ["fop_email", "E-mail", "t"], ["fop_phone", "Телефон", "t"]];
   const ins = {};
   const form = h("div", { class: "grid", style: { gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "8px" } },
     F.map(([k, label, typ]) => {
-      const v = st[k];
-      const shown = typ === "m" ? (v ? kopToInput(v) : "") : (v ? String(v) : "");
-      ins[k] = h("input", { value: shown,
-        inputmode: typ === "t" ? null : "decimal" });
+      ins[k] = typ === "g" ? select([[1, "1 група"], [2, "2 група"], [3, "3 група"]], st.fop_group || 1)
+        : h("input", { value: st[k] ? String(st[k]) : "" });
       return field(label, ins[k]);
     }));
   const save = async () => {
     const body = {};
-    for (const [k, , typ] of F) {
-      const raw = ins[k].value.trim();
-      if (typ === "m") { const v = raw ? toKop(raw) : 0; if (!Number.isFinite(v) || v < 0) { toast("Невірна сума: " + k, true); return; } body[k] = v; }
-      else if (typ === "i") { const v = raw ? parseInt(raw, 10) : 0; if (!Number.isFinite(v)) { toast("Потрібне число", true); return; } body[k] = v; }
-      else body[k] = raw;
-    }
-    state.settings = await run(() => api.put("/api/settings", body), "Дані ФОП збережено"); reload();
+    for (const [k, , typ] of F) body[k] = typ === "g" ? Number(ins[k].value) : ins[k].value.trim();
+    state.settings = await run(() => api.put("/api/settings", body), "Реквізити збережено"); reload();
   };
-  const line = (label, v) => h("div", { class: "sum-line" }, h("span", {}, label), h("b", {}, money(v)));
-  return h("div", { class: "card stack" },
-    h("div", { class: "card-head" }, h("h3", {}, `Річна декларація ФОП 1 групи за ${year} рік (XML, F0103407)`),
-      h("span", { class: "chip " + (d.ready ? "st-completed" : "st-pending") }, d.ready ? "готово до завантаження" : "заповніть дані")),
-    line("Дохід за рік (рядок 01)", d.income),
-    line("Єдиний податок за рік (авансові внески)", d.single_tax_year),
-    line("Військовий збір (рядок 22)", d.military_levy),
-    line("ЄСВ за рік (Додаток 1)", d.esv_year),
-    !d.ready ? h("p", { class: "muted small" }, "Не вистачає: " + d.missing.join(", ")) : null,
-    st.fop_income_limit && d.income > st.fop_income_limit ? h("p", { style: { color: "var(--danger, #c0392b)", fontWeight: 600 } },
-      `Дохід ${money(d.income)} перевищує ліміт групи ${money(st.fop_income_limit)} — зверніться до бухгалтера перед поданням.`) : null,
-    h("div", { class: "row" },
-      h("button", { class: "btn primary", disabled: !d.ready || null,
-        onclick: () => run(() => downloadFile("/api/reports/declaration.zip?year=" + year, `deklaratsiia-fop-${year}.zip`)) },
-        "Завантажити декларацію (XML)")),
-    h("p", { class: "muted small" }, "В архіві два файли: річна декларація F0103407 і Додаток 1 F0134107 (ЄСВ) — для ФОП 1 групи без найманих працівників. Розпакуйте, у Електронному кабінеті ДПС оберіть " +
-      "«Введення звітності → Завантажити файл», завантажте обидва, перевірте цифри, підпишіть Дія.Підписом і відправте. " +
-      "Програма нічого не відправляє сама. Ставки й коди податкової звірте з бухгалтером або кабінетом."),
-    h("details", {}, h("summary", {}, "Дані ФОП для декларації"), form,
-      h("div", { class: "row", style: { marginTop: "8px" } }, h("button", { class: "btn", onclick: save }, "Зберегти дані ФОП"))));
+  const filled = st.fop_name && st.fop_tin;
+  return h("details", { class: "card", open: !filled || null },
+    h("summary", {}, h("b", {}, "Реквізити ФОП"), filled ? h("span", { class: "muted small" }, ` · ${st.fop_name} · РНОКПП ${st.fop_tin} · ${st.fop_group || 1} група`) : h("span", { class: "muted small" }, " · заповніть — потрапляють у пакет для бухгалтера")),
+    h("div", { class: "stack", style: { marginTop: "10px" } }, form,
+      h("div", { class: "row" }, h("button", { class: "btn", onclick: save }, "Зберегти реквізити"))));
+}
+
+// ---- додатково: XML декларації ФОП 1 групи (F0103407) — для імпорту в програму бухгалтера
+function declarationXmlCard(year, st) {
+  const F = [["fop_c_reg", "Код області (C_REG)", "i"], ["fop_c_raj", "Код району (C_RAJ)", "i"], ["fop_c_sti", "Код податкової (C_STI_ORIG)", "i"],
+    ["fop_single_tax_month", "Єдиний податок на місяць, грн (якщо немає ставок з датами)", "m"], ["fop_min_wage", "Мінімальна зарплата на 1 січня, грн (якщо немає ставок)", "m"]];
+  const ins = {};
+  const box = h("div", { class: "stack", style: { marginTop: "10px" } });
+  const load = async () => {
+    const d = await api.get("/api/reports/declaration?year=" + year);
+    const line = (label, v) => h("div", { class: "sum-line" }, h("span", {}, label), h("b", {}, money(v)));
+    box.replaceChildren(
+      h("p", { class: "muted small" }, "Готові XML-файли (декларація F0103407 і Додаток 1 F0134107) для імпорту в M.E.Doc, СОТА або Електронний кабінет. " +
+        "Лише для 1 групи без найманих працівників; ставки — з «Податки і зарплата → Ставки» на 1 січня року. Подає бухгалтер."),
+      line("Рядок 01 — дохід", d.income), line("Авансові внески ЄП за рік", d.single_tax_year), line("Рядок 22 — військовий збір", d.military_levy), line("Додаток 1 — ЄСВ за рік", d.esv_year),
+      h("div", { class: "grid", style: { gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "8px" } },
+        F.map(([k, label, typ]) => { ins[k] = h("input", { inputmode: "decimal", value: typ === "m" ? (st[k] ? kopToInput(st[k]) : "") : (st[k] ? String(st[k]) : "") }); return field(label, ins[k]); })),
+      !d.ready ? h("p", { class: "muted small" }, "Не вистачає: " + d.missing.join(", ")) : null,
+      h("div", { class: "row" },
+        h("button", { class: "btn", onclick: async () => {
+          const body = {};
+          for (const [k, , typ] of F) { const raw = ins[k].value.trim(); body[k] = typ === "m" ? (raw ? toKop(raw) : 0) : (raw ? parseInt(raw, 10) : 0); }
+          state.settings = await run(() => api.put("/api/settings", body), "Збережено"); load();
+        } }, "Зберегти коди"),
+        h("button", { class: "btn", disabled: !d.ready || null, onclick: () => run(() => downloadFile("/api/reports/declaration.zip?year=" + year, `deklaratsiia-fop-${year}.zip`)) }, "Завантажити XML")));
+  };
+  const det = h("details", { class: "card", ontoggle: () => { if (det.open && !box.childNodes.length) load(); } },
+    h("summary", {}, h("b", {}, `Додатково: XML декларації ФОП 1 групи за ${year} рік`), h("span", { class: "muted small" }, " · для імпорту в програму бухгалтера")), box);
+  return det;
 }
 
 VIEWS.taxreport = async (main) => {
@@ -2393,68 +2396,66 @@ VIEWS.taxreport = async (main) => {
   const quarter = params.get("q") ? Number(params.get("q")) : null;
   const go = (y, q) => { location.hash = "#/taxreport?y=" + y + (q ? "&q=" + q : ""); };
   const qs = "year=" + year + (quarter ? "&quarter=" + quarter : "");
-  const r = await api.get("/api/reports/income?" + qs);
+  const [r, st] = await Promise.all([api.get("/api/reports/accountant?" + qs), api.get("/api/settings")]);
   const period = quarter ? `${quarter} квартал ${year}` : `${year} рік`;
 
   const qSel = h("select", { "aria-label": "Період", onchange: (e) => go(year, e.target.value ? Number(e.target.value) : null) },
     h("option", { value: "" }, "Увесь рік"), [1, 2, 3, 4].map((q) => h("option", { value: q }, `${q} квартал`)));
   qSel.value = quarter ? String(quarter) : "";
-  main.append(topbar("Звіт для податкової", period,
+  main.append(topbar("Звітність для бухгалтера", period,
     h("button", { class: "btn", "aria-label": "Попередній рік", onclick: () => go(year - 1, quarter) }, icon("left", "sm")),
     h("b", {}, String(year)),
     h("button", { class: "btn", "aria-label": "Наступний рік", onclick: () => go(year + 1, quarter) }, icon("right", "sm")),
     qSel));
 
-  const t = r.total;
+  const inc = r.income;
+  main.append(h("div", { class: "card stack", style: { borderLeft: "4px solid var(--gold, #b8893a)" } },
+    h("div", { class: "card-head" }, h("h3", {}, `Пакет для бухгалтера — ${period}`)),
+    h("p", { class: "muted small" }, "Один файл Excel: підсумок і реквізити, дохід по місяцях і кварталах (каса + банк), книга доходів по днях, усі оплати, " +
+      "зарплата найманих і податки ФОП. Бухгалтер складає й подає звітність на його основі."),
+    h("div", { class: "row" },
+      h("button", { class: "btn primary big", onclick: () => run(() => downloadFile("/api/reports/accountant.xlsx?" + qs, "dlia-bukhgaltera.xlsx")) }, icon("receipt"), "Завантажити пакет (Excel)"))));
+
   main.append(h("div", { class: "grid kpi" },
-    kpi("Дохід за період", t.total, "dark", { ico: "wallet", sub: `${t.count} замовлень` }),
-    kpi("Готівка", t.cash, "", { ico: "banknote" }),
-    kpi("Картка", t.card, "", { ico: "receipt" }),
-    t.transfer ? kpi("Переказ на рахунок", t.transfer, "", { ico: "wallet" }) : null,
+    kpi("Дохід (каса + банк)", inc.total, "dark", { ico: "wallet", sub: `${inc.count} оплат` }),
+    kpi("Готівка (каса)", inc.cash, "", { ico: "banknote" }),
+    kpi("Безготівка (банк)", inc.noncash, "", { ico: "receipt" }),
     kpi("З початку року", r.year_to_date, "accent", { ico: "trend",
       sub: r.limit.amount ? `ліміт ${money(r.limit.amount)} · використано ${pct(r.limit.used_bp)}` : "ліміт групи не задано" })));
 
   if (r.limit.amount && r.limit.used_bp >= 8000) {
     main.append(h("div", { class: "card", style: { borderLeft: "4px solid var(--danger, #c0392b)" } },
       h("b", {}, r.limit.used_bp >= 10000 ? "Ліміт доходу групи перевищено!" : "Дохід наближається до ліміту групи"),
-      h("p", { class: "muted small" }, `Використано ${pct(r.limit.used_bp)}, залишилось ${money(Math.max(0, r.limit.remaining))}. Зверніться до бухгалтера.`)));
+      h("p", { class: "muted small" }, `Використано ${pct(r.limit.used_bp)}, залишилось ${money(Math.max(0, r.limit.remaining))}. Повідомте бухгалтера.`)));
   }
 
-  const tr = !!t.transfer; // колонка «Переказ» — лише якщо такі оплати були
   const row = (label, b, strong) => h("tr", strong ? { class: "total" } : {}, h("td", {}, strong ? h("b", {}, label) : label),
-    h("td", { class: "num" }, money(b.cash)), h("td", { class: "num" }, money(b.card)),
-    tr ? h("td", { class: "num" }, money(b.transfer)) : null, h("td", { class: "num" }, h("b", {}, money(b.total))), h("td", { class: "num" }, String(b.count)));
-  const head = () => h("tr", {}, h("th", {}, ""), h("th", {}, "Готівка"), h("th", {}, "Картка"), tr ? h("th", {}, "Переказ") : null, h("th", {}, "Разом"), h("th", {}, "Замовл."));
+    h("td", { class: "num" }, money(b.cash)), h("td", { class: "num" }, money(b.noncash)),
+    h("td", { class: "num" }, h("b", {}, money(b.total))), h("td", { class: "num" }, String(b.count)));
+  const head = () => h("tr", {}, h("th", {}, ""), h("th", {}, "Готівка (каса)"), h("th", {}, "Безготівка (банк)"), h("th", {}, "Дохід"), h("th", {}, "Оплат"));
   const headPad = { padding: "14px 16px 8px" };
   main.append(h("div", { class: "card table-wrap" }, h("div", { class: "card-head", style: headPad }, h("h3", {}, "По місяцях")),
-    h("table", {}, head(), r.months.map((m) => row(MONTHS_UA[Number(m.month.slice(5)) - 1], m)), row("Разом", t, true))));
+    h("table", {}, head(), r.months.map((m) => row(MONTHS_UA[Number(m.month.slice(5)) - 1], m)), row("Разом", inc, true))));
   if (!quarter) {
     main.append(h("div", { class: "card table-wrap" }, h("div", { class: "card-head", style: headPad }, h("h3", {}, "По кварталах")),
-      h("table", {}, head(), r.quarters.map((q) => row(`${q.quarter} квартал`, q)), row(`${year} рік`, t, true))));
+      h("table", {}, head(), r.quarters.map((q) => row(`${q.quarter} квартал`, q)), row(`${year} рік`, inc, true))));
   }
+  if (r.employees) main.append(h("div", { class: "card" }, h("p", { class: "small" }, `Наймані працівники у періоді: ${r.employees}. `,
+    h("a", { href: "#/taxes?t=quarter" }, "Квартальна відомість зарплати →"))));
 
-  main.append(h("div", { class: "card stack" }, h("div", { class: "card-head" }, h("h3", {}, "Завантажити для Excel")),
-    h("p", { class: "muted small" }, "По днях — як Книга обліку доходів. По замовленнях — для перевірки бухгалтером."),
-    h("div", { class: "row" },
-      h("button", { class: "btn primary", onclick: () => run(() => downloadFile("/api/reports/income.csv?" + qs + "&detail=day", "dohody.csv")) }, "По днях (CSV)"),
-      h("button", { class: "btn", onclick: () => run(() => downloadFile("/api/reports/income.csv?" + qs + "&detail=order", "zamovlennia.csv")) }, "По замовленнях (CSV)"))));
-
-  if (!quarter) main.append(await declarationCard(year));
-
+  main.append(fopProfileCard(st));
   const limIn = h("input", { inputmode: "decimal", value: r.limit.amount ? kopToInput(r.limit.amount) : "", placeholder: "напр. 1444049" });
-  main.append(h("div", { class: "card stack" }, h("div", { class: "card-head" }, h("h3", {}, "Ліміт доходу групи на рік")),
-    h("p", { class: "muted small" }, "Значення на поточний рік вносить бухгалтер (наприклад, для 1 групи у 2026 — 1 444 049 грн). 0 — не стежити."),
-    h("div", { class: "row" }, field("Ліміт, грн", limIn),
+  main.append(h("details", { class: "card" }, h("summary", {}, h("b", {}, "Ліміт доходу групи на рік"), h("span", { class: "muted small" }, r.limit.amount ? ` · ${money(r.limit.amount)}` : " · не задано")),
+    h("div", { class: "row", style: { marginTop: "10px" } }, field("Ліміт, грн", limIn),
       h("button", { class: "btn", onclick: async () => {
         const v = limIn.value.trim() ? toKop(limIn.value) : 0;
         if (!Number.isFinite(v) || v < 0) { toast("Вкажіть суму в гривнях", true); return; }
         state.settings = await run(() => api.put("/api/settings", { fop_income_limit: v }), "Ліміт збережено"); reload();
       } }, "Зберегти"))));
-
-  main.append(h("div", { class: "card" }, h("p", { class: "muted small" },
-    "Як користуватись: оберіть період декларації, перенесіть «Дохід за період» у кабінет ДПС або Приват24 («Податкові декларації»). " +
-    "Дохід — усе, що заплатили клієнти (готівка, картка, переказ), на дату закриття замовлення; комісія банку його не зменшує. " +
-    "Податки й звіти подаєте ви або бухгалтер — програма лише рахує.")));
+  if (!quarter) main.append(declarationXmlCard(year, st));
+  main.append(h("p", { class: "muted small" },
+    "Дохід ФОП = готівка (каса) + безготівка (банк): усе, що заплатили клієнти, на дату оплати. Комісія банку і витрати дохід не зменшують. " +
+    "Програма нічого не подає в ДПС — звітність складає й подає бухгалтер."));
 };
 
 const TAX_KEYS = { min_wage: "Мінімальна зарплата", single_tax: "Єдиний податок", military_fop: "Військовий збір (ФОП)", esv_fop: "ЄСВ (ФОП)",

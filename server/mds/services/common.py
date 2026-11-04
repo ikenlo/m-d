@@ -155,6 +155,7 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     # оплата карткою через «Термінал» ПриватБанку на планшеті: off | mock (імітація) | live (ключі — змінні сервера)
     "card_terminal_mode": "off",
     # профіль ФОП для XML-декларації (services/tax_declaration.py); ставки вносить директор/бухгалтер
+    "fop_group": 1,  # група єдиного податку (1–3) — для звітності бухгалтеру
     "fop_tin": "",
     "fop_name": "",
     "fop_address": "",

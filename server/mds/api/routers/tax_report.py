@@ -9,7 +9,7 @@ from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
 from ... import clock
-from ...services import tax_declaration, tax_report
+from ...services import accountant_report, tax_declaration, tax_report
 from ...services.common import Actor
 from ..deps import get_actor, get_session
 
@@ -38,4 +38,16 @@ def declaration(year: int, actor: Actor = Depends(get_actor), s: Session = Depen
 def declaration_zip(year: int, actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
     body, filename = tax_declaration.declaration_zip(s, actor, year, clock.now().date())
     return Response(body, media_type="application/zip",
+                    headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}"})
+
+
+@router.get("/accountant")
+def accountant(year: int, quarter: int | None = None, actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
+    return accountant_report.summary(s, actor, year, quarter)
+
+
+@router.get("/accountant.xlsx")
+def accountant_xlsx(year: int, quarter: int | None = None, actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
+    body, filename = accountant_report.xlsx(s, actor, year, quarter)
+    return Response(body, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}"})
