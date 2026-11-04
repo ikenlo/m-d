@@ -501,7 +501,7 @@ function setThemeColor(c) {
 
 function renderLogin() {
   window.onhashchange = null;
-  setThemeColor("#0b1f19"); // темна смужка статусу над темним екраном входу
+  setThemeColor(document.documentElement.getAttribute("data-theme") === "dark" ? "#0b1a15" : "#f4f3ee"); // як основна сторінка
   const root = document.getElementById("root");
   const lastUser = store.get("mds_last_user") || "";
   const user = h("input", { autocomplete: "username", autocapitalize: "none", spellcheck: "false", placeholder: "Ваш логін", id: "login-user", value: lastUser });
