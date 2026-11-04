@@ -966,7 +966,7 @@ tr.no-mat td { background: var(--danger-bg); }
   /* кругла «+» по центру меню, виступає над лінією — щоб легко натиснути великим пальцем */
   .tab-plus { display: flex; flex: 0 0 72px; align-items: flex-start; justify-content: center; border: 0; background: none; padding: 0; cursor: pointer; position: relative; }
   .tab-plus span { width: 62px; height: 62px; border-radius: 50%; display: grid; place-items: center; color: #fff; margin-top: -26px;
-    background: var(--brand); border: 4px solid var(--surface); box-shadow: 0 6px 18px rgba(20, 57, 44, .35); transition: transform .12s; }
+    background: var(--brand); border: 0; box-shadow: 0 6px 18px rgba(20, 57, 44, .35); transition: transform .12s; }
   .tab-plus:active span { transform: scale(.92); }
   .tab-plus svg { width: 30px; height: 30px; stroke-width: 2.6; }
   :root[data-theme="dark"] .tab-plus span { background: var(--gold); color: #17120a; }
