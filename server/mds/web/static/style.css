@@ -253,6 +253,10 @@ tr.click:hover td { background: var(--surface-2); }
 .st-open { background: var(--info-bg); color: var(--info); }
 .st-closed { background: var(--warn-bg); color: var(--warn); }
 .st-paid { background: var(--ok-bg); color: var(--ok); }
+.st-overdue { background: var(--danger-bg, var(--warn-bg)); color: var(--danger); }
+.ctl-tile .kpi-value { font-size: 20px; }
+.ctl-warn { border-color: var(--warn); }
+.ctl-danger { border-color: var(--danger); }
 
 .avatar {
   width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; flex-shrink: 0;

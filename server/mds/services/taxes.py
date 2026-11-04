@@ -519,3 +519,74 @@ def payroll_quarter_csv(s: Session, actor: Actor, year: int, quarter: int) -> tu
                 uah(t["esv_employer"]), uah(t["paid"])])
     w.writerow(["До бюджету (ПДФО + ВЗ + ЄСВ)", "", "", uah(t["to_budget"])])
     return "\ufeff" + buf.getvalue(), f"zarplata-{year}-Q{quarter}.csv"
+
+
+# =================================================================== календар податків і звітності
+def _workday(d: date) -> date:
+    """Строк, що припадає на вихідний, переноситься на наступний робочий день (свята не враховано)."""
+    while d.weekday() >= 5:
+        d += timedelta(days=1)
+    return d
+
+
+def tax_calendar(s: Session, actor: Actor, year: int) -> list[dict]:
+    """Строки сплати і звітності ФОП на рік (за групою з налаштувань) + звіти по найманих, якщо є.
+    Суми — за ставками з датами («Ставки»), статус — за нарахуваннями/сплатами («Податки ФОП»).
+    Загальні правила ПКУ; особливі випадки (воєнний стан, пільги) — уточнюйте з бухгалтером."""
+    from .common import get_setting
+
+    actor.require(Role.DIRECTOR)
+    group = int(get_setting(s, "fop_group") or 1)
+    today = clock.now().date()
+    rows = {(r["key"], r["period_start"]): r for r in fop_summary(s, actor, year)}
+    ev: list[dict] = []
+
+    def add(kind: str, title: str, due: date, period_from: date, period_to: date, key: str | None = None, note: str = ""):
+        amount, status = None, "planned"
+        if key:
+            r = rows.get((key, period_from.isoformat()))
+            if r:
+                amount = r["accrued"]
+                status = "paid" if r["debt"] <= 0 else ("overdue" if due < today else "due")
+            else:
+                try:
+                    amount = _calc_fop(s, key, period_from)["amount"]
+                except ValidationError:
+                    amount = None
+                status = "check" if due < today else "planned"
+        elif due < today:
+            status = "check"
+        ev.append({"kind": kind, "key": key, "title": title, "due": due.isoformat(), "period_from": period_from.isoformat(),
+                   "period_to": period_to.isoformat(), "amount": amount, "status": status, "note": note})
+
+    def due_day(key: str, default: int = 20) -> int:
+        r = rate_for(s, key, date(year, 1, 1))
+        return (r.due_day if r and r.due_day else default)
+
+    if group in (1, 2):
+        for m in range(1, 13):
+            a = date(year, m, 1)
+            b = a.replace(day=calendar.monthrange(year, m)[1])
+            add("pay", "Єдиний податок (аванс за місяць)", _workday(a.replace(day=min(due_day("single_tax"), b.day))), a, b, "single_tax")
+            add("pay", "Військовий збір ФОП (за місяць)", _workday(a.replace(day=min(due_day("military_fop"), b.day))), a, b, "military_fop")
+        add("report", f"Річна декларація платника єдиного податку за {year} (з Додатком 1 — ЄСВ)",
+            _workday(date(year + 1, 1, 1) + timedelta(days=59)), date(year, 1, 1), date(year, 12, 31),
+            note="Подає бухгалтер: дані — «Для бухгалтера»")
+    else:
+        for q in range(1, 5):
+            a, b = date(year, 3 * q - 2, 1), date(year, 3 * q, calendar.monthrange(year, 3 * q)[1])
+            add("report", f"Декларація платника єдиного податку (3 група) за {q} квартал", _workday(b + timedelta(days=40)), a, b,
+                note="Єдиний податок і військовий збір — протягом 10 днів після граничного строку декларації")
+    for q in range(1, 5):
+        a, b = date(year, 3 * q - 2, 1), date(year, 3 * q, calendar.monthrange(year, 3 * q)[1])
+        add("pay", f"ЄСВ ФОП за себе за {q} квартал", _workday(date(year + (q == 4), (3 * q) % 12 + 1, 20)), a, b, "esv_fop")
+    hired = s.scalar(select(func.count(EmployeeProfile.id)).where(
+        EmployeeProfile.hired_on.isnot(None), EmployeeProfile.hired_on <= date(year, 12, 31),
+        (EmployeeProfile.fired_on.is_(None)) | (EmployeeProfile.fired_on >= date(year, 1, 1)))) or 0
+    if hired:
+        for q in range(1, 5):
+            a, b = date(year, 3 * q - 2, 1), date(year, 3 * q, calendar.monthrange(year, 3 * q)[1])
+            add("report", f"Податковий розрахунок по найманих (ПДФО, ВЗ, ЄСВ) за {q} квартал",
+                _workday(b + timedelta(days=40)), a, b,
+                note="ПДФО, ВЗ і ЄСВ із зарплати сплачуються в день виплати зарплати")
+    return sorted(ev, key=lambda e: (e["due"], e["kind"]))

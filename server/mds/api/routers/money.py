@@ -172,3 +172,8 @@ def get_expense_file(file_id: int, actor: Actor = Depends(get_actor), s: Session
 @router.delete("/expense-files/{file_id}", status_code=204)
 def delete_expense_file(file_id: int, actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
     expenses.delete_file(s, actor, file_id)
+
+
+@router.get("/finance/control")
+def finance_control(actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
+    return analytics.owner_control(s, actor)
