@@ -531,3 +531,12 @@ body::before {
 /* Номер версії */
 .brand-ver { display: block; font-size: 10.5px; letter-spacing: .04em; color: rgba(245, 241, 230, .45); margin-top: 2px; }
 .login-foot .version { opacity: .7; font-size: 12px; }
+
+/* Генератор: великий перемикач ON/OFF */
+.gen-card.running { border-color: var(--ok); box-shadow: 0 0 0 2px var(--ok-bg); }
+.gen-switch { flex: none; position: relative; width: 104px; height: 52px; border-radius: 999px; border: 0; cursor: pointer;
+  background: var(--muted-bg); color: var(--ink-3); display: flex; align-items: center; justify-content: flex-end; padding: 0 16px; font: inherit; transition: background .15s; }
+.gen-switch .knob { position: absolute; top: 5px; left: 5px; width: 42px; height: 42px; border-radius: 50%; background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,.25); transition: left .15s; }
+.gen-switch.on { background: var(--ok); color: #fff; justify-content: flex-start; }
+.gen-switch.on .knob { left: 57px; }
+.gen-switch b { font-size: 15px; letter-spacing: .06em; }

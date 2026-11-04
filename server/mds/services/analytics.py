@@ -100,11 +100,16 @@ def dashboard(s: Session, actor: Actor, d_from: date, d_to: date) -> dict:
             )
         ) or 0
     )
+    from .utilities import charges_total, generator_totals
+
     gross = t["revenue"] - t["masters_share"] - t["materials"]
     operating = exp[ExpenseCategory.RENT] + exp[ExpenseCategory.UTILITIES] + exp[ExpenseCategory.ADVERTISING] + exp[ExpenseCategory.OTHER]
+    generator = generator_totals(s, start, end)["total_cost"]  # пальне + амортизація за мотогодинами
+    charged = charges_total(s, d_from=d_from, d_to=d_to)  # компенсація майстрами (комунальні/генератор)
     # загальний борг по зарплаті на сьогодні (за весь час)
     total_accrued = int(s.scalar(select(func.coalesce(func.sum(Order.master_earning), 0))) or 0)
     total_paid = int(s.scalar(select(func.coalesce(func.sum(Payout.amount), 0))) or 0)
+    total_charged = charges_total(s)
     return {
         "from": d_from.isoformat(),
         "to": d_to.isoformat(),
@@ -116,12 +121,15 @@ def dashboard(s: Session, actor: Actor, d_from: date, d_to: date) -> dict:
             "advertising": exp[ExpenseCategory.ADVERTISING],
             "other": exp[ExpenseCategory.OTHER],
             "materials_purchases": exp[ExpenseCategory.MATERIALS],
+            "generator": generator,
+            "fuel_purchases": exp[ExpenseCategory.FUEL],
+            "master_charges": charged,
         },
-        "operating_expenses": operating,
+        "operating_expenses": operating + generator,
         "gross_profit": gross,
-        "net_profit": gross - operating,
+        "net_profit": gross - operating - generator + charged,
         "payouts": paid,
-        "salary_debt_total": total_accrued - total_paid,
+        "salary_debt_total": total_accrued - total_paid - total_charged,
         "by_payment": by_payment,
         "cancellations": cancellations,
         "average_check": t["revenue"] // t["orders_count"] if t["orders_count"] else 0,
@@ -189,7 +197,10 @@ def my_earnings(s: Session, actor: Actor, master_id: int | None = None) -> dict:
     for p in ("day", "week", "month"):
         a, b = period_range(p)
         t = _order_totals(s, *_bounds(a, b), master_id=master_id)
-        out[p] = {"orders_count": t["orders_count"], "revenue": t["revenue"], "earning": t["masters_share"]}
+        from .utilities import charges_total
+
+        out[p] = {"orders_count": t["orders_count"], "revenue": t["revenue"], "earning": t["masters_share"],
+                  "charges": charges_total(s, master_id=master_id, d_from=a, d_to=b)}
     out["balance"] = master_balance(s, master_id)
     return out
 
@@ -245,7 +256,10 @@ def forecast_month(s: Session, actor: Actor, ref: date | None = None) -> dict:
     forecast_gross = forecast * gross_ratio_num // rev if rev else 0
     operating = int(s.scalar(select(func.coalesce(func.sum(Expense.amount), 0)).where(
         Expense.spent_on >= m_from, Expense.spent_on <= m_to, Expense.is_deleted.is_(False),
-        Expense.category != ExpenseCategory.MATERIALS)) or 0)
+        Expense.category.not_in(ExpenseCategory.CASH_FLOW_ONLY))) or 0)
+    from .utilities import charges_total, generator_totals
+
+    operating += generator_totals(s, start, cut)["total_cost"] - charges_total(s, d_from=m_from, d_to=m_to)
     days_total = (m_to - m_from).days + 1
     days_elapsed = max((today - m_from).days + 1, 1)
     return {
