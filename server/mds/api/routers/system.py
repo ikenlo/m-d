@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import time
+from datetime import date
 
 import jwt
 from fastapi import APIRouter, Depends, Request
@@ -10,9 +11,10 @@ from pydantic import Field
 from sqlalchemy.orm import Session
 
 from ... import __version__
-from ...errors import Conflict
+from ...errors import Conflict, ValidationError
 from ...models import Role, User
 from ...services import backup, bugreport, gdrive, journal
+from ...services import journal_feed as journal_feed_svc
 from ...services.common import Actor, all_settings, update_settings
 from ...services.common import audit as write_audit
 from ..schemas import BaseModel
@@ -35,6 +37,16 @@ def put_settings(data: dict, actor: Actor = Depends(get_actor), s: Session = Dep
 def ledger(ref_type: str | None = None, ref_id: int | None = None, limit: int = 200,
            actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
     return journal.ledger_list(s, actor, ref_type=ref_type, ref_id=ref_id, limit=min(limit, 1000))
+
+
+@router.get("/journal/feed")
+def journal_feed(date_from: date, date_to: date | None = None, category: str | None = None, q: str | None = None,
+                 limit: int = 300, actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
+    """Стрічка подій простими словами (для директора)."""
+    if date_to and (date_to - date_from).days > 366:
+        raise ValidationError("Період журналу — не більше року")
+    return journal_feed_svc.feed(s, actor, date_from=date_from, date_to=date_to or date_from, category=category,
+                                 q=q, limit=min(max(limit, 1), 1000))
 
 
 @router.get("/journal/audit")
