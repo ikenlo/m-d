@@ -453,8 +453,8 @@ document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeSheet
 ["gesturestart", "gesturechange", "gestureend"].forEach((ev) => document.addEventListener(ev, (e) => e.preventDefault(), { passive: false }));
 document.addEventListener("touchmove", (e) => { if (e.touches && e.touches.length > 1) e.preventDefault(); }, { passive: false });
 document.addEventListener("wheel", (e) => { if (e.ctrlKey) e.preventDefault(); }, { passive: false });
-let lastTouchEnd = 0;
-document.addEventListener("touchend", (e) => { const n = Date.now(); if (n - lastTouchEnd < 300 && !e.target.closest("input, textarea, select")) e.preventDefault(); lastTouchEnd = n; }, { passive: false });
+// подвійний тап не масштабує сторінку завдяки CSS «touch-action: manipulation» — швидкі натискання
+// (напр. по днях календаря) не блокуються
 
 function confirmSheet(title, text, okText, onOk, { danger = false, withReason = false } = {}) {
   const reason = h("input", { placeholder: "Причина" });
@@ -669,6 +669,7 @@ function renderLogin() {
   autoFocus(lastUser ? pass : user);
 }
 
+let renderSeq = 0; // кожне перемикання сторінки/дня — новий номер; запізнілі помилки старих не показуються
 function renderApp() {
   setThemeColor(document.documentElement.getAttribute("data-theme") === "dark" ? "#0b1a15" : "#f4f3ee");
   const role = state.user.role;
@@ -717,7 +718,8 @@ function renderApp() {
   document.getElementById("root").replaceChildren(h("div", { class: "app" }, sidebar, main), tabbar);
   closeSheet();
   const view = route === "more" ? viewMore : VIEWS[route];
-  return Promise.resolve(view(main)).catch((e) => { main.replaceChildren(emptyState(e.message, "alert")); });
+  const seq = ++renderSeq;
+  return Promise.resolve(view(main)).catch((e) => { if (seq === renderSeq) main.replaceChildren(emptyState(e.message, "alert")); });
 }
 
 // «Оновити»: свіжі довідники (майстри, послуги, налаштування) і перемальована сторінка без перезавантаження застосунку
@@ -1273,6 +1275,7 @@ function nowCard(a) {
 }
 
 // ---------- Календар
+const calStrip = { from: null, scroll: null };
 VIEWS.calendar = async (main) => {
   const params = new URLSearchParams(location.hash.split("?")[1] || "");
   const day = params.get("d") || today();
@@ -1300,22 +1303,41 @@ VIEWS.calendar = async (main) => {
   // стрічка днів (тиждень довкола) з кількістю записів — одним запитом на весь діапазон
   const wdIdx = (iso) => String((new Date(iso + "T12:00").getDay() + 6) % 7);
   const salonSched = state.settings.schedule || {};
-  const stripFrom = addDays(day, -3), stripTo = addDays(day, 10);
+  // стрічка не «їде» під пальцем: вікно в 3 тижні тримається, поки обраний день у ньому, прокрутка зберігається
+  const mondayOf = (iso) => addDays(iso, -Number(wdIdx(iso)));
+  if (!calStrip.from || day < calStrip.from || day > addDays(calStrip.from, 20)) { calStrip.from = addDays(mondayOf(day), -7); calStrip.scroll = null; }
+  const stripFrom = calStrip.from, stripTo = addDays(calStrip.from, 20);
+  // стрічку малюємо одразу (до відповіді сервера) — швидкі натискання не падають у «порожнечу»
+  const strip = h("div", { class: "daystrip" });
+  const cnt = {};
+  for (let i = 0; i <= 20; i++) {
+    const dd = addDays(stripFrom, i);
+    const closed = !salonSched[wdIdx(dd)];
+    cnt[dd] = h("i", { class: "cnt zero" }, "·");
+    strip.append(h("button", { class: (dd === day ? "on " : "") + (dd === today() ? "today " : "") + (closed ? "off" : ""), title: closed ? "Вихідний" : null,
+      onclick: (e) => { // одразу підсвічуємо обраний день, запам'ятовуємо прокрутку стрічки
+        strip.querySelectorAll(".on").forEach((x) => x.classList.remove("on")); e.currentTarget.classList.add("on");
+        calStrip.scroll = strip.scrollLeft; if (dd !== day) go(dd);
+      } },
+      h("small", {}, weekday(dd)), h("b", {}, Number(dd.slice(8, 10))), cnt[dd]));
+  }
+  main.append(strip);
+  if (calStrip.scroll !== null) strip.scrollLeft = calStrip.scroll;
+  requestAnimationFrame(() => {
+    if (calStrip.scroll !== null) strip.scrollLeft = calStrip.scroll;
+    else { const on = strip.querySelector(".on"); if (on) strip.scrollLeft = on.offsetLeft - strip.clientWidth / 2 + on.offsetWidth / 2; }
+    strip.addEventListener("scroll", () => { calStrip.scroll = strip.scrollLeft; }, { passive: true });
+  });
   const range = await api.get(`/api/appointments?date_from=${stripFrom}&date_to=${stripTo}`);
+  if (!main.isConnected) return; // вже обрали інший день — ця відповідь застаріла
   const isActive = (a) => !["cancelled", "no_show"].includes(a.status);
   const perDay = {};
   for (const a of range) if (isActive(a)) perDay[a.starts_at.slice(0, 10)] = (perDay[a.starts_at.slice(0, 10)] || 0) + 1;
-  const strip = h("div", { class: "daystrip" });
-  for (let i = -3; i <= 10; i++) {
-    const dd = addDays(day, i);
-    const closed = !salonSched[wdIdx(dd)];
+  for (const [dd, el] of Object.entries(cnt)) {
     const n = perDay[dd] || 0;
-    strip.append(h("button", { class: (dd === day ? "on " : "") + (dd === today() ? "today " : "") + (closed ? "off" : ""), onclick: () => go(dd),
-      title: closed ? "Вихідний" : n ? `Записів: ${n}` : "Записів немає" },
-      h("small", {}, weekday(dd)), h("b", {}, Number(dd.slice(8, 10))), h("i", { class: "cnt" + (n ? "" : " zero") }, n ? String(n) : "·")));
+    el.className = "cnt" + (n ? "" : " zero"); el.textContent = n ? String(n) : "·";
+    if (n) el.parentElement.title = `Записів: ${n}`;
   }
-  main.append(strip);
-  requestAnimationFrame(() => strip.querySelector(".on")?.scrollIntoView({ inline: "center", block: "nearest" }));
 
   const list = range.filter((a) => a.starts_at.slice(0, 10) === day);
   const activeList = list.filter(isActive).sort((a, b) => a.starts_at.localeCompare(b.starts_at));
