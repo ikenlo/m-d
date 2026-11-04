@@ -36,4 +36,6 @@
 | `GET/POST /api/backups` | директор | Резервні копії |
 | `GET /api/gdrive`, `POST /api/gdrive/connect`, `POST /api/gdrive/backup-now`, `POST /api/gdrive/disconnect` | директор | Google Drive: стан, підключення (OAuth), копія зараз, відключення |
 | `GET /api/gdrive/callback` | — (підписаний `state`) | Повернення з Google після підключення |
+| `GET /api/finance/insights?period=…` | директор | Аналітика: порівняння з попереднім періодом, прогноз місяця, середній чек по майстрах, нові/повторні клієнти, дні тижня |
+| `GET /api/journal/feed?date_from&date_to&category&q` | директор | Журнал простими словами (стрічка подій, фільтр і пошук) |
 | `GET /api/health` | — | Перевірка роботи; `version` — розгорнута версія |
