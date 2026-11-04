@@ -133,6 +133,8 @@ class ClientPatch(BaseModel):
     name: str | None = None
     phone: str | None = None
     notes: str | None = None
+    blocked: bool | None = None
+    blocked_reason: str | None = None
 
 
 class AppointmentIn(BaseModel):

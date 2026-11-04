@@ -41,6 +41,9 @@ def create_request(s: Session, actor: Actor, phone: str, name: str | None = None
     existing = s.scalar(q.limit(1))
     if existing:
         return existing
+    from .antispam import check_callback
+
+    check_callback(s, phone_n, actor.telegram_user_id)
     r = CallbackRequest(phone=phone_n, name=(name or "").strip() or None, telegram_user_id=actor.telegram_user_id,
                         created_at=clock.now())
     s.add(r)

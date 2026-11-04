@@ -1,0 +1,45 @@
+name: Site (GitHub Pages)
+
+# Сайт-візитка: site/ + shared/ → GitHub Pages. Settings → Pages → Source: GitHub Actions.
+on:
+  push:
+    branches: [main]
+    paths: ["site/**", "shared/**", ".github/workflows/site.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    # автоматично — лише коли Pages увімкнено (змінна репозиторію SITE_PAGES=true); вручну — завжди
+    if: github.event_name == 'workflow_dispatch' || vars.SITE_PAGES == 'true'
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Зібрати сайт
+        run: |
+          mkdir -p _site
+          cp -r site/. _site/
+          cp -r shared _site/shared
+          rm -rf _site/docs _site/README.md _site/TODO.md
+          node --check _site/js/main.js
+          node --check _site/js/booking.js
+          python3 -c "import json; json.load(open('_site/shared/config.json')); json.load(open('_site/shared/services.json'))"
+      - uses: actions/configure-pages@v5
+        with:
+          enablement: false
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - id: deployment
+        uses: actions/deploy-pages@v4
