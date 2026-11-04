@@ -2922,7 +2922,7 @@ VIEWS.schedule = async (main) => {
   const draw = () => body.replaceChildren(...g.masters.map(card));
   draw();
 
-  let busy = Promise.resolve();
+  let busy = Promise.resolve(), pending = 0, failed = false;
   function toggle(m, d, c) {
     const api_url = `/api/schedule/${m.id}/${d}`;
     const tpl = c.template; // тижневий шаблон цього дня (null — за шаблоном вихідний)
@@ -2938,9 +2938,20 @@ VIEWS.schedule = async (main) => {
     }
     c.source = "day";
     draw(); // одразу показуємо галочку, сервер підтверджує
+    // зміни йдуть на сервер по черзі; звіряємось із сервером лише коли черга порожня —
+    // інакше швидкі натискання «відскакували» назад, поки решта ще в дорозі
+    pending++;
     busy = busy.then(async () => {
-      try { await req(); } catch (e) { toast(e.message, true); }
-      g = await api.get(url); draw();
+      try { await req(); } catch (e) { failed = true; toast(e.message, true); }
+      pending--;
+      if (pending === 0) {
+        const fresh = await api.get(url).catch(() => null);
+        if (fresh && pending === 0) {
+          const changed = failed || JSON.stringify(fresh.cells) !== JSON.stringify(g.cells);
+          g = fresh; failed = false;
+          if (changed) draw();
+        }
+      }
     });
   }
 
