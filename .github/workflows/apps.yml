@@ -1,0 +1,138 @@
+# Збірка застосунків MDS Connect: Android (.apk) і Windows (.exe).
+# - на кожен PR/пуш зі змінами в apps/: збірка + перевірка APK на емуляторі Android;
+# - вручну (Actions → Apps → Run workflow, release = true): ще й GitHub Release з файлами.
+# Підпис APK: секрети ANDROID_KEYSTORE_BASE64 і ANDROID_KEYSTORE_PASSWORD (docs/APPS.md).
+# Без них APK підписується тестовим ключем — встановлюється, але оновлення поверх може не стати.
+name: Apps
+
+on:
+  pull_request:
+    paths: ["apps/**", ".github/workflows/apps.yml"]
+  push:
+    branches: [main]
+    paths: ["apps/**", ".github/workflows/apps.yml"]
+  workflow_dispatch:
+    inputs:
+      release:
+        description: "Створити GitHub Release з файлами"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.14.3"
+      - name: Ключ підпису (якщо задано)
+        env:
+          KS_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          if [ -n "$KS_B64" ]; then
+            echo "$KS_B64" | base64 -d > "$RUNNER_TEMP/release.jks"
+            echo "ANDROID_KEYSTORE_FILE=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
+          else
+            echo "::warning::Немає секрету ANDROID_KEYSTORE_BASE64 — APK підписано тестовим ключем"
+          fi
+      - name: Збірка APK
+        working-directory: apps/android
+        env:
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        run: |
+          gradle assembleRelease --no-daemon
+          mkdir -p ../../out
+          cp app/build/outputs/apk/release/app-release.apk ../../out/MDS-Connect-0.1.0.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android-apk
+          path: out/MDS-Connect-0.1.0.apk
+
+  android-smoke:
+    # запуск APK на емуляторі: застосунок відкривається і показує сторінку входу
+    needs: android
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: android-apk
+      - name: KVM для емулятора
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 30
+          arch: x86_64
+          target: google_apis
+          disable-animations: true
+          script: |
+            adb install -r MDS-Connect-0.1.0.apk
+            adb shell am start -n ua.md.connect/.MainActivity
+            sleep 25
+            adb shell uiautomator dump /sdcard/ui.xml
+            adb pull /sdcard/ui.xml ui.xml
+            adb exec-out screencap -p > screen.png
+            grep -q "Увійти" ui.xml && echo "OK: сторінка входу відкрилась" || (echo "FAIL: немає сторінки входу"; cat ui.xml | head -c 3000; exit 1)
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: android-screenshot
+          path: |
+            screen.png
+            ui.xml
+          if-no-files-found: ignore
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: apps/windows/package-lock.json
+      - name: Збірка інсталятора
+        working-directory: apps/windows
+        run: |
+          npm ci
+          npm run check
+          npm run dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-exe
+          path: apps/windows/dist/MDS-Connect-Setup-0.1.0.exe
+
+  release:
+    if: github.event_name == 'workflow_dispatch' && inputs.release
+    needs: [android, android-smoke, windows]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: out
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: apps-v0.1.0
+          name: MDS Connect 0.1.0 — застосунки
+          target_commitish: ${{ github.sha }}
+          body: |
+            Застосунки MDS Connect 0.1.0 (відкривають веб-панель салону; оновлення сайту видно одразу).
+            - Android: MDS-Connect-0.1.0.apk — встановлення: docs/APPS.md
+            - Windows: MDS-Connect-Setup-0.1.0.exe — при першому запуску Windows може попередити
+              «Невідомий видавець»: «Докладніше» → «Однаково запустити».
+          files: |
+            out/MDS-Connect-0.1.0.apk
+            out/MDS-Connect-Setup-0.1.0.exe

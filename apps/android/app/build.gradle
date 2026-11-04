@@ -1,0 +1,51 @@
+// MDS Connect для Android — оболонка WebView над веб-панеллю салону.
+// Уся логіка на сервері: оновлення сайту одразу видно в застосунку, перевстановлювати не треба.
+plugins {
+    id "com.android.application"
+}
+
+def appUrl = project.findProperty("appUrl") ?: "https://m-d-production.up.railway.app"
+// Підпис: ключ з GitHub Secrets (CI) або локальний файл; без нього — тестовий (debug) підпис.
+def ksFile = System.getenv("ANDROID_KEYSTORE_FILE")
+def ksPass = System.getenv("ANDROID_KEYSTORE_PASSWORD")
+
+android {
+    namespace "ua.md.connect"
+    compileSdk 34
+
+    defaultConfig {
+        applicationId "ua.md.connect"
+        minSdk 24
+        targetSdk 34
+        versionCode 1
+        versionName "0.1.0"
+        buildConfigField "String", "APP_URL", "\"${appUrl}\""
+    }
+
+    buildFeatures {
+        buildConfig true
+    }
+
+    signingConfigs {
+        release {
+            if (ksFile && ksPass) {
+                storeFile file(ksFile)
+                storePassword ksPass
+                keyAlias "mds"
+                keyPassword ksPass
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig = (ksFile && ksPass) ? signingConfigs.release : signingConfigs.debug
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
