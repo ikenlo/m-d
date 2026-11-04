@@ -1,0 +1,77 @@
+# Архів версій: після кожного злиття в main — тег vX.Y.Z і GitHub Release.
+# Версія береться з server/mds/__init__.py, опис — з розділу «## [X.Y.Z]» у CHANGELOG.md.
+# Якщо такий тег уже є — нічого не робить (повторний запуск безпечний).
+# Вручну (Actions → Release → Run workflow): можна вказати старий коміт і версію — для архіву минулих версій.
+name: Release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Коміт (SHA) для архівної версії; порожньо — останній main"
+        required: false
+        default: ""
+      version:
+        description: "Версія без «v» (напр. 0.1.0); порожньо — з коду"
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+          fetch-depth: 0
+
+      - name: Версія і опис змін
+        id: meta
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          python3 - <<'PY'
+          import os, re
+          v = (os.environ.get("INPUT_VERSION") or "").strip()
+          if not v:
+              v = re.search(r'__version__ = "([^"]+)"', open("server/mds/__init__.py", encoding="utf-8").read()).group(1)
+          text = open("CHANGELOG.md", encoding="utf-8").read()
+          # розділ «## [0.1.1] …»; для X.Y.0 підходить і старий формат «## [X.Y]»
+          names = [v] + ([v[:-2]] if v.endswith(".0") else [])
+          notes = ""
+          for name in names:
+              m = re.search(r"^## \[" + re.escape(name) + r"\][^\n]*\n(.*?)(?=^## \[|\Z)", text, re.S | re.M)
+              if m:
+                  notes = m.group(1).strip()
+                  break
+          if not notes:
+              notes = "Опис змін — у CHANGELOG.md."
+          sha = os.popen("git rev-parse HEAD").read().strip()
+          notes += f"\n\n---\nКоміт: `{sha[:7]}` · архів коду — нижче (Source code).\n"
+          open("release-notes.md", "w", encoding="utf-8").write(notes)
+          with open(os.environ["GITHUB_OUTPUT"], "a") as out:
+              out.write(f"version={v}\ntag=v{v}\nsha={sha}\n")
+          PY
+
+      - name: Створити тег і реліз (якщо ще немає)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.meta.outputs.tag }}
+          SHA: ${{ steps.meta.outputs.sha }}
+          VERSION: ${{ steps.meta.outputs.version }}
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Реліз $TAG уже є — пропускаю"
+            exit 0
+          fi
+          gh release create "$TAG" --target "$SHA" --title "MDS Connect $VERSION" --notes-file release-notes.md
+          echo "Створено реліз $TAG для $SHA" >> "$GITHUB_STEP_SUMMARY"
