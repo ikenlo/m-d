@@ -43,4 +43,9 @@
 | `GET/POST /api/generator/runs`, `PATCH /api/generator/runs/{id}`, `POST /api/generator/motohours` | директор (перегляд — і адміністратор) | Запуски, ручне додавання/коригування, звірка мотогодин |
 | `GET /api/utilities/summary`, `GET /api/utilities/allocation`, `POST /api/utilities/allocate`, `POST /api/utilities/reverse` | директор | Аналітика місяця, розподіл між майстрами, скасування (сторно) |
 | `GET /api/utilities/charges` | директор; майстер — свої | Списання з майстрів |
+| `GET /api/fiscal/status`, `GET /api/fiscal/receipts`, `POST /api/fiscal/receipts/{id}/retry` | директор, адміністратор; майстер — свої чеки | Стан ПРРО, чеки, повтор |
+| `POST /api/fiscal/shift/open`, `POST /api/fiscal/shift/close`, `POST /api/fiscal/x-report`, `POST /api/fiscal/process` | директор, адміністратор | Касова зміна, Z/X-звіти, надіслати чергу |
+| `POST /api/fiscal/orders/{id}/refund`, `GET /api/fiscal/reconcile` | директор | Повернення (чек + виправлення замовлення), звірка |
+| `GET/POST /api/taxes/rates`, `GET /api/taxes/fop`, `POST /api/taxes/fop/accrue`, `POST /api/taxes/fop/{id}/correct`, `POST /api/taxes/payments` | директор | Ставки з датами, податки ФОП |
+| `GET/POST /api/payroll`, `GET /api/payroll/calc`, `POST /api/payroll/{id}/correct`, `POST /api/payroll/payments`, `GET /api/payroll/history/{user}` | директор | Офіційна зарплата |
 | `GET /api/health` | — | Перевірка роботи; `version` — розгорнута версія |

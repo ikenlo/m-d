@@ -64,3 +64,10 @@ alembic revision --autogenerate -m "опис"   # після зміни models.p
   і `version` у `server/pyproject.toml`, додати зверху `CHANGELOG.md` розділ `## [0.1.N] — дата`.
   Тест `test_version.py` перевіряє узгодженість.
 - Після злиття `.github/workflows/release.yml` сам створює тег `v0.1.N` і GitHub Release (архів версії).
+
+## Фіскалізація і податки (docs/FISCALIZATION.md)
+
+- Провайдери ПРРО — лише через `services/fiscal_providers.py`; у тестах — `FakePRROProvider` (`set_provider`), ніколи не справжні чеки.
+- Чек створюється в транзакції закриття замовлення (`fiscal.enqueue_sell`); фіскалізованим вважається лише `done`.
+- Ключі провайдера — лише змінні оточення `MDS_CHECKBOX_*`, не в БД і не в логах.
+- Податкові ставки й мінімальна зарплата — записи `tax_rates` з датами; не зашивати в код. Юридична зарплата ≠ поділ 50/50.
