@@ -1340,7 +1340,7 @@ function quickBook({ master_id = null, date = today(), time = null, client = nul
   loadTimes();
 }
 
-function apptForm({ appt = null, master_id = null, date = today(), time = "10:00" } = {}, onChange) {
+function apptForm({ appt = null, master_id = null, date = today(), time = "10:00", prefill = null, onSaved = null } = {}, onChange) {
   const isMaster = state.user.role === "master";
   const masters = isMaster ? [{ id: state.user.id, full_name: state.user.full_name }] : state.masters;
   const activeServices = state.services.filter((s) => s.is_active);
@@ -1353,8 +1353,8 @@ function apptForm({ appt = null, master_id = null, date = today(), time = "10:00
   const comment = h("input", { value: appt?.comment || "", placeholder: "необов'язково" });
   const slots = h("div", { class: "slot-strip" });
   const slotHead = h("span", { class: "muted" });
-  const phone = h("input", { type: "tel", inputmode: "tel", placeholder: "необов'язково" });
-  const name = h("input", { placeholder: "Ім'я клієнта", autocapitalize: "words" });
+  const phone = h("input", { type: "tel", inputmode: "tel", placeholder: "необов'язково", value: prefill?.phone || "" });
+  const name = h("input", { placeholder: "Ім'я клієнта", autocapitalize: "words", value: prefill?.name || "" });
   const svcInfo = h("span", { class: "grow" });
   const svcEdit = h("div", { class: "ap-grid ap-grid-2 hidden" }, field("Тривалість, хв", dur), field("Ціна, ₴", price));
   const svcToggle = h("button", { type: "button", class: "btn sm ghost", onclick: () => {
@@ -1430,7 +1430,8 @@ function apptForm({ appt = null, master_id = null, date = today(), time = "10:00
           if (!phone.value.trim() && !name.value.trim()) { save.disabled = false; name.focus(); return toast("Вкажіть ім'я клієнта (телефон — необов'язково)", true); }
           body.client_phone = phone.value.trim() || null; body.client_name = name.value;
         }
-        await createAppt(body, save, "Запис створено");
+        const created = await createAppt(body, save, "Запис створено");
+        if (onSaved) await onSaved(created);
       }
       closeSheet();
       onChange();
@@ -1760,10 +1761,14 @@ VIEWS.calendar = async (main) => {
     if (calls.length) {
       main.append(h("div", { class: "callout" }, icon("phone"),
         h("div", { class: "grow" }, h("b", {}, `Просять передзвонити: ${calls.length}`),
-          calls.map((c) => h("div", { class: "row", style: { padding: "5px 0" } },
-            h("span", {}, c.name || "Клієнт"), h("a", { href: "tel:" + c.phone }, h("b", {}, c.phone)),
-            h("span", { class: "muted small grow" }, dm(c.created_at), " ", hm(c.created_at)),
-            h("button", { class: "btn sm", onclick: async () => { await run(() => api.post(`/api/callbacks/${c.id}/done`), "Позначено"); reload(); } }, icon("ok", "sm"), "Передзвонили"))))));
+          calls.map((c) => h("div", { class: "cb-row" },
+            h("div", { class: "cb-who" }, h("b", {}, c.name || "Клієнт"), h("span", { class: "muted small" }, c.phone, " · ", dm(c.created_at), " ", hm(c.created_at))),
+            h("div", { class: "cb-actions" },
+              h("a", { class: "btn sm", href: "tel:" + c.phone }, icon("phone", "sm"), "Зателефонувати"),
+              h("button", { class: "btn sm primary", onclick: () => apptForm({ date: day, prefill: { name: c.name || "", phone: c.phone },
+                onSaved: () => api.post(`/api/callbacks/${c.id}/done`).catch(() => null) }, reload) }, icon("plus", "sm"), "Записати"),
+              h("button", { class: "icon-btn", title: "Без запису — прибрати заявку", "aria-label": "Без запису — прибрати заявку",
+                onclick: async () => { await run(() => api.post(`/api/callbacks/${c.id}/done`), "Заявку прибрано"); reload(); } }, icon("x", "sm"))))))));
     }
   }
   const masters = isMaster ? [{ id: state.user.id, full_name: state.user.full_name, schedule: state.user.schedule }] : state.masters;

@@ -1275,3 +1275,11 @@ tbody tr:hover td, table tr:not(:first-child):hover td { background: color-mix(i
   .grid.kpi:not(.few):not(.kpi-6) .kpi-value { font-size: var(--fs-xl); }
   .grid.kpi:not(.few):not(.kpi-6) .kpi-ico { width: 26px; height: 26px; }
 }
+.cb-row { display: flex; align-items: center; gap: 8px 12px; flex-wrap: wrap; padding: 8px 0; border-top: 1px solid color-mix(in srgb, currentColor 12%, transparent); }
+.cb-row:first-of-type { border-top: 0; }
+.cb-who { display: flex; flex-direction: column; min-width: 0; flex: 1 1 160px; }
+.cb-actions { display: flex; align-items: center; gap: 6px; margin-left: auto; }
+@media (max-width: 760px) {
+  .cb-actions { width: 100%; }
+  .cb-actions .btn { flex: 1; justify-content: center; }
+}
