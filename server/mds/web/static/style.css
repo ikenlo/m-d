@@ -1317,3 +1317,22 @@ tbody tr:hover td, table tr:not(:first-child):hover td { background: color-mix(i
 :root[data-theme="dark"] .ap-svc.on { background: var(--gold); border-color: var(--gold); color: #17120a; }
 :root[data-theme="dark"] .ap-svc.on small { color: #3b2f17; }
 .ap-form .svc-strip { animation: qb-in .2s var(--ease) both; }
+.search-btn { width: 40px; height: 40px; border: 1px solid var(--line-strong); background: var(--surface); border-radius: var(--r-md); flex: 0 0 auto; }
+.search-btn.on { background: var(--brand); border-color: var(--brand); color: #fff; }
+:root[data-theme="dark"] .search-btn.on { background: var(--gold); border-color: var(--gold); color: #17120a; }
+.search-pop { display: flex; align-items: center; gap: 6px; margin: 0 0 10px; animation: qb-in .2s var(--ease) both; }
+.search-pop.hidden { display: none; }
+.search-pop > input { flex: 1 1 auto; min-width: 0; }
+.search-pop > .icon-btn { flex: 0 0 auto; }
+.cl-chips { margin-bottom: 10px; }
+.stock-bar { align-items: center; }
+@media (max-width: 760px) {
+  .cl-search > select { width: auto !important; max-width: 60%; }
+  .cl-chips { flex-wrap: wrap; overflow: visible; margin: 0 0 10px; padding: 0; }
+  .day-sum { flex-wrap: wrap; overflow: visible; white-space: normal; row-gap: 6px; }
+  .day-sum .ds-date { flex-basis: 100%; }
+}
+.search-pop > .icon-btn svg { position: static; transform: none; pointer-events: auto; } .search-pop { position: relative; min-width: 0; }
+.search-pop input::-webkit-search-cancel-button { -webkit-appearance: none; display: none; }
+.stock-bar { flex-wrap: nowrap; }
+.stock-bar > .seg { flex: 1 1 auto; width: auto; min-width: 0; }
