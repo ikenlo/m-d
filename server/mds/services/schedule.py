@@ -47,6 +47,8 @@ def set_day(s: Session, actor: Actor, master_id: int, day: date, *, off: bool = 
         start, end = _hm(start), _hm(end)
         if start >= end:
             raise ValidationError("Початок має бути раніше кінця")
+    if not off:
+        _check_places(s, master, day, start, end)
     row = s.scalar(select(ScheduleDay).where(ScheduleDay.master_id == master_id, ScheduleDay.day == day))
     before = {"off": row.is_off, "start": row.start, "end": row.end} if row else None
     if row is None:
@@ -56,6 +58,18 @@ def set_day(s: Session, actor: Actor, master_id: int, day: date, *, off: bool = 
     s.flush()
     audit(s, actor, "schedule", master_id, "set_day", before, {"day": day, "off": off, "start": row.start, "end": row.end})
     return row
+
+
+def _check_places(s: Session, master: User, day: date, start: str, end: str) -> None:
+    others = s.scalars(select(User).where(User.role == Role.MASTER, User.is_active.is_(True), User.id != master.id))
+    busy = []
+    for m in others:
+        a, b, _ = day_span(s, m, day)
+        if a and a < end and b > start:
+            busy.append(m.full_name)
+    places = int(get_setting(s, "workplaces"))
+    if len(busy) >= places:
+        raise ValidationError(f"{day:%d.%m} уже працюють {', '.join(busy)} — робочих місць лише {places}")
 
 
 def reset_day(s: Session, actor: Actor, master_id: int, day: date) -> None:

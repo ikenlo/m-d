@@ -23,8 +23,8 @@
 | `POST /api/clients`, `PATCH /api/clients/{id}` | директор, адміністратор | Додати / змінити клієнта (із записом у журнал) |
 | `GET /api/appointments?date_from&date_to&master_id` | персонал (майстер — лише свої) | Календар |
 | `GET /api/availability?master_id&service_id&day` | персонал | Вільні слоти |
-| `GET /api/availability/detail?master_id&service_id&day` | персонал (майстер — свій) | Швидкий запис: `slots` (у графіку), `off_hours` (08:00–21:00 поза графіком), `working`, `hours`, `shift_open` |
-| `POST /api/appointments`, `PATCH /api/appointments/{id}` | персонал | Створення / перенесення / зміна. Майстер поза графіком — 409 `off_hours`, повтор із `confirm_off_hours: true` |
+| `GET /api/availability/detail?master_id&service_id&day` | персонал (майстер — свій) | Швидкий запис: `slots` (у графіку), `off_hours` (08:00–21:00 поза графіком, за правилом `off_policy`), `working`, `hours`, `shift_open`, `off_policy` |
+| `POST /api/appointments`, `PATCH /api/appointments/{id}` | персонал | Створення / перенесення / зміна. Персонал поза графіком — 409 `off_hours` (повтор із `confirm_off_hours: true`), `off_hours_forbidden` (вимкнено в налаштуваннях) або `no_place` (усі робочі місця зайняті) |
 | `POST /api/appointments/{id}/status` | персонал | `confirmed`, `in_progress`, `cancelled`, `no_show` |
 | `POST /api/appointments/{id}/close` | майстер (свої), адмін, директор | **Закрити замовлення** |
 | `GET /api/orders`, `GET /api/orders/{id}` | директор; майстер — свої | Замовлення: `missing` (`materials`, `phone`), `shift_open`, `closed_by_name`, `edited_by_name`, `edited_at`, `history` |
