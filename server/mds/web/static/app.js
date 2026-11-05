@@ -3892,6 +3892,7 @@ VIEWS.settings = async (main) => {
       h("label", { class: "row" }, takesCash, "Після зміни майстер бере заробіток з готівки в касі (решту доплачує директор)"),
       h("p", { class: "muted small" }, "Індивідуальні умови задаються в картці майстра (розділ «Персонал»). Зміни діють для нових замовлень; закриті замовлення зберігають умови на момент закриття.")),
     twofaSettingsCard(s),
+    apiKeysCard(),
     stockSettingsCard(s),
     perfCard(),
     antispamSettingsCard(s),
@@ -3929,6 +3930,44 @@ VIEWS.settings = async (main) => {
       state.settings = await run(() => api.put("/api/settings", body), "Налаштування збережено");
     } }, "Зберегти налаштування"));
 };
+
+function apiKeysCard() {
+  const list = h("div", { class: "stack" }, h("div", { class: "muted small" }, "Завантаження…"));
+  const name = h("input", { placeholder: "Назва, напр. «Google Таблиці»", maxlength: 80 });
+  const scope = select([["read", "Лише читання"], ["write", "Читання і зміни"]], "read");
+  const fmt = (iso) => (iso ? `${dm(iso)} ${hm(iso)}` : "ще не використовувався");
+  const load = async () => {
+    const keys = await api.get("/api/api-keys").catch(() => []);
+    list.replaceChildren(...(keys.length ? keys.map((k) => h("div", { class: "api-key" + (k.active ? "" : " revoked") },
+      h("div", { class: "grow" }, h("b", {}, k.name), " ", h("span", { class: "chip " + (k.scope === "write" ? "st-pending" : "st-confirmed") }, k.scope_label),
+        h("div", { class: "muted small" }, h("code", {}, k.prefix + "…"), " · створено ", dm(k.created_at), " · ",
+          k.active ? "востаннє: " + fmt(k.last_used_at) : "відкликано " + dm(k.revoked_at))),
+      k.active ? h("button", { class: "btn sm ghost", onclick: () => confirmSheet("Відкликати ключ?", `«${k.name}» одразу перестане працювати. Цю дію не скасувати.`, "Відкликати",
+        async () => { await run(() => api.post(`/api/api-keys/${k.id}/revoke`), "Ключ відкликано"); load(); }, { danger: true }) }, "Відкликати") : null))
+      : [h("div", { class: "muted small" }, "Ключів ще немає.")]));
+  };
+  const create = h("button", { class: "btn primary", onclick: async () => {
+    if (name.value.trim().length < 2) { name.focus(); return toast("Вкажіть назву ключа", true); }
+    create.disabled = true;
+    try {
+      const k = await run(() => api.post("/api/api-keys", { name: name.value.trim(), scope: scope.value }));
+      name.value = "";
+      const code = h("input", { value: k.key, readonly: true, class: "api-key-value", onfocus: (e) => e.target.select() });
+      openSheet("Новий ключ API", h("div", { class: "stack" },
+        h("div", { class: "callout" }, icon("alert"), h("div", { class: "small" }, "Скопіюйте ключ зараз — повністю його більше не буде видно. Зберігайте як пароль.")),
+        field(`${k.name} · ${k.scope_label}`, code),
+        h("button", { class: "btn primary big", onclick: async () => {
+          try { await navigator.clipboard.writeText(k.key); toast("Ключ скопійовано"); } catch (_) { code.select(); toast("Виділіть і скопіюйте ключ вручну", true); }
+        } }, icon("ok"), "Скопіювати ключ"),
+        h("p", { class: "muted small" }, "Приклад: ", h("code", {}, `curl -H "X-Api-Key: ${k.prefix}…" ${location.origin}/api/services`))));
+      load();
+    } finally { create.disabled = false; }
+  } }, icon("plus", "sm"), "Створити ключ");
+  load();
+  return h("div", { class: "card stack" }, h("h3", {}, "Ключі API для інтеграцій"),
+    h("p", { class: "muted small" }, "Для таблиць, автоматизацій і інших програм. Ключ діє від імені директора, але без доступу до користувачів, налаштувань, резервних копій і кадрових даних. «Лише читання» — тільки перегляд."),
+    list, h("div", { class: "ap-grid ap-grid-sm2" }, field("Назва", name), field("Права", scope)), create);
+}
 
 function driveBlock(d) {
   if (!d) return null;
