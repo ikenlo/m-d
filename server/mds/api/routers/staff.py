@@ -15,7 +15,6 @@ router = APIRouter(prefix="/api/users", tags=["users"])
 
 @router.get("")
 def list_users(actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
-    """Директор бачить усіх; адміністратор і майстри — лише список активних майстрів."""
     if actor.is_director:
         return [users.user_public(u) for u in s.scalars(select(User).order_by(User.role, User.full_name))]
     return [

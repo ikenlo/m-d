@@ -1,5 +1,3 @@
-"""Матриця прав доступу: майстер не бачить і не змінює чужого та не має доступу до функцій директора."""
-
 from datetime import datetime
 
 import pytest
@@ -15,7 +13,6 @@ def env(db, seed, tmp_path):
     cfg = Config(data_dir=tmp_path / "data", database_url=db.url, secret_key="test-secret-key-for-unit-tests-only-0123456789")
     d = seed["actors"]["director"]
     with db.session() as s:
-        # запис і закрите замовлення майстра Ірини (m2)
         a = bookings.create_appointment(s, d, master_id=seed["m2"], service_id=seed["haircut"],
                                         starts_at=datetime(2026, 11, 2, 10, 0), client_name="Чужий Клієнт",
                                         client_phone="0679998877")
@@ -55,7 +52,6 @@ def test_master_cannot_touch_other_master_data(env):
         if r.status_code not in (403, 404):
             bad.append((method, url, r.status_code, r.text[:120]))
     assert not bad, bad
-    # списки з чужим master_id не повертають чужих даних
     assert c.get(f"/api/appointments?date_from=2026-11-02&master_id={m2}", headers=m1).json() == []
     assert c.get(f"/api/orders?date_from=2026-11-02&master_id={m2}", headers=m1).json() == []
     for url in (f"/api/finance/my?master_id={m2}", f"/api/payouts?master_id={m2}", f"/api/shifts?master_id={m2}"):
@@ -96,6 +92,5 @@ def test_master_has_no_director_functions(env):
         if r.status_code != 403:
             bad.append((method, url, r.status_code, r.text[:120]))
     assert not bad, bad
-    # майстер бачить лише короткі дані колег (для календаря), без логінів і умов оплати
     for u in c.get("/api/users", headers=m1).json():
         assert set(u) <= {"id", "full_name", "role", "service_ids", "schedule"}

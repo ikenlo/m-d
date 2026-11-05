@@ -27,9 +27,7 @@ def _issue(cfg, u: User) -> dict:
 
 @router.post("/login")
 def login(body: LoginIn, request: Request):
-    """Пароль → токен; якщо для ролі ввімкнено двофакторний вхід і пристрій не довірений — код у Telegram."""
     cfg = request.app.state.config
-    # окрема транзакція: лічильник невдалих спроб має зберегтися навіть при відмові
     with request.app.state.db.session() as s:
         u, err = users.authenticate(s, body.username, body.password)
         if u is not None:
@@ -46,7 +44,6 @@ def login(body: LoginIn, request: Request):
 
 @router.post("/login/verify")
 def login_verify(body: VerifyIn, request: Request):
-    """Другий крок входу: код з Telegram. Спроби зберігаються навіть при невірному коді."""
     cfg = request.app.state.config
     err = None
     with request.app.state.db.session() as s:
@@ -65,7 +62,6 @@ def login_verify(body: VerifyIn, request: Request):
 
 @router.get("/devices")
 def my_devices(actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
-    """Пристрої, на яких вхід підтверджено кодом і запам'ятовано."""
     return twofa.list_devices(s, actor)
 
 
@@ -91,5 +87,4 @@ def change_password(body: ChangePasswordIn, actor: Actor = Depends(get_actor), s
 
 @router.post("/telegram-code")
 def my_telegram_code(actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
-    """Код для прив'язки Telegram: надішліть боту /link КОД."""
     return {"code": users.new_telegram_link_code(s, actor, actor.user_id)}

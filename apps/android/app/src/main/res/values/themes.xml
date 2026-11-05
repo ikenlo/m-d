@@ -1,6 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Тема без панелі заголовка; кольори M&D. Поки сторінка вантажиться — фірмовий зелений фон. -->
     <style name="AppTheme" parent="@android:style/Theme.Material.Light.NoActionBar">
         <item name="android:colorPrimary">#14392C</item>
         <item name="android:colorPrimaryDark">#14392C</item>

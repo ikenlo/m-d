@@ -1,5 +1,3 @@
-"""Оплата карткою через «Термінал» ПриватБанку (NFC) — тонкий шар над services/card_terminal.py."""
-
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends
@@ -49,7 +47,6 @@ def for_appointment(appt_id: int, actor: Actor = Depends(get_actor), s: Session 
 
 @router.post("/card-payments/{payment_id}/mock-complete")
 def mock_complete(payment_id: int, ok: bool = True, actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
-    """Лише режим «імітація»: позначити, що клієнт «оплатив» на терміналі (для перевірки без планшета)."""
     from ...errors import Forbidden
     from ...services import card_terminal_providers as tp
 

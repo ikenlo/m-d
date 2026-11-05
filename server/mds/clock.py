@@ -1,10 +1,3 @@
-"""Єдине джерело «поточного часу».
-
-Салон один і працює в одному часовому поясі, тому в БД зберігаються
-наївні (без tzinfo) дати-час у локальному часі салону.
-Тести підміняють час через `set_now`.
-"""
-
 from __future__ import annotations
 
 from datetime import datetime
@@ -26,6 +19,5 @@ def now() -> datetime:
 
 
 def set_now(value: datetime | None) -> None:
-    """Лише для тестів: зафіксувати поточний час."""
     global _fixed
     _fixed = value

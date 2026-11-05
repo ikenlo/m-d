@@ -1,6 +1,3 @@
-"""Оплата карткою через «Термінал» ПриватБанку: підпис за документацією, закриття замовлення лише після
-перевірки в банку, без дублів, відмова/скасування, права, API. Мережі немає — емулятор банку."""
-
 import json
 import urllib.parse
 from datetime import datetime
@@ -17,7 +14,6 @@ from mds.services.common import update_settings
 
 
 def test_signature_matches_bank_example():
-    # приклад з документації банку (app.privatbank.ua/nfcpos)
     data = tp.body_json({"operation": "pay", "amount": None, "purpose": "Test"}, 333)
     assert data == '{"operation":"pay","amount":3.33,"purpose":"Test"}'
     assert tp.sign("abcdef", "1624023225", data) == "896e7808ed56bde0e3966b46b30688e0715bb439"
@@ -77,11 +73,11 @@ def test_pay_closes_order_only_after_bank_confirms(db, seed, term):
     m1 = seed["actors"]["m1"]
     with db.session() as s:
         p = card_terminal.start_payment(s, m1, aid, amount=50000, client_name="Оля Коваль")
-        again = card_terminal.start_payment(s, m1, aid, amount=50000)  # подвійне натискання
+        again = card_terminal.start_payment(s, m1, aid, amount=50000)
     assert p["status"] == "pending" and p["deeplink"].startswith("nfcterminal://executor?token=MOCK-JWT-1")
     assert again["id"] == p["id"] and len(f.ops) == 1
     with db.session() as s:
-        r = card_terminal.check_payment(s, m1, p["id"])  # клієнт ще не оплатив
+        r = card_terminal.check_payment(s, m1, p["id"])
         assert r["status"] == "pending" and s.scalar(select(func.count(Order.id))) == 0
     f.complete("MOCK-JWT-1")
     with db.session() as s:
@@ -92,7 +88,6 @@ def test_pay_closes_order_only_after_bank_confirms(db, seed, term):
         assert (o.amount, o.payment_method, o.appointment_id) == (50000, "card", aid)
         assert o.client.name == "Оля Коваль" and o.amount == o.master_earning + o.materials_cost + o.salon_earning
         assert s.get(Appointment, aid).status == ApptStatus.COMPLETED
-        # повторна перевірка й повторний старт — без дублів
         assert card_terminal.check_payment(s, m1, p["id"])["order_id"] == o.id
         with pytest.raises(Conflict):
             card_terminal.start_payment(s, m1, aid, amount=50000)
@@ -121,7 +116,7 @@ def test_cancel_checks_bank_first_and_bank_unavailable(db, seed, term):
     f.fail_next = "unavailable"
     with db.session() as s, pytest.raises(Conflict):
         card_terminal.check_payment(s, d, p["id"])
-    f.complete("MOCK-JWT-1")  # клієнт таки оплатив — скасування має це виявити, а не загубити гроші
+    f.complete("MOCK-JWT-1")
     with db.session() as s:
         r = card_terminal.cancel_payment(s, d, p["id"])
     assert r["status"] == "paid" and r["order_id"]

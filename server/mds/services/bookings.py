@@ -1,12 +1,3 @@
-"""Календар записів: вільні слоти, створення, перенесення, скасування.
-
-Захист від подвійних записів: перед перевіркою перетинів виконується
-`UPDATE users SET booking_lock = booking_lock + 1 WHERE id = :master`.
-Це бере блокування запису (рядок у PostgreSQL, БД у SQLite) до кінця
-транзакції, тож дві паралельні спроби записатися до одного майстра
-виконуються послідовно і друга побачить першу.
-"""
-
 from __future__ import annotations
 
 from datetime import date, datetime, time, timedelta
@@ -55,15 +46,12 @@ def _snapshot(a: Appointment) -> dict:
     }
 
 
-# ------------------------------------------------------------------ графік
-
 def _parse_hm(v: str) -> time:
     h, m = v.split(":")
     return time(int(h), int(m))
 
 
 def working_hours(s: Session, master: User, day: date) -> tuple[datetime, datetime] | None:
-    """Робочі години майстра на дату: зміна на дату → шаблон майстра → графік салону."""
     from .schedule import day_span
 
     start, end, _ = day_span(s, master, day)
@@ -93,7 +81,6 @@ def _lock_master(s: Session, master_id: int) -> None:
 def free_slots(
     s: Session, master_id: int, service_id: int, day: date, *, for_client: bool = False, duration_min: int | None = None
 ) -> list[datetime]:
-    """Вільні часи початку для послуги в майстра на дату."""
     master: User = get_or_404(s, User, master_id, "Майстра")
     service: Service = get_or_404(s, Service, service_id, "Послугу")
     hours = working_hours(s, master, day)
@@ -123,8 +110,6 @@ def free_slots(
         t += step
     return out
 
-
-# ---------------------------------------------------------------- операції
 
 def _check_access(actor: Actor, master_id: int) -> None:
     if actor.is_staff_manager:
@@ -173,8 +158,8 @@ def create_appointment(
     service: Service = get_or_404(s, Service, service_id, "Послугу")
     if not service.is_active:
         raise ValidationError("Послуга недоступна")
-    from_bot = actor.role == "client"  # клієнт сам: Telegram-бот або сайт
-    source = "site" if actor.name == "site" else ("telegram" if from_bot else "staff")
+    from_bot = actor.role == "client"
+    source = "telegram" if from_bot else "staff"
     if from_bot and starts_at < clock.now():
         raise ValidationError("Не можна записатися на минулий час")
 
@@ -183,7 +168,6 @@ def create_appointment(
     else:
         if not client_phone and from_bot:
             raise ValidationError("Вкажіть телефон клієнта")
-        # персонал: швидкий запис без номера — достатньо імені (новий клієнт без телефону)
         client = get_or_create_client(
             s, actor, client_name or "", client_phone, telegram_user_id=actor.telegram_user_id
         )
@@ -200,7 +184,6 @@ def create_appointment(
 
     if status is None:
         if from_bot:
-            # сайт і клієнти з частими неявками — лише з підтвердженням адміністратора
             auto = get_setting(s, "telegram_auto_confirm") and source == "telegram" and not antispam.needs_confirmation(s, client)
             status = ApptStatus.CONFIRMED if auto else ApptStatus.PENDING
         else:
@@ -284,7 +267,7 @@ def reschedule(
     old_master = a.master
     a.master = new_master
     if new_start != a.starts_at:
-        a.reminded_day = a.reminded_2h = False  # новий час — нагадування надішлемо заново
+        a.reminded_day = a.reminded_2h = False
     a.starts_at, a.ends_at = new_start, new_end
     if price is not None:
         if price < 0:
@@ -293,7 +276,7 @@ def reschedule(
     if comment is not None:
         a.comment = comment
     if from_bot:
-        a.awaiting_client = False  # клієнт сам обрав час
+        a.awaiting_client = False
     if from_bot and a.status == ApptStatus.CONFIRMED and time_changed:
         a.status = ApptStatus.CONFIRMED if get_setting(s, "telegram_auto_confirm") else ApptStatus.PENDING
     s.flush()
@@ -313,7 +296,6 @@ def reschedule(
 def set_status(
     s: Session, actor: Actor, appt_id: int, status: str, reason: str | None = None, *, notify_client: bool = True
 ) -> Appointment:
-    """Підтвердити / прийняти клієнта / скасувати / не прийшов."""
     a = get_appointment(s, actor, appt_id)
     allowed = {
         ApptStatus.CONFIRMED: (ApptStatus.PENDING,),
@@ -402,7 +384,6 @@ def upcoming_for_telegram(s: Session, tg_user_id: int) -> list[Appointment]:
 
 
 def free_slots_any(s: Session, service_id: int, day: date, *, for_client: bool = False) -> dict[datetime, list[int]]:
-    """Вільні слоти для «будь-якого майстра»: час -> список вільних майстрів."""
     from .users import masters_for_service
 
     out: dict[datetime, list[int]] = {}
@@ -415,8 +396,6 @@ def free_slots_any(s: Session, service_id: int, day: date, *, for_client: bool =
 def free_windows(
     s: Session, master_id: int, day: date, *, for_client: bool = True, min_minutes: int = 30
 ) -> list[tuple[datetime, datetime]]:
-    """Вільні проміжки майстра на дату (графік мінус записи), не коротші за min_minutes.
-    Для клієнта — лише з урахуванням мінімального часу до запису."""
     master: User = get_or_404(s, User, master_id, "Майстра")
     hours = working_hours(s, master, day)
     if hours is None or not master.is_active:
@@ -425,7 +404,6 @@ def free_windows(
     earliest = clock.now()
     if for_client:
         earliest += timedelta(minutes=int(get_setting(s, "booking_min_lead_min")))
-    # якщо день уже почався — відлік від найближчого кроку слотів після «зараз»
     cur = max(start, _ceil_to_step(earliest, int(get_setting(s, "slot_step_min")))) if earliest > start else start
     busy = sorted(
         s.scalars(
@@ -457,11 +435,7 @@ def _ceil_to_step(t: datetime, step_min: int) -> datetime:
     return base + timedelta(minutes=mins)
 
 
-
-# ------------------------------------------------- непідтверджені записи
-
 def pending_list(s: Session, actor: Actor) -> list[Appointment]:
-    """Майбутні записи, що чекають підтвердження (майстер — лише свої)."""
     q = select(Appointment).where(
         Appointment.status == ApptStatus.PENDING,
         Appointment.starts_at >= datetime.combine(clock.now().date(), time.min),
@@ -476,9 +450,6 @@ def pending_list(s: Session, actor: Actor) -> list[Appointment]:
 def suggest_slots(
     s: Session, master_id: int, service_id: int, limit: int = 6, exclude: tuple[datetime, datetime] | None = None
 ) -> list[datetime]:
-    """Найближчі вільні часи для клієнта (для відповіді «цей час зайнятий»).
-    На день — до 2 варіантів, рознесених щонайменше на 3 години; exclude — проміжок,
-    який майстер позначив зайнятим (його не пропонуємо)."""
     out: list[datetime] = []
     today = clock.now().date()
     for i in range(int(get_setting(s, "booking_horizon_days"))):
@@ -501,8 +472,6 @@ def _when(t: datetime) -> str:
 
 
 def decline_busy(s: Session, actor: Actor, appt_id: int) -> dict:
-    """«Цей час зайнятий»: скасувати непідтверджений запис і запропонувати клієнту
-    найближчі вільні години кнопками в боті."""
     actor.require(Role.DIRECTOR, Role.ADMIN, Role.MASTER)
     a = get_appointment(s, actor, appt_id)
     if a.status != ApptStatus.PENDING:
@@ -518,8 +487,6 @@ def decline_busy(s: Session, actor: Actor, appt_id: int) -> dict:
 
 
 def propose_time(s: Session, actor: Actor, appt_id: int, starts_at: datetime) -> tuple[Appointment, bool]:
-    """Майстер пропонує інший час: запис переноситься (час тримається за клієнтом),
-    клієнт отримує в боті кнопки «Підходить / Інший час / Скасувати»."""
     actor.require(Role.DIRECTOR, Role.ADMIN, Role.MASTER)
     a = get_appointment(s, actor, appt_id)
     if a.status != ApptStatus.PENDING:
@@ -536,7 +503,6 @@ def propose_time(s: Session, actor: Actor, appt_id: int, starts_at: datetime) ->
 
 
 def client_accept(s: Session, actor: Actor, appt_id: int) -> Appointment:
-    """Клієнт у боті погодився на запропонований майстром час."""
     if actor.role != "client":
         raise Forbidden("Лише для клієнта")
     a = get_appointment(s, actor, appt_id)
@@ -551,13 +517,11 @@ def client_accept(s: Session, actor: Actor, appt_id: int) -> Appointment:
 
 
 def client_rebook(s: Session, actor: Actor, old_appt_id: int, starts_at: datetime) -> Appointment:
-    """Клієнт обрав один із запропонованих часів після відповіді «зайнято»."""
     if actor.role != "client":
         raise Forbidden("Лише для клієнта")
-    old = get_appointment(s, actor, old_appt_id)  # перевіряє, що запис цього клієнта
+    old = get_appointment(s, actor, old_appt_id)
     if old.status != ApptStatus.CANCELLED:
         raise Conflict("Ця пропозиція вже неактуальна")
-    # захист від подвійного натискання / вибору кількох запропонованих часів
     dup = s.scalar(select(Appointment.id).where(
         Appointment.client_id == old.client_id, Appointment.master_id == old.master_id,
         Appointment.service_id == old.service_id, Appointment.starts_at >= clock.now(),
@@ -569,11 +533,7 @@ def client_rebook(s: Session, actor: Actor, old_appt_id: int, starts_at: datetim
                               starts_at=starts_at, client_id=old.client_id)
 
 
-# ------------------------------------------------------ улюблений майстер
-
 def favorite_master(s: Session, client_id: int, service_id: int | None = None) -> tuple[User, int] | None:
-    """Майстер, до якого клієнт приходив найчастіше (щонайменше N разів — налаштування
-    «favorite_master_visits», за замовч. 3). Якщо задано послугу — лише майстер, що її виконує."""
     from sqlalchemy import func
 
     from .users import masters_for_service
@@ -595,13 +555,8 @@ def favorite_master(s: Session, client_id: int, service_id: int | None = None) -
     return None
 
 
-# ------------------------------------------------------ запізнення: зсунути записи майстра
-
 def shift_appointments(s: Session, actor: Actor, *, master_id: int, minutes: int, from_appt_id: int | None = None,
                        notify_clients: bool = True) -> dict:
-    """Майстер запізнюється / сеанс затягнувся: усі наступні сьогоднішні записи майстра (від обраного або
-    найближчого, що ще не почався) зсуваються на `minutes` хв. Клієнтам із Telegram — повідомлення в бот;
-    іншим — список для SMS/Viber (надсилає роутер) або дзвінка. Межу робочого дня не перевіряємо — це рішення персоналу."""
     _check_access(actor, master_id)
     if not (5 <= int(minutes) <= 180):
         raise ValidationError("Зсув — від 5 до 180 хвилин")
@@ -622,7 +577,7 @@ def shift_appointments(s: Session, actor: Actor, *, master_id: int, minutes: int
     if not items:
         raise ValidationError("Немає наступних записів, які можна зсунути")
     shifted, sms, no_contact, telegram = [], [], [], 0
-    for a in reversed(items):  # з кінця — щоб жоден запис не «наїхав» на ще не зсунутий
+    for a in reversed(items):
         before = _snapshot(a)
         a.starts_at += delta
         a.ends_at += delta
@@ -651,7 +606,6 @@ def shift_appointments(s: Session, actor: Actor, *, master_id: int, minutes: int
 
 
 def unclosed(s: Session, actor: Actor, master_id: int | None = None) -> list[Appointment]:
-    """Записи, час яких минув, а замовлення не закрито (за останні 7 днів). Майстер — лише свої."""
     if actor.is_master:
         master_id = actor.user_id
     elif not actor.is_staff_manager:

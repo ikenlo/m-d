@@ -1,6 +1,3 @@
-// UI-регресія: обходить усі сторінки директора й майстра (телефон / комп'ютер, світла / темна тема)
-// і перевіряє, що нічого не зламалося. Знімки — у ui-tests/out (артефакт CI).
-// Запуск: node ui-tests/smoke.js [http://localhost:8770]
 const fs = require("fs");
 const path = require("path");
 const { chromium } = require("playwright");
@@ -31,7 +28,7 @@ async function login(page, user, pass) {
   for (const [user, pass] of USERS) {
     for (const mode of MODES) {
       const ctx = await browser.newContext({ viewport: mode.viewport, timezoneId: "Europe/Kyiv", locale: "uk-UA" });
-      await ctx.addInitScript((t) => { try { localStorage.setItem("mds_theme", t); } catch (_) { /* */ } }, mode.theme);
+      await ctx.addInitScript((t) => { try { localStorage.setItem("mds_theme", t); } catch (_) {  } }, mode.theme);
       const page = await ctx.newPage();
       let where = `${user}/${mode.name}`;
       page.on("pageerror", (e) => fail(where, "помилка JS: " + e.message));
@@ -53,7 +50,6 @@ async function login(page, user, pass) {
           const out = { hscroll: document.documentElement.scrollWidth > W + 1 ? document.documentElement.scrollWidth : 0 };
           const plus = document.querySelector(".tab-plus span");
           if (plus && plus.offsetParent) { const b = plus.getBoundingClientRect(); out.plusOff = Math.round(b.left + b.width / 2 - W / 2); }
-          // текст помилки замість сторінки (emptyState з «alert»)
           const err = document.querySelector(".main > .empty");
           out.errorState = err && /помилк|error|не вдалося/i.test(err.textContent) ? err.textContent.trim().slice(0, 80) : "";
           return out;

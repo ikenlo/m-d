@@ -1,5 +1,3 @@
-"""SMS-розсилки (директор): баланс/витрати, історія, розсилки, аналіз бази."""
-
 from __future__ import annotations
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Request
@@ -58,7 +56,6 @@ class TestIn(BaseModel):
 @router.post("/test")
 def test_sms(body: TestIn, background: BackgroundTasks, request: Request, actor: Actor = Depends(get_actor),
              s: Session = Depends(get_session)):
-    """Тестове повідомлення (директор) — перевірити підключення TurboSMS."""
     actor.require(Role.DIRECTOR)
     m = sms_center.enqueue(s, phone=catalog.normalize_phone(body.phone), text=body.text, kind="service", reason="test")
     s.flush()

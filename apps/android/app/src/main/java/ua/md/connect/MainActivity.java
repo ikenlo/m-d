@@ -21,18 +21,6 @@ import android.webkit.WebViewClient;
 
 import org.json.JSONObject;
 
-/**
- * MDS Connect для Android: один екран з веб-панеллю салону.
- *
- * - Сторінки нашого сервера відкриваються всередині застосунку; усе інше (телефон, Telegram,
- *   карти, вхід у Google) — у відповідному застосунку чи браузері.
- * - Вхід зберігається між запусками (localStorage WebView).
- * - Без інтернету — екран «Немає з'єднання» з кнопкою «Спробувати ще».
- * - Вибір файлу (знімок екрана в баг-репорті) працює через системний вибір файлів.
- * - Оплата карткою: панель викликає MDSAndroid.startTerminal(deeplink) → відкривається «Термінал» ПриватБанку
- *   (NFC), після оплати результат повертається в панель (window.mdsTerminalResult). Фінальний статус сервер
- *   завжди перевіряє сам у банку — відповідь застосунку лише сигнал «перевір».
- */
 public class MainActivity extends Activity {
     private static final int FILE_REQUEST = 1001;
     private static final int TERMINAL_REQUEST = 1002;
@@ -107,7 +95,6 @@ public class MainActivity extends Activity {
 
         web.addJavascriptInterface(new TerminalBridge(), "MDSAndroid");
 
-        // файли для завантаження (напр. звіти) — відкриваємо в браузері
         web.setDownloadListener((url, ua, cd, mime, len) -> openExternal(Uri.parse(url)));
 
         if (savedInstanceState != null) {
@@ -123,7 +110,6 @@ public class MainActivity extends Activity {
 
     private void openExternal(Uri u) {
         String scheme = u.getScheme() == null ? "" : u.getScheme().toLowerCase();
-        // лише безпечні схеми: веб, телефон, пошта, Telegram, карти
         if (!(scheme.equals("https") || scheme.equals("http") || scheme.equals("tel") || scheme.equals("mailto")
                 || scheme.equals("tg") || scheme.equals("geo") || scheme.equals("intent"))) {
             return;
@@ -136,7 +122,6 @@ public class MainActivity extends Activity {
             i.setSelector(null);
             startActivity(i);
         } catch (Exception ignored) {
-            // немає застосунку для такого посилання — нічого не робимо
         }
     }
 
@@ -152,14 +137,12 @@ public class MainActivity extends Activity {
                 + "font-weight:600;text-decoration:none}</style></head><body><div class='b'><div class='m'>M&amp;D</div>"
                 + "<h1>Немає з'єднання</h1><p>Перевірте інтернет і спробуйте ще раз.</p>"
                 + "<a href='" + BuildConfig.APP_URL + "'>Спробувати ще</a></div>"
-                // автоповтор: щойно з'єднання повернеться, панель відкриється сама
                 + "<script>setTimeout(function(){location.href='" + BuildConfig.APP_URL + "'},8000);"
                 + "window.addEventListener('online',function(){location.href='" + BuildConfig.APP_URL + "'});</script>"
                 + "</body></html>";
         view.loadDataWithBaseURL(null, html, "text/html", "utf-8", null);
     }
 
-    /** Міст для веб-панелі: лише запуск «Термінала» за deeplink від нашого сервера. */
     private class TerminalBridge {
         @JavascriptInterface
         public boolean available() {
@@ -170,7 +153,6 @@ public class MainActivity extends Activity {
         public void startTerminal(final String url) {
             runOnUiThread(() -> {
                 Uri u = Uri.parse(url == null ? "" : url);
-                // приймаємо лише deeplink «Термінала» ПриватБанку
                 if (!"nfcterminal".equals(u.getScheme()) || !"executor".equals(u.getHost())) {
                     deliverTerminalResult("{\"result\":false,\"error\":\"bad_link\"}");
                     return;

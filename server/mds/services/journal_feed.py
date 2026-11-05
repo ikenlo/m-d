@@ -1,10 +1,3 @@
-"""Стрічка подій для директора: журнал змін (audit_log) простими словами.
-
-Кожен запис журналу перетворюється на подію: хто, що зробив, з ким/чим, сума,
-а для змін — список «було → стало» з людськими назвами полів. Самі журнали
-(audit_log, ledger) не змінюються — це лише читання й форматування.
-"""
-
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta
@@ -95,7 +88,7 @@ def _dt(v: Any) -> datetime | None:
 def _when(v: Any) -> str:
     if isinstance(v, date) and not isinstance(v, datetime):
         return v.strftime("%d.%m.%Y")
-    if isinstance(v, str) and len(v) == 10:  # лише дата (графік, витрати)
+    if isinstance(v, str) and len(v) == 10:
         try:
             return date.fromisoformat(v).strftime("%d.%m.%Y")
         except ValueError:
@@ -111,7 +104,6 @@ def _when(v: Any) -> str:
 
 
 class _Names:
-    """Кеш імен для підстановки в тексти."""
 
     def __init__(self, s: Session):
         self.s = s
@@ -126,12 +118,11 @@ class _Names:
         return self._c[key]
 
     def prefetch(self, rows: list) -> None:
-        """Пакетне завантаження всього, на що посилаються записи журналу, — кілька запитів замість сотень."""
         def put(model, objs):
             for o in objs:
                 self._c[(model, o.id)] = o
 
-        for model in (User, Service, Material):  # невеликі довідники — цілком
+        for model in (User, Service, Material):
             put(model, self.s.scalars(select(model)))
         ids = {"appointment": set(), "order": set(), "client": set()}
         for a in rows:
@@ -145,7 +136,7 @@ class _Names:
         if client_ids:
             put(Client, self.s.scalars(select(Client).where(Client.id.in_(client_ids))))
         for model, wanted in ((Appointment, ids["appointment"]), (Order, ids["order"]), (Client, client_ids)):
-            for i in wanted:  # видалені — щоб не шукати їх повторно
+            for i in wanted:
                 self._c.setdefault((model, i), None)
 
     def user(self, id_) -> str:
@@ -230,7 +221,6 @@ def _appt_line(n: _Names, appt_id: int, snap: dict | None) -> str:
 
 
 def describe(n: _Names, a: AuditLog) -> dict:
-    """Одна подія журналу → {title, text, amount, icon, category, changes}."""
     e, act, b, af = a.entity, a.action, a.before or {}, a.after or {}
     title, text, amount, icon = None, "", None, "history"
     changes: list[dict] = []

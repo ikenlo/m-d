@@ -1,5 +1,3 @@
-"""Застосування міграцій Alembic з коду (для CLI та тестів)."""
-
 from __future__ import annotations
 
 from pathlib import Path

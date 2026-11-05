@@ -29,7 +29,7 @@
 | Каса після зміни, улюблений майстер, ім'я клієнта при закритті, баг-репорт | ✅ |
 | Застосунки Android (.apk) і Windows (.exe) — [docs/APPS.md](docs/APPS.md) | ✅ (0.1.0, перед відкриттям — ключ підпису) |
 
-Повний опис стану проєкту — [docs/PROJECT_STATE.md](docs/PROJECT_STATE.md). Історія версій — [CHANGELOG.md](CHANGELOG.md), звіт аудиту версії 0.1 — [docs/AUDIT_v0.1.md](docs/AUDIT_v0.1.md).
+Архітектура — [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Історія версій — [CHANGELOG.md](CHANGELOG.md).
 
 ## Швидкий старт
 

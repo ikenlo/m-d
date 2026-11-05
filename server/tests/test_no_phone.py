@@ -1,5 +1,3 @@
-"""Швидкий запис без телефону (персонал) і прибирання клієнтів без номера."""
-
 from datetime import datetime
 
 import pytest
@@ -20,10 +18,10 @@ def test_staff_can_book_without_phone_client_cannot(db, seed):
         assert a.client.phone is None and a.client.name == "Перехожий"
         b = bookings.create_appointment(s, adm, master_id=seed["m1"], service_id=seed["haircut"],
                                         starts_at=datetime(2026, 11, 2, 11), client_name="Перехожий")
-        assert b.client_id != a.client_id  # без номера — окремі клієнти
+        assert b.client_id != a.client_id
         with pytest.raises(ValidationError):
             bookings.create_appointment(s, adm, master_id=seed["m1"], service_id=seed["haircut"], starts_at=datetime(2026, 11, 2, 12))
-        with pytest.raises(ValidationError):  # клієнт у боті — лише з номером
+        with pytest.raises(ValidationError):
             bookings.create_appointment(s, Actor.telegram(5), master_id=seed["m1"], service_id=seed["haircut"],
                                         starts_at=datetime(2026, 11, 2, 13), client_name="Х")
     clock.set_now(None)
@@ -55,7 +53,6 @@ def test_purge_clients_without_phone_keeps_history_and_future(db, seed):
         assert s.get(Order, oid).client_id == holder.id and s.get(Appointment, ids[0]).client_id == holder.id
         assert s.get(Client, ids[1]) is not None and s.get(Client, ids[2]) is None
         assert s.query(Client).filter(Client.phone.isnot(None)).count() == 1
-        # повторно — нічого (картка «Клієнти без номера» не чіпається)
         assert catalog.purge_clients_without_phone(s, d) == {"deleted": 0, "merged": 0, "kept_future": 1}
     clock.set_now(None)
 
@@ -75,12 +72,12 @@ def test_coloring_without_materials_flagged_and_master_adds_materials(db, seed):
         aid, dye_id = a.id, dye.id
     clock.set_now(datetime(2026, 11, 2, 10, 5))
     with db.session() as s:
-        o = orders.close_order(s, m1, aid, amount=150000, payment_method="cash")  # забули матеріали
+        o = orders.close_order(s, m1, aid, amount=150000, payment_method="cash")
         assert order_public(o)["needs_materials"] is True
         assert [x.id for x in needing_materials(s, m1)] == [o.id] and needing_materials(s, m2) == []
-        with pytest.raises(Forbidden):  # чуже замовлення
+        with pytest.raises(Forbidden):
             orders.correct_order(s, m2, o.id, {"materials": [{"material_id": dye_id, "qty": 60}]}, "")
-        with pytest.raises(Forbidden):  # майстер не змінює суму
+        with pytest.raises(Forbidden):
             orders.correct_order(s, m1, o.id, {"amount": 1}, "x")
         orders.correct_order(s, m1, o.id, {"materials": [{"material_id": dye_id, "qty": 60}]}, "")
         assert order_public(o)["needs_materials"] is False and o.materials_cost == 30000

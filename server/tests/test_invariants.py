@@ -1,10 +1,3 @@
-"""Фінансові інваріанти на випадкових даних (фіксоване зерно — відтворювано).
-
-Перевіряє: amount == master + materials + salon для кожного замовлення; журнал (ledger)
-після сторно/виправлень дає ті самі суми, що й замовлення; дашборд і баланс майстрів
-узгоджені з замовленнями та виплатами.
-"""
-
 import random
 from datetime import date, datetime, timedelta
 
@@ -46,12 +39,11 @@ def test_ledger_orders_dashboard_consistent(db, seed):
             o = orders.close_order(s, seed["actors"][master], a.id, amount=rnd.randint(1, 3000) * 100,
                                    payment_method=rnd.choice(["cash", "card"]), materials=mats)
             order_ids.append(o.id)
-        if i % 8 == 7:  # кінець дня — закриваємо зміни
+        if i % 8 == 7:
             with db.session() as s:
                 for m in ("m1", "m2"):
                     if orders.current_shift(s, seed[m]):
                         orders.close_shift(s, seed["actors"][m], seed[m])
-    # виправлення частини замовлень директором
     with db.session() as s:
         for oid in rnd.sample(order_ids, 10):
             orders.correct_order(s, d, oid, {"amount": rnd.randint(1, 4000) * 100,

@@ -1,14 +1,3 @@
-"""Очищення робочих даних перед стартом салону (лише за рішенням директора).
-
-Видаляє: записи, замовлення, клієнтів, графік, зміни, виплати, утримання, витрати й документи, склад,
-лічильники й генератор, податки й зарплату, кадрові дані, оплати карткою, журнали, сповіщення, заявки,
-а також демо-акаунти (`demo_*`).
-Лишає: акаунти співробітників, послуги (прайс) і налаштування.
-
-Запуск: `python -m mds wipe-data --yes` або змінна сервера `MDS_WIPE_DATA=<мітка>` (виконується один раз
-для кожної нової мітки; мітка зберігається в налаштуваннях). Перед очищенням — резервна копія бази.
-"""
-
 from __future__ import annotations
 
 from sqlalchemy import delete, func, select
@@ -17,7 +6,6 @@ from . import models as m
 from .db import Database
 from .demo_fop1 import DEMO_PREFIX
 
-# порядок: спершу залежні таблиці, потім ті, на які вони посилаються
 _TABLES = [
     m.ExpenseFile, m.CardPayment, m.StockMove, m.OrderMaterial, m.LedgerEntry, m.Notification, m.CallbackRequest,
     m.PayrollPayment, m.PayrollAccrual, m.TaxPayment, m.TaxAccrual, m.TaxRate, m.EmployeeProfile,
@@ -29,7 +17,6 @@ WIPE_MARK_KEY = "data_wipe_mark"
 
 
 def wipe_data(db: Database, mark: str | None = None) -> dict:
-    """Видалити робочі дані. Повертає кількість видалених рядків по таблицях."""
     st: dict[str, int] = {}
     with db.session() as s:
         demo = list(s.scalars(select(m.User.id).where(m.User.username.like(DEMO_PREFIX + "%"))))

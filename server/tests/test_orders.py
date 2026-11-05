@@ -30,7 +30,7 @@ def test_close_order_default_split_and_ledger(db, seed):
             materials=[{"material_id": seed["gel"], "qty": 2}], idempotency_key="k1",
         )
         assert o.materials_cost == 6000
-        assert o.master_earning == 35000  # 50% від 700 грн
+        assert o.master_earning == 35000
         assert o.salon_earning == 70000 - 35000 - 6000
         assert o.shift.status == ShiftStatus.OPEN
     with db.session() as s:
@@ -46,7 +46,6 @@ def test_individual_share_and_materials_mode(db, seed):
         a = mk(s, seed, master="m2")
         o = orders.close_order(s, d, a.id, amount=100000, payment_method="cash",
                                materials=[{"name": "Фольга", "qty": 1, "unit_cost": 2000}])
-        # 40% від 1000 грн - 20 грн матеріалів
         assert o.master_earning == 38000
         assert o.salon_earning == 60000
         assert o.share_bp == 4000 and o.materials_mode == "master"
@@ -58,7 +57,6 @@ def test_double_close_is_prevented(db, seed):
         a = mk(s, seed)
         o1 = orders.close_order(s, m1, a.id, amount=60000, payment_method="cash", idempotency_key="abc")
     with db.session() as s:
-        # повтор того самого запиту — повертає те саме замовлення
         o2 = orders.close_order(s, m1, a.id, amount=60000, payment_method="cash", idempotency_key="abc")
         assert o2.id == o1.id
     with db.session() as s, pytest.raises(Conflict):
@@ -83,12 +81,10 @@ def test_cannot_close_cancelled_or_foreign(db, seed):
     with db.session() as s, pytest.raises(ValidationError):
         orders.close_order(s, adm, a.id, amount=1, payment_method="bitcoin")
     with db.session() as s:
-        # невдала спроба не змінила статус
         assert s.get(Appointment, a.id).status == ApptStatus.CONFIRMED
 
 
 def _director_pays_all(db):
-    """Режим «усю зарплату виплачує директор» (майстер не бере з каси)."""
     from mds.services.common import Actor, set_setting
     with db.session() as s:
         set_setting(s, Actor.system(), "master_takes_cash", False)
@@ -117,7 +113,7 @@ def test_shift_close_report_and_payout(db, seed):
         assert r["by_payment"] == {"cash": 60000, "card": 50000}
         shift_id = sh.id
     with db.session() as s, pytest.raises(Conflict):
-        orders.close_shift(s, m1, seed["m1"])  # немає відкритої зміни
+        orders.close_shift(s, m1, seed["m1"])
     with db.session() as s, pytest.raises(Forbidden):
         orders.confirm_payout(s, m1, master_id=seed["m1"], amount=55000, shift_id=shift_id)
     with db.session() as s:
@@ -148,7 +144,6 @@ def test_director_correction_reverses_and_updates_balance(db, seed):
         assert kinds == ["order_closed", "order_reversal", "order_corrected"]
         net = sum(e.amount for e in s.query(LedgerEntry).filter_by(ref_type="order"))
         assert net == 80000
-        # виплачено 300, нараховано тепер 400 -> борг 100 грн
         assert orders.master_balance(s, seed["m1"])["balance"] == 10000
 
 
@@ -190,7 +185,6 @@ def test_dashboard(db, seed):
         bs = {r["service_name"]: r for r in analytics.by_service(s, d, f, t)}
         assert bs["Манікюр"]["revenue"] == 60000 and bs["Стрижка"]["orders_count"] == 1
         assert analytics.by_day(s, d, f, t)[0]["revenue"] == 110000
-        # майстер бачить лише свій заробіток
         my = analytics.my_earnings(s, m1, master_id=seed["m2"])
         assert my["day"]["earning"] == 30000 and my["month"]["orders_count"] == 1
         with pytest.raises(Forbidden):
@@ -227,8 +221,6 @@ def test_login_lockout(db, seed):
 
 
 def test_master_takes_earning_from_till_rest_paid_by_director(db, seed):
-    """12 стрижок по 500 грн: 7 готівкою, 5 карткою. Заробіток 50% = 3000 грн.
-    Готівки 3500 → майстер бере 3000 з каси, 500 лишає; директору доплачувати 0."""
     m1 = seed["actors"]["m1"]
     with db.session() as s:
         for i in range(12):
@@ -249,7 +241,6 @@ def test_master_takes_earning_from_till_rest_paid_by_director(db, seed):
 
 
 def test_not_enough_cash_director_pays_difference(db, seed):
-    """Клієнти платили переважно карткою: готівки 500, заробіток 1500 → з каси 500, у касі 0, директор доплачує 1000."""
     m1, d = seed["actors"]["m1"], seed["actors"]["director"]
     with db.session() as s:
         for i, method in enumerate(["cash", "card", "transfer", "card", "card", "card"]):

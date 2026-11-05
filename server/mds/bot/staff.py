@@ -1,12 +1,3 @@
-"""Розділ «Для майстрів» у Telegram-боті.
-
-Вхід у два кроки: спільний код персоналу (налаштування `bot_staff_code`, за замовч. 0000)
-→ вибір себе зі списку → особистий PIN. Після 5 невдалих спроб чат блокується на 15 хв.
-Повідомлення з кодом і PIN бот видаляє з чату.
-
-Уся логіка й перевірка прав — у сервісах (mds.services); тут лише діалог.
-"""
-
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -36,7 +27,6 @@ DAYS_AHEAD = 14
 
 @dataclass
 class StaffSessions:
-    """Сесії персоналу в боті (у пам'яті процесу бота; після перезапуску — вхід заново)."""
 
     sessions: dict[int, tuple[int, datetime]] = field(default_factory=dict)
     code_ok: dict[int, datetime] = field(default_factory=dict)
@@ -98,10 +88,9 @@ EXPIRED = "Сесія завершилась. Натисніть «👩‍🎨 �
 
 
 async def _delete(message: Message) -> None:
-    """Прибрати з чату повідомлення з кодом/PIN."""
     try:
         await message.delete()
-    except Exception:  # noqa: BLE001 — немає прав або повідомлення застаріле
+    except Exception:  # noqa: BLE001
         pass
 
 
@@ -117,7 +106,6 @@ def _parse_amount(text: str) -> int | None:
 
 
 def _cash_text(r: dict) -> str:
-    """Заробіток майстра і як він його отримає (з каси / на карту), потім — каса."""
     c = r.get("cash")
     if not c:
         return f"До виплати: <b>{fmt(r['payout_due'])}</b>"
@@ -134,7 +122,6 @@ def _cash_text(r: dict) -> str:
 def build_staff_router() -> Router:
     router = Router(name="mds-staff")
 
-    # ------------------------------------------------------------- вхід
 
     async def show_menu(target: Message, user: User, edit: bool = False) -> None:
         is_dir = user.role == Role.DIRECTOR
@@ -232,7 +219,6 @@ def build_staff_router() -> Router:
         await cb.message.edit_text("🚪 Ви вийшли. Щоб увійти знову — «👩‍🎨 Для майстрів».")
         await cb.answer()
 
-    # Кожна дія персоналу перевіряє сесію і бере актуального користувача з БД.
     def current(s, staff: StaffSessions, chat_id: int) -> User | None:
         uid = staff.user_id(chat_id)
         if not uid:
@@ -254,7 +240,6 @@ def build_staff_router() -> Router:
             await show_menu(cb.message, u, edit=True)
         await cb.answer()
 
-    # ---------------------------------------------------------- записи
 
     def _days(n: int = 7) -> list:
         today = clock.now().date()
@@ -328,10 +313,8 @@ def build_staff_router() -> Router:
         with db.session() as s:
             u = current(s, staff, cb.message.chat.id)
             who = "директором" if u and u.role == Role.DIRECTOR else "майстром"
-        # «Видалення» = скасування: запис лишається в історії й журналі змін
         await _status(cb, db, staff, ApptStatus.CANCELLED, f"Видалено {who} через Telegram")
 
-    # ------------------------------------------------------ перенесення
 
     @router.callback_query(F.data.startswith("s:mv:"))
     async def move_start(cb: CallbackQuery, db: Database, staff: StaffSessions):
@@ -383,7 +366,6 @@ def build_staff_router() -> Router:
                     return
                 cur = bookings.get_appointment(s, Actor.of(u), int(appt_id))
                 if cur.status == ApptStatus.PENDING:
-                    # непідтверджений запис — це пропозиція клієнту, він підтвердить у боті
                     a, notified = bookings.propose_time(s, Actor.of(u), int(appt_id), v.parse_dt(dt))
                     head = "🕐 Клієнту запропоновано новий час" if notified else "🕐 Час змінено. Клієнт не в Telegram — зателефонуйте йому"
                 else:
@@ -415,7 +397,6 @@ def build_staff_router() -> Router:
         await cb.message.edit_text(msg, reply_markup=v.kb([[("☰ Меню", "s:menu")]]))
         await cb.answer()
 
-    # -------------------------------------------------- закриття замовлення
 
     @router.callback_query(F.data.startswith("s:cl:"))
     async def close_start(cb: CallbackQuery, db: Database, staff: StaffSessions, state: FSMContext):
@@ -444,7 +425,6 @@ def build_staff_router() -> Router:
 
     @router.message(CloseOrder.amount)
     async def close_amount(message: Message, state: FSMContext):
-        """Число — нова сума; текст — ім'я та прізвище клієнта."""
         data = await state.get_data()
         text = (message.text or "").strip()
         amount = _parse_amount(text)
@@ -484,7 +464,6 @@ def build_staff_router() -> Router:
         await cb.message.edit_text(text, reply_markup=v.kb([[("☰ Меню", "s:menu")]]))
         await cb.answer("Закрито")
 
-    # ------------------------------------------------------- новий запис
 
     @router.callback_query(F.data == "s:add")
     async def add_start(cb: CallbackQuery, db: Database, staff: StaffSessions, state: FSMContext):
@@ -592,7 +571,7 @@ def build_staff_router() -> Router:
 
     @router.message(AddAppt.phone)
     async def add_phone(message: Message, db: Database, staff: StaffSessions, state: FSMContext):
-        phone = (message.text or "").strip()  # у Telegram номер обов'язковий (без номера — лише в програмі)
+        phone = (message.text or "").strip()
         if not phone:
             await message.answer("Надішліть номер, наприклад 0671234567")
             return
@@ -619,7 +598,6 @@ def build_staff_router() -> Router:
         data = await state.get_data()
         await _create(message, db, staff, state, name, data["phone"])
 
-    # -------------------------------------------------- заробіток і зміна
 
     @router.callback_query(F.data == "s:earn")
     async def earnings(cb: CallbackQuery, db: Database, staff: StaffSessions):
@@ -681,7 +659,6 @@ def build_staff_router() -> Router:
         )
         await cb.answer()
 
-    # ------------------------------------------------------- директор
 
     def _director(s, staff: StaffSessions, chat_id: int) -> User | None:
         u = current(s, staff, chat_id)
@@ -722,7 +699,7 @@ def build_staff_router() -> Router:
                        [("☰ Меню", "s:menu")]])
         try:
             await cb.message.edit_text(text, reply_markup=markup)
-        except Exception:  # noqa: BLE001 — той самий текст (повторне натискання)
+        except Exception:  # noqa: BLE001
             pass
         await cb.answer()
 
@@ -739,7 +716,7 @@ def build_staff_router() -> Router:
         text = ("📞 <b>Просять передзвонити</b>\n" + "\n".join(lines)) if lines else "📞 Нових заявок на дзвінок немає."
         try:
             await cb.message.edit_text(text, reply_markup=v.kb(rows + [[("☰ Меню", "s:menu")]]))
-        except Exception:  # noqa: BLE001 — той самий текст
+        except Exception:  # noqa: BLE001
             pass
         await cb.answer()
 

@@ -66,12 +66,7 @@
   `POST /api/payroll/{id}/correct`, `POST /api/payroll/payments`, `GET /api/payroll/history/{user_id}`,
   `GET /api/payroll/quarter?year=&quarter=`, `GET /api/payroll/quarter.csv?year=&quarter=`.
 
-## Публічний API сайту (онлайн-запис)
-
-`GET /api/public/info`, `GET /api/public/services`, `GET /api/public/masters?service=`,
-`GET /api/public/slots?date=&service=&master=`, `POST /api/public/bookings` — без авторизації, вимкнено до
-відкриття (`public_booking_enabled`), CORS лише для `MDS_PUBLIC_ORIGINS`. Повний контракт, коди помилок і правила
-захисту від спаму — `site/docs/api.md`. Блокування клієнта: `PATCH /api/clients/{id}` `{blocked, blocked_reason}`.
+Блокування клієнта (онлайн-запис через бота): `PATCH /api/clients/{id}` `{blocked, blocked_reason}`.
 
 ## Живе оновлення
 

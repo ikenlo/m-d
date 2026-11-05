@@ -1,16 +1,3 @@
-"""Демо-дані «ФОП 1 група» — ЛИШЕ для тестового середовища.
-
-Реалістичний сценарій для показу бухгалтеру: працює одна власниця (ФОП 1 групи, без найманих працівників),
-дохід ≈ 1,0–1,15 млн грн на рік — нижче ліміту 1 групи. Повний 2025 рік і 2026 до вчорашнього дня.
-
-`python -m mds demo-fop1` або змінна сервера `MDS_DEMO_FOP1=yes` (окремий процес після старту сайту):
-1. резервна копія бази;
-2. `purge_demo` — видаляє ЛИШЕ попередні демо-дані (логіни `demo_*`, «(демо)» в описах і нотатках,
-   телефони +38067999…); справжні дані (директор, інші співробітники, послуги, їхні записи/замовлення) не чіпає;
-3. `seed_fop1` — заповнює заново. Повторний запуск — пропуск (якщо вже є `demo_fop`).
-Сповіщення в Telegram під час заповнення вимкнено.
-"""
-
 from __future__ import annotations
 
 import logging
@@ -31,12 +18,12 @@ from .models import (
 log = logging.getLogger("mds.demo_fop1")
 
 DEMO_PREFIX = "demo_"
-PHONE_BASE = 679990000  # 0679990000 + i
+PHONE_BASE = 679990000
 FIRST = ["Анна", "Олена", "Марія", "Ірина", "Тетяна", "Наталія", "Юлія", "Оксана", "Катерина", "Світлана", "Віталій",
          "Андрій", "Олександр", "Дмитро", "Сергій", "Максим", "Іван", "Софія", "Дарина", "Вікторія", "Людмила", "Роман"]
 LAST = ["Шевченко", "Коваленко", "Бондаренко", "Ткаченко", "Кравченко", "Олійник", "Шевчук", "Поліщук", "Лисенко",
         "Мороз", "Марченко", "Петренко", "Руденко", "Савченко", "Гончаренко", "Левченко", "Павленко", "Клименко"]
-MATERIALS = [  # назва, тон, категорія, од., упаковка, розмір, ціна уп. коп, мін. залишок (од.), використання уп./міс
+MATERIALS = [
     ("Igora Royal", "6-0", "Фарби", "г", "туба", 60, 32000, 120, 3),
     ("Igora Royal", "7-1", "Фарби", "г", "туба", 60, 32000, 120, 4),
     ("Igora Royal", "8-0", "Фарби", "г", "туба", 60, 32000, 120, 4),
@@ -65,15 +52,11 @@ NOTES = ["Алергія на аміак — лише безаміачні фа�
 FOP_LOGIN = DEMO_PREFIX + "fop"
 FOP_NAME = "Маргарита Демченко (демо, ФОП 1 група)"
 DEMO_PHONE_LIKE = "+38067999%"
-# сезонність салону (частка від середнього місяця)
 SEASON = {1: 0.85, 2: 0.9, 3: 1.1, 4: 1.0, 5: 1.05, 6: 0.95, 7: 0.85, 8: 0.85, 9: 1.05, 10: 1.1, 11: 1.05, 12: 1.25}
-# податки ФОП 1 групи за себе — лише як опис демо-витрат (копійки): (ЄП/міс, ВЗ/міс, ЄСВ/міс)
 TAXES = {2025: (30280, 80000, 176000), 2026: (33280, 86470, 190234)}
 
 
-# ------------------------------------------------------------------ очищення
 def purge_demo(db: Database) -> dict:
-    """Видалити попередні демо-дані. Лише записи з демо-позначками; справжні дані лишаються."""
     with db.session() as s:
         du = list(s.scalars(select(User.id).where(User.username.like(DEMO_PREFIX + "%"))))
         appts = list(s.scalars(select(Appointment.id).where(Appointment.master_id.in_(du)))) if du else []
@@ -87,7 +70,6 @@ def purge_demo(db: Database) -> dict:
         exps = sorted(set(exps) | set(s.scalars(select(MeterReading.expense_id).where(MeterReading.id.in_(readings),
                                                                                        MeterReading.expense_id.isnot(None)))))
         runs = list(s.scalars(select(GeneratorRun.id).where(GeneratorRun.note.like("%(демо)%"))))
-        # матеріали демо-складу: назва з демо-переліку і ВСІ рухи — демо
         names = {m[0] for m in MATERIALS}
         mats = []
         for m in s.scalars(select(Material).where(Material.name.in_(names))):
@@ -122,7 +104,6 @@ def purge_demo(db: Database) -> dict:
         s.execute(delete(Material).where(Material.id.in_(mats)))
         s.execute(delete(ScheduleDay).where(ScheduleDay.master_id.in_(du)))
         s.execute(delete(master_services).where(master_services.c.master_id.in_(du)))
-        # демо-клієнти без жодного справжнього запису
         used = select(Appointment.client_id)
         cl = list(s.scalars(select(Client.id).where(Client.phone.like(DEMO_PHONE_LIKE), Client.id.not_in(used))))
         s.execute(delete(Client).where(Client.id.in_(cl)))
@@ -137,14 +118,12 @@ def purge_demo(db: Database) -> dict:
     return st
 
 
-# ------------------------------------------------------------------ заповнення «ФОП 1 група»
 def _price_weight(svc: Service) -> float:
     return max(0.2, 5.0 - svc.price / 100000)
 
 
 def seed_fop1(db: Database, start: date = date(2025, 1, 1), end: date | None = None, *, year_target: int = 110_000_000,
               future_days: int = 21, seed: int = 2025, clients: int = 380) -> dict:
-    """Одна власниця працює 5 днів на тиждень; дохід за рік ≈ year_target (копійки) з сезонністю."""
     from .services import bookings, catalog, expenses, notifications, orders, schedule, stock, users, utilities
     from .services.common import Actor, get_setting, update_settings
 
@@ -169,18 +148,17 @@ def seed_fop1(db: Database, start: date = date(2025, 1, 1), end: date | None = N
         clock.set_now(datetime.combine(start, datetime.min.time()).replace(hour=8))
         with db.session() as s:
             u = users.create_user(s, Actor.system(), username=FOP_LOGIN, password=secrets.token_urlsafe(12) + "a1",
-                                  full_name=FOP_NAME, role=Role.MASTER, share_bp=0)  # увесь дохід — ФОП, поділу немає
+                                  full_name=FOP_NAME, role=Role.MASTER, share_bp=0)
             users.update_user(s, da, u.id, {"schedule": {str(d): ["09:00", "19:00"] for d in range(5)},
                                             "service_ids": list(services)})
             fid, fa = u.id, Actor.of(u)
             mats = []
             for name, tone, cat, unit, pack, size, cost, mn, use in MATERIALS:
-                use1 = max(1, use // 3)  # одна майстриня — утричі менше витрат
+                use1 = max(1, use // 3)
                 m = catalog.create_material(s, da, {"name": name, "tone": tone, "category": cat, "unit": unit,
                                                     "pack_name": pack, "pack_size": size, "unit_cost": cost,
                                                     "min_stock": mn, "stock": size * (use1 + 1)})
                 mats.append((m.id, size, use1, mn))
-            # для «Звіту для податкової» — ліміт 1 групи 2026 і ставки (лише якщо ще не задано; бухгалтер звірить)
             cur = {k: get_setting(s, k) for k in ("fop_income_limit", "fop_single_tax_month", "fop_min_wage")}
             upd = {k: v for k, v in (("fop_income_limit", 144404900), ("fop_single_tax_month", 33280),
                                      ("fop_min_wage", 864700)) if not cur[k]}
@@ -195,7 +173,6 @@ def seed_fop1(db: Database, start: date = date(2025, 1, 1), end: date | None = N
         while day <= end:
             at = datetime.combine(day, datetime.min.time())
             if day.day == 1:
-                # щомісячні витрати маленької студії + податки ФОП за себе
                 ep, vz, esv = TAXES.get(day.year, TAXES[2026])
                 clock.set_now(at.replace(hour=9))
                 with db.session() as s:
@@ -217,7 +194,7 @@ def seed_fop1(db: Database, start: date = date(2025, 1, 1), end: date | None = N
                 workdays = sum(1 for k in range(31) if (day + timedelta(days=k)).month == day.month
                                and (day + timedelta(days=k)).weekday() < 5)
                 month_budget = {"left": year_target / 12 * SEASON[day.month] / avg_season, "days": workdays}
-            if day.weekday() >= 5 or R.random() < 0.04:  # вихідні; інколи — особистий вихідний
+            if day.weekday() >= 5 or R.random() < 0.04:
                 day += timedelta(days=1)
                 continue
             daily = month_budget["left"] / max(1, month_budget["days"]) * R.uniform(0.75, 1.25)
@@ -267,7 +244,6 @@ def seed_fop1(db: Database, start: date = date(2025, 1, 1), end: date | None = N
                     orders.close_shift(s, fa, fid)
             day += timedelta(days=1)
 
-        # склад: прихід щомісяця, списання щотижня
         d = start
         while d <= end:
             if d.day == 3 or d.weekday() == 4:
@@ -285,7 +261,6 @@ def seed_fop1(db: Database, start: date = date(2025, 1, 1), end: date | None = N
                                 st["stock_moves"] += 1
             d += timedelta(days=1)
 
-        # електроенергія за лічильником (підтверджено → витрата «Комунальні»)
         meter, m0 = 5200.0, date(start.year, start.month, 1)
         while m0 <= end:
             nxt = date(m0.year + (m0.month == 12), m0.month % 12 + 1, 1)
@@ -302,7 +277,6 @@ def seed_fop1(db: Database, start: date = date(2025, 1, 1), end: date | None = N
             st["readings"] += 1
             m0 = nxt
 
-        # нотатки постійних клієнтів
         with db.session() as s:
             demo_clients = list(s.scalars(select(Client).where(Client.phone.like(DEMO_PHONE_LIKE)).order_by(Client.id)))
             for c in R.sample(demo_clients, min(90, len(demo_clients))):
@@ -310,7 +284,6 @@ def seed_fop1(db: Database, start: date = date(2025, 1, 1), end: date | None = N
                 c.reminders = R.random() < 0.7
             phones = [(c.phone, c.name) for c in demo_clients]
 
-        # майбутні записи (реальний час)
         clock.set_now(None)
         today = clock.now().date()
         with db.session() as s:

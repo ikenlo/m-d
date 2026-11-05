@@ -1,4 +1,3 @@
-// Service worker: кешує оболонку застосунку. API завжди йде в мережу.
 const CACHE = "mds-shell-v67";
 const SHELL = ["/", "/static/style.css", "/static/app.js", "/static/icon.svg", "/static/manifest.webmanifest"];
 
@@ -14,7 +13,6 @@ self.addEventListener("activate", (e) => {
 self.addEventListener("fetch", (e) => {
   const url = new URL(e.request.url);
   if (url.pathname.startsWith("/api/") || e.request.method !== "GET") return;
-  // мережа спершу, кеш — якщо офлайн
   e.respondWith(
     fetch(e.request)
       .then((r) => {

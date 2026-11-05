@@ -1,13 +1,3 @@
-"""Нагадування клієнтам у Telegram: за добу і за 2 години до візиту.
-
-- Лише клієнтам, які погодились (Client.reminders = True; бот питає після першого запису).
-- Лише підтвердженим записам. Перенесення запису скидає позначки — нагадування прийдуть заново.
-- Якщо запис зроблено пізніше, ніж за добу (або за 2 год) до візиту, відповідне нагадування
-  не надсилається: клієнт щойно записався, нагадувати нема чого.
-- Повідомлення йдуть через чергу (outbox), фоновий цикл кличе send_due() кожні 5 хвилин.
-- Директор може вимкнути все налаштуванням reminders_enabled.
-"""
-
 from __future__ import annotations
 
 from datetime import timedelta
@@ -23,7 +13,6 @@ from .common import Actor, audit, get_setting
 
 DAY = timedelta(hours=24)
 TWO_H = timedelta(hours=2)
-# запас: запис, зроблений за 25 год до візиту, ще отримає нагадування «за добу»
 DAY_MIN_LEAD = timedelta(hours=25)
 TWO_H_MIN_LEAD = timedelta(hours=3)
 
@@ -49,7 +38,6 @@ def _buttons(a: Appointment) -> list:
 
 
 def send_due(s: Session) -> int:
-    """Поставити в чергу всі нагадування, час яких настав. Повертає кількість."""
     if not get_setting(s, "reminders_enabled"):
         return 0
     now = clock.now()
@@ -65,7 +53,7 @@ def send_due(s: Session) -> int:
         if left <= TWO_H:
             if not a.reminded_2h:
                 a.reminded_2h = True
-                a.reminded_day = True  # «за добу» вже неактуальне
+                a.reminded_day = True
                 if lead >= TWO_H_MIN_LEAD:
                     sent += notifications.enqueue(s, a.client.telegram_user_id, _text(a, "2h"), _buttons(a))
         elif not a.reminded_day:
@@ -76,7 +64,6 @@ def send_due(s: Session) -> int:
 
 
 def should_ask(s: Session, telegram_user_id: int) -> bool:
-    """Чи питати клієнта про нагадування (ще не відповідав і функцію ввімкнено)."""
     if not get_setting(s, "reminders_enabled"):
         return False
     c = s.scalar(select(Client).where(Client.telegram_user_id == telegram_user_id))
@@ -84,7 +71,6 @@ def should_ask(s: Session, telegram_user_id: int) -> bool:
 
 
 def set_choice(s: Session, actor: Actor, enabled: bool) -> Client:
-    """Клієнт у боті погодився / відмовився від нагадувань."""
     if actor.role != "client":
         raise Forbidden("Лише для клієнта")
     c = s.scalar(select(Client).where(Client.telegram_user_id == actor.telegram_user_id))
@@ -101,7 +87,6 @@ UNCLOSED_AFTER = timedelta(minutes=15)
 
 
 def remind_unclosed(s: Session) -> int:
-    """Час запису минув 15+ хв тому, а замовлення не закрито — один раз нагадати майстру в Telegram."""
     now = clock.now()
     q = select(Appointment).where(Appointment.status.in_(ApptStatus.CLOSABLE), Appointment.close_reminded.is_(False),
                                   Appointment.ends_at <= now - UNCLOSED_AFTER, Appointment.ends_at >= now - timedelta(days=1))

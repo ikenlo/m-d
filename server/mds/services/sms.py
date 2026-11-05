@@ -1,10 +1,3 @@
-"""Провайдер SMS / Viber — TurboSMS (окремий модуль: вмикається й вимикається незалежно).
-
-Ключ — лише змінні сервера MDS_TURBOSMS_TOKEN і MDS_TURBOSMS_SENDER (альфа-ім'я з кабінету TurboSMS).
-Не логується. Усі запити з тайм-аутом; помилки не кидаються — повертаються як результат, щоб недоступність
-TurboSMS не блокувала роботу салону. Документація: https://turbosms.ua/api.html
-"""
-
 from __future__ import annotations
 
 import json
@@ -15,7 +8,7 @@ import urllib.request
 log = logging.getLogger("mds.sms")
 BASE = "https://api.turbosms.ua"
 TIMEOUT = 10.0
-OK_CODES = (0, 800, 801, 802, 803)  # прийнято до надсилання
+OK_CODES = (0, 800, 801, 802, 803)
 
 
 def configured() -> bool:
@@ -26,12 +19,11 @@ def _call(path: str, body: dict) -> dict:
     token = os.environ.get("MDS_TURBOSMS_TOKEN", "")
     req = urllib.request.Request(BASE + path, data=json.dumps(body).encode(), method="POST",
                                  headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"})
-    with urllib.request.urlopen(req, timeout=TIMEOUT) as r:  # noqa: S310 — фіксована https-адреса
+    with urllib.request.urlopen(req, timeout=TIMEOUT) as r:  # noqa: S310
         return json.loads(r.read().decode() or "{}")
 
 
 def send_one(phone: str, text: str, channel: str = "viber_sms") -> dict:
-    """{"ok": bool, "message_id": str|None, "error": str|None}. Viber, а хто не має — SMS."""
     if not configured():
         return {"ok": False, "message_id": None, "error": "not_configured"}
     sender = os.environ.get("MDS_TURBOSMS_SENDER", "")
@@ -51,7 +43,6 @@ def send_one(phone: str, text: str, channel: str = "viber_sms") -> dict:
 
 
 def balance() -> float | None:
-    """Залишок на рахунку TurboSMS (грн) або None, якщо не підключено / недоступно."""
     if not configured():
         return None
     try:
@@ -62,7 +53,6 @@ def balance() -> float | None:
 
 
 def statuses(message_ids: list[str]) -> dict[str, str]:
-    """Статуси доставки: {message_id: delivered | sent | failed}."""
     if not configured() or not message_ids:
         return {}
     try:
@@ -77,7 +67,6 @@ def statuses(message_ids: list[str]) -> dict[str, str]:
     return out
 
 
-# сумісність: старий виклик із зсуву записів
 def send(phones: list[str], text: str, channel: str = "viber_sms", timeout: float = TIMEOUT) -> dict:
     sent = sum(1 for p in phones if send_one(p, text, channel)["ok"])
     return {"ok": bool(sent), "sent": sent, "error": None if sent else "не надіслано"}

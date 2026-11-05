@@ -1,12 +1,3 @@
-"""SMS-розсилки (директор): баланс і витрати, історія зі статусами, одноразові розсилки, аналіз бази й автоматизація.
-
-- Сервісні повідомлення (перенесення запису тощо) — kind="service", без згоди на рекламу.
-- Рекламні (розсилки, привітання, «час повернутися») — kind="marketing", лише клієнтам із `marketing_consent`.
-- Надсилання — через чергу `sms_messages` (фоновий цикл і одразу після створення), тож недоступність TurboSMS
-  не блокує роботу: повідомлення лишаються в історії зі статусом.
-- Витрати на розсилку (кількість × ціна SMS з налаштувань) записуються у «Витрати» → «Реклама».
-"""
-
 from __future__ import annotations
 
 from collections import Counter
@@ -40,7 +31,6 @@ def enqueue(s: Session, *, phone: str, text: str, kind: str, reason: str, client
 
 
 def process_queue(s: Session, limit: int = 40) -> int:
-    """Надіслати чергу. TurboSMS не підключено/вимкнено → «not_configured» (видно в історії, черга не росте)."""
     now = clock.now()
     rows = list(s.scalars(select(SmsMessage).where(SmsMessage.status == "queued").order_by(SmsMessage.id).limit(limit)))
     ok_ready = ready(s)
@@ -93,7 +83,6 @@ def _first_name(name: str) -> str:
 
 
 def audience(s: Session, key: str) -> list[Client]:
-    """Отримувачі реклами: лише зі згодою, з номером і не заблоковані."""
     if key not in AUDIENCES:
         raise ValidationError("Невідома аудиторія")
     base = [c for c in s.scalars(select(Client).where(Client.marketing_consent.is_(True), Client.phone.is_not(None),
@@ -124,7 +113,6 @@ def audience(s: Session, key: str) -> list[Client]:
 
 
 def create_campaign(s: Session, actor: Actor, *, title: str, text: str, audience_key: str, dry_run: bool = False) -> dict:
-    """Одноразова розсилка. {name} у тексті — ім'я клієнта. dry_run — лише порахувати отримувачів і вартість."""
     actor.require(Role.DIRECTOR)
     if not (title or "").strip() or not (text or "").strip():
         raise ValidationError("Вкажіть назву й текст розсилки")
@@ -132,7 +120,7 @@ def create_campaign(s: Session, actor: Actor, *, title: str, text: str, audience
         raise ValidationError("Текст задовгий (до 670 символів — 10 SMS)")
     people = audience(s, audience_key)
     price = int(get_setting(s, "sms_price") or 0)
-    parts = 1 if len(text) <= 70 else (len(text) + 66) // 67  # кирилиця: 70 символів, далі по 67
+    parts = 1 if len(text) <= 70 else (len(text) + 66) // 67
     cost = len(people) * price * parts
     preview = text.replace("{name}", _first_name(people[0].name) if people else "Олено")
     if dry_run:
@@ -148,7 +136,7 @@ def create_campaign(s: Session, actor: Actor, *, title: str, text: str, audience
     for c in people:
         enqueue(s, phone=c.phone, text=text.replace("{name}", _first_name(c.name)), kind="marketing", reason="campaign",
                 client_id=c.id, campaign_id=camp.id)
-    if cost > 0:  # витрати на розсилку — у «Витрати» → «Реклама»
+    if cost > 0:
         from .expenses import create_expense
 
         e = create_expense(s, actor, category="advertising", amount=cost, spent_on=clock.now().date(),
@@ -185,16 +173,15 @@ def messages(s: Session, actor: Actor, *, client_id: int | None = None, limit: i
 
 
 def insights(s: Session, actor: Actor) -> dict:
-    """Аналіз бази: коли клієнти найчастіше записуються (день і година) і кому що варто надіслати."""
     actor.require(Role.DIRECTOR)
     since = clock.now() - timedelta(days=180)
     created = [a for (a,) in s.execute(select(Appointment.created_at).where(Appointment.created_at >= since,
-                                                                            Appointment.source.in_(("telegram", "site"))))]
-    if len(created) < 10:  # мало онлайн-записів — орієнтуємось на час візитів
+                                                                            Appointment.source == "telegram"))]
+    if len(created) < 10:
         created = [a for (a,) in s.execute(select(Order.closed_at).where(Order.closed_at >= since))]
     hours, days = Counter(x.hour for x in created), Counter(x.weekday() for x in created)
     best_hour = hours.most_common(1)[0][0] if hours else 11
-    best_hour = min(max(best_hour - 1, 10), 19)  # трохи раніше за звичний час запису, у межах 10:00–19:00
+    best_hour = min(max(best_hour - 1, 10), 19)
     best_day = days.most_common(1)[0][0] if days else 1
     tips = {
         "return_due": ("Нагадати про повторний візит", "{name}, час оновити образ 💇 Запишіться в M&D — оберемо зручний час."),
@@ -215,8 +202,6 @@ def insights(s: Session, actor: Actor) -> dict:
 
 
 def run_automations(s: Session) -> int:
-    """Раз на день у налаштовану годину: привітання з днем народження й нагадування про повторний візит
-    (лише зі згодою; не частіше раз на рік / раз на 30 днів одному клієнту)."""
     now = clock.now()
     if now.hour != int(get_setting(s, "sms_auto_hour") or 11) or not ready(s):
         return 0
@@ -240,11 +225,10 @@ def run_automations(s: Session) -> int:
 
 
 def flush(db) -> None:
-    """Фоново після створення розсилки / зсуву записів: надіслати чергу окремою транзакцією."""
     try:
         with db.session() as s:
             process_queue(s, limit=200)
-    except Exception:  # noqa: BLE001 — недоступність TurboSMS не має ламати відповідь
+    except Exception:  # noqa: BLE001
         import logging
 
         logging.getLogger("mds.sms").exception("Помилка надсилання черги SMS")

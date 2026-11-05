@@ -1,5 +1,3 @@
-"""Конфігурація застосунку. Усі параметри задаються змінними оточення MDS_*."""
-
 from __future__ import annotations
 
 import os
@@ -14,7 +12,6 @@ def _env(name: str, default: str) -> str:
 
 @dataclass
 class Config:
-    # На Railway дані зберігаються на підключеному диску (Volume), якщо MDS_DATA_DIR не задано
     data_dir: Path = field(
         default_factory=lambda: Path(_env("DATA_DIR", os.getenv("RAILWAY_VOLUME_MOUNT_PATH") or "./data")).resolve()
     )
@@ -27,7 +24,6 @@ class Config:
     backup_interval_hours: int = field(default_factory=lambda: int(_env("BACKUP_INTERVAL_HOURS", "6")))
     backup_keep: int = field(default_factory=lambda: int(_env("BACKUP_KEEP", "40")))
     host: str = field(default_factory=lambda: _env("HOST", "0.0.0.0"))
-    # хостинги (Railway, Render) передають порт у змінній PORT
     port: int = field(default_factory=lambda: int(_env("PORT", os.getenv("PORT") or "8000")))
 
     def __post_init__(self) -> None:
@@ -40,7 +36,6 @@ class Config:
             self.secret_key = _env("SECRET_KEY", "") or self._load_or_create_secret()
 
     def _load_or_create_secret(self) -> str:
-        """Ключ підпису токенів зберігається у data_dir, щоб переживати перезапуски."""
         path = self.data_dir / "secret.key"
         if path.exists():
             return path.read_text().strip()

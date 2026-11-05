@@ -1,6 +1,3 @@
-"""Доменні помилки. API перетворює їх на HTTP-відповіді, бот — на повідомлення."""
-
-
 class DomainError(Exception):
     status = 400
     code = "error"

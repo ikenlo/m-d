@@ -1,19 +1,3 @@
-"""Резервні копії в Google Drive.
-
-Як це працює:
-- директор один раз натискає «Підключити Google Drive» (OAuth 2.0, доступ `drive.file` —
-  програма бачить ЛИШЕ файли, які сама створила, а не весь диск);
-- refresh-токен зберігається у файлі `gdrive.json` у каталозі даних (не в БД і не в API налаштувань);
-- фоновий цикл (app._backup_loop) кожні `MDS_BACKUP_INTERVAL_HOURS` годин робить копію бази
-  і завантажує її в папку «MDS Connect — резервні копії» на диску;
-- на диску зберігаються останні `MDS_GDRIVE_KEEP` копій (за замовч. 180 ≈ 45 днів при кроці 6 год);
-- помилка завантаження → повідомлення директору в Telegram (не частіше разу на добу).
-
-Потрібні змінні оточення: MDS_GDRIVE_CLIENT_ID, MDS_GDRIVE_CLIENT_SECRET
-(OAuth-клієнт типу «Web application» у Google Cloud, див. docs/OPERATIONS.md).
-HTTP — стандартна бібліотека (urllib), без додаткових залежностей.
-"""
-
 from __future__ import annotations
 
 import json
@@ -55,13 +39,12 @@ class Resp:
 def _urllib_http(method: str, url: str, headers: dict | None = None, data: bytes | None = None) -> Resp:
     req = urllib.request.Request(url, data=data, method=method, headers=headers or {})
     try:
-        with urllib.request.urlopen(req, timeout=60) as r:  # noqa: S310 — лише https-адреси Google
+        with urllib.request.urlopen(req, timeout=60) as r:  # noqa: S310
             return Resp(r.status, r.read(), {k.lower(): v for k, v in r.headers.items()})
     except urllib.error.HTTPError as e:
         return Resp(e.code, e.read(), {k.lower(): v for k, v in (e.headers or {}).items()})
 
 
-# підміняється в тестах
 http: Callable[..., Resp] = _urllib_http
 
 
@@ -84,7 +67,6 @@ def keep() -> int:
         return 180
 
 
-# ------------------------------------------------------------------ стан
 def _state_path(data_dir: Path) -> Path:
     return data_dir / "gdrive.json"
 
@@ -111,7 +93,6 @@ def save_state(data_dir: Path, state: dict) -> None:
 
 
 def status(data_dir: Path) -> dict:
-    """Стан для панелі директора (без токенів)."""
     st = load_state(data_dir)
     return {
         "configured": configured(),
@@ -125,7 +106,6 @@ def status(data_dir: Path) -> dict:
     }
 
 
-# ------------------------------------------------------------------ OAuth
 def auth_url(redirect_uri: str, state: str) -> str:
     if not configured():
         raise Conflict("Google Drive не налаштовано на сервері (MDS_GDRIVE_CLIENT_ID / MDS_GDRIVE_CLIENT_SECRET)")
@@ -145,7 +125,6 @@ def _token_request(fields: dict) -> dict:
 
 
 def finish_auth(data_dir: Path, code: str, redirect_uri: str) -> dict:
-    """Обміняти code на refresh-токен і створити папку для копій."""
     tok = _token_request({"code": code, "client_id": client_id(), "client_secret": client_secret(),
                           "redirect_uri": redirect_uri, "grant_type": "authorization_code"})
     if not tok.get("refresh_token"):
@@ -171,9 +150,8 @@ def disconnect(data_dir: Path) -> None:
         try:
             http("POST", "https://oauth2.googleapis.com/revoke?" + urllib.parse.urlencode({"token": tok}),
                  {"Content-Type": "application/x-www-form-urlencoded"}, b"")
-        except Exception:  # noqa: BLE001 — відкликання не обов'язкове
+        except Exception:  # noqa: BLE001
             log.warning("Не вдалося відкликати токен Google")
-    # копії на диску лишаються; забуваємо лише доступ
     save_state(data_dir, {k: v for k, v in st.items() if k in ("last_ok_at", "last_file")})
 
 
@@ -212,10 +190,7 @@ def _folder_id(data_dir: Path, access: str) -> str:
     return st["folder_id"]
 
 
-# ------------------------------------------------------------------ завантаження
 def upload(data_dir: Path, path: Path) -> dict:
-    """Завантажити файл копії в папку на диску (resumable upload — працює і для великих баз)
-    та прибрати найстаріші копії понад MDS_GDRIVE_KEEP."""
     access = _access_token(data_dir)
     folder = _folder_id(data_dir, access)
     meta = json.dumps({"name": path.name, "parents": [folder], "mimeType": "application/x-sqlite3"}).encode()
@@ -252,7 +227,6 @@ def _rotate(access: str, folder: str) -> None:
 
 
 def record_error(data_dir: Path, err: str) -> bool:
-    """Зберегти помилку. Повертає True, якщо директора варто сповістити (не частіше разу на добу)."""
     st = load_state(data_dir)
     now = clock.now()
     last = st.get("last_alert_at")

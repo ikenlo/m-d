@@ -1,17 +1,3 @@
-"""Аналітика: фінансова панель директора, розрізи по майстрах і послугах,
-заробіток майстра.
-
-Розрізняємо (див. docs/FINANCE.md):
-  * Виручка          — сума фактичних оплат клієнтів (orders.amount).
-  * Нараховано майстрам — їхня частка з закритих замовлень.
-  * Виплачено майстрам  — фактичні підтверджені виплати (payouts).
-  * Валовий прибуток — виручка − нараховано майстрам − матеріали (спожиті).
-  * Чистий прибуток  — валовий − оренда − комунальні − реклама − інші витрати.
-  Закупівля матеріалів (expense.category=materials) показується окремо як грошовий
-  потік і НЕ віднімається вдруге від прибутку, бо собівартість уже врахована
-  в замовленнях.
-"""
-
 from __future__ import annotations
 
 import calendar
@@ -28,7 +14,6 @@ from .orders import master_balance
 
 
 def period_range(period: str, ref: date | None = None) -> tuple[date, date]:
-    """day | week | month | year -> (з, по) включно."""
     ref = ref or clock.now().date()
     if period == "day":
         return ref, ref
@@ -104,9 +89,8 @@ def dashboard(s: Session, actor: Actor, d_from: date, d_to: date) -> dict:
 
     gross = t["revenue"] - t["masters_share"] - t["materials"]
     operating = exp[ExpenseCategory.RENT] + exp[ExpenseCategory.UTILITIES] + exp[ExpenseCategory.ADVERTISING] + exp[ExpenseCategory.OTHER]
-    generator = generator_totals(s, start, end)["total_cost"]  # пальне + амортизація за мотогодинами
-    charged = charges_total(s, d_from=d_from, d_to=d_to)  # компенсація майстрами (комунальні/генератор)
-    # загальний борг по зарплаті на сьогодні (за весь час)
+    generator = generator_totals(s, start, end)["total_cost"]
+    charged = charges_total(s, d_from=d_from, d_to=d_to)
     total_accrued = int(s.scalar(select(func.coalesce(func.sum(Order.master_earning), 0))) or 0)
     total_paid = int(s.scalar(select(func.coalesce(func.sum(Payout.amount), 0))) or 0)
     total_charged = charges_total(s)
@@ -173,7 +157,6 @@ def by_service(s: Session, actor: Actor, d_from: date, d_to: date) -> list[dict]
 
 
 def by_day(s: Session, actor: Actor, d_from: date, d_to: date) -> list[dict]:
-    """Виручка по днях (для графіка)."""
     actor.require(Role.DIRECTOR)
     start, end = _bounds(d_from, d_to)
     day = func.date(Order.closed_at)
@@ -186,7 +169,6 @@ def by_day(s: Session, actor: Actor, d_from: date, d_to: date) -> list[dict]:
 
 
 def my_earnings(s: Session, actor: Actor, master_id: int | None = None) -> dict:
-    """Заробіток майстра: сьогодні, тиждень, місяць + баланс до виплати."""
     if actor.is_master:
         master_id = actor.user_id
     else:
@@ -205,16 +187,13 @@ def my_earnings(s: Session, actor: Actor, master_id: int | None = None) -> dict:
     return out
 
 
-# ------------------------------------------------------------------ аналітика і прогноз
 def _change_bp(cur: int, prev: int) -> int | None:
-    """Зміна у bp (1000 = +10%). None — немає бази для порівняння."""
     if not prev:
         return None
     return (cur - prev) * 10000 // abs(prev)
 
 
 def _previous_range(d_from: date, d_to: date) -> tuple[date, date]:
-    """Попередній період тієї ж довжини; для календарного місяця/року — попередній місяць/рік."""
     if d_from.day == 1 and d_to == d_from.replace(day=calendar.monthrange(d_from.year, d_from.month)[1]):
         p_to = d_from - timedelta(days=1)
         return p_to.replace(day=1), p_to
@@ -226,14 +205,6 @@ def _previous_range(d_from: date, d_to: date) -> tuple[date, date]:
 
 
 def forecast_month(s: Session, actor: Actor, ref: date | None = None) -> dict:
-    """Прогноз виручки поточного місяця.
-
-    - факт: закриті замовлення з 1-го числа до зараз;
-    - записано наперед: планова ціна майбутніх записів цього місяця (очікують/підтверджені);
-    - за темпом: факт ÷ минулий час × тривалість місяця;
-    - прогноз = більше з «за темпом» і «факт + записано» (записи — мінімум, який уже є).
-    Частка салону і прибуток — за структурою фактичних замовлень місяця.
-    """
     actor.require(Role.DIRECTOR)
     now = clock.now()
     today = ref or now.date()
@@ -248,7 +219,7 @@ def forecast_month(s: Session, actor: Actor, ref: date | None = None) -> dict:
     ).one()
     booked, booked_n = int(booked), int(booked_n)
     total_sec = int((end - start).total_seconds())
-    elapsed_sec = max(int((cut - start).total_seconds()), 86400)  # щонайменше доба — без перебільшення зранку 1-го числа
+    elapsed_sec = max(int((cut - start).total_seconds()), 86400)
     run_rate = fact["revenue"] * total_sec // elapsed_sec if fact["revenue"] else 0
     forecast = max(run_rate, fact["revenue"] + booked)
     rev = fact["revenue"]
@@ -275,7 +246,6 @@ def forecast_month(s: Session, actor: Actor, ref: date | None = None) -> dict:
 
 
 def insights(s: Session, actor: Actor, d_from: date, d_to: date) -> dict:
-    """Аналітика періоду: порівняння з попереднім, середній чек, клієнти, дні тижня, прогноз місяця."""
     actor.require(Role.DIRECTOR)
     cur = dashboard(s, actor, d_from, d_to)
     p_from, p_to = _previous_range(d_from, d_to)
@@ -299,7 +269,6 @@ def insights(s: Session, actor: Actor, d_from: date, d_to: date) -> dict:
         w = wd[r.closed_at.weekday()]
         w["revenue"] += r.amount
         w["orders"] += 1
-    # скільки разів кожен день тижня був у періоді — для середньої виручки за такий день
     n_days = (d_to - d_from).days + 1
     for i, w in enumerate(wd):
         occurrences = sum(1 for k in range(n_days) if (d_from + timedelta(days=k)).weekday() == i)

@@ -1,5 +1,3 @@
-"""Довідники: послуги, матеріали, клієнти."""
-
 from __future__ import annotations
 
 import re
@@ -70,16 +68,10 @@ def update_service(s: Session, actor: Actor, service_id: int, data: dict) -> Ser
     return x
 
 
-Node = tuple[str, list]  # (назва, діти): діти — вузли або, на останньому рівні, послуги
+Node = tuple[str, list]
 
 
 def service_tree(services: list[Service]) -> list[Node]:
-    """Дерево каталогу для запису: розділ → тип → підтип → послуги.
-
-    [(розділ, [(тип, [(підтип, [Service, ...]), ...]), ...]), ...]
-    Порожній розділ/тип групується як «Послуги»; порожній підтип — "" (рівень пропускається).
-    Порядок: «Чоловічі», «Жіночі», далі — за sort_order послуг.
-    """
     tree: dict[str, dict[str, dict[str, list[Service]]]] = {}
     for x in services:
         tree.setdefault(x.section or "Послуги", {}).setdefault(x.category or "Послуги", {}) \
@@ -113,8 +105,6 @@ def list_services(s: Session, active_only: bool = True) -> list[Service]:
     return list(s.scalars(q.order_by(Service.sort_order, Service.name)))
 
 
-# ---------------------------------------------------------------- матеріали
-
 def material_public(m: Material) -> dict:
     from .stock import material_public as mp
 
@@ -122,8 +112,7 @@ def material_public(m: Material) -> dict:
 
 
 MATERIAL_FIELDS = ("name", "tone", "category", "unit", "pack_name", "pack_size", "unit_cost", "is_active")
-UNITS = ("г", "мл", "шт")  # базові одиниці обліку
-# типові упаковки (у формі — випадаючий список; інша назва теж дозволена)
+UNITS = ("г", "мл", "шт")
 PACK_NAMES = ("шт", "туба", "тюбик", "банка", "флакон", "пляшка", "каністра", "упаковка", "пачка", "набір",
               "коробка", "рулон", "пара", "ампула", "саше", "балон")
 
@@ -154,7 +143,7 @@ def _check_material(data: dict, creating: bool) -> dict:
     if creating:
         out.setdefault("unit", "шт")
         out["unit"] = out.get("unit") or "шт"
-        if not out.get("pack_name"):  # без назви: 1 одиниця — «шт», більше — «упаковка»
+        if not out.get("pack_name"):
             out["pack_name"] = "шт" if out.get("pack_size", 1) == 1 else "упаковка"
     if "min_stock" in data:
         v = data["min_stock"]
@@ -172,7 +161,7 @@ def _check_material(data: dict, creating: bool) -> dict:
 def create_material(s: Session, actor: Actor, data: dict) -> Material:
     actor.require(Role.DIRECTOR, Role.ADMIN)
     vals = _check_material(data, creating=True)
-    vals.setdefault("unit_cost", 0)  # ціну можна вказати пізніше
+    vals.setdefault("unit_cost", 0)
     m = Material(**vals)
     s.add(m)
     s.flush()
@@ -190,7 +179,6 @@ def update_material(s: Session, actor: Actor, material_id: int, data: dict) -> M
     before = material_public(m)
     vals = _check_material(data, creating=False)
     if "unit" in vals and vals["unit"] != m.unit:
-        # залишок і рухи записані в старій одиниці — зміна зіпсувала б облік
         from ..models import StockMove
 
         if m.stock_milli or s.scalar(select(StockMove.id).where(StockMove.material_id == m.id).limit(1)):
@@ -209,10 +197,7 @@ def list_materials(s: Session, active_only: bool = True) -> list[Material]:
     return lm(s, active_only)
 
 
-# ----------------------------------------------------------------- клієнти
-
 def normalize_phone(raw: str) -> str:
-    """Приводить номер до формату +380XXXXXXXXX (для українських номерів)."""
     digits = re.sub(r"\D", "", raw or "")
     if len(digits) == 10 and digits.startswith("0"):
         digits = "38" + digits
@@ -251,7 +236,6 @@ def get_or_create_client(
     s: Session, actor: Actor, name: str, phone: str | None, telegram_user_id: int | None = None
 ) -> Client:
     if not (phone or "").strip():
-        # швидкий запис без номера (лише персонал): завжди новий клієнт — зіставити без телефону неможливо
         if not (name or "").strip():
             raise ValidationError("Вкажіть ім'я або телефон клієнта")
         c = Client(name=name.strip(), phone=None)
@@ -260,7 +244,6 @@ def get_or_create_client(
         audit(s, actor, "client", c.id, "create", None, client_public(c))
         return c
     phone_n = normalize_phone(phone)
-    # один клієнт — одна картка: шукаємо і за основним, і за додатковим номером
     c = s.scalar(select(Client).where(Client.phone == phone_n)) or s.scalar(select(Client).where(Client.phone2 == phone_n))
     if c is None:
         if not name.strip():
@@ -270,7 +253,6 @@ def get_or_create_client(
         s.flush()
         audit(s, actor, "client", c.id, "create", None, client_public(c))
     elif telegram_user_id and c.telegram_user_id != telegram_user_id:
-        # клієнт підтвердив номер через Telegram (контакт) — прив'язуємо
         for other in s.scalars(select(Client).where(Client.telegram_user_id == telegram_user_id)):
             other.telegram_user_id = None
         c.telegram_user_id = telegram_user_id
@@ -278,8 +260,6 @@ def get_or_create_client(
 
 
 def create_client(s: Session, actor: Actor, name: str, phone: str, notes: str | None = None) -> Client:
-    """Додати клієнта вручну (директор/адміністратор). Існуючий номер — повертає наявного клієнта;
-    нотатки змінюються лише з записом у журнал."""
     actor.require(Role.DIRECTOR, Role.ADMIN)
     c = get_or_create_client(s, actor, name, phone)
     if notes and notes != c.notes:
@@ -294,7 +274,7 @@ def update_client(s: Session, actor: Actor, client_id: int, data: dict) -> Clien
     c: Client = get_or_404(s, Client, client_id, "Клієнта")
     before = client_public(c)
     if "phone" in data and not (data["phone"] or "").strip():
-        c.phone = None  # номер прибрали — клієнт «без номера»
+        c.phone = None
     elif "phone" in data:
         phone_n = normalize_phone(data["phone"])
         other = s.scalar(select(Client).where(Client.phone == phone_n, Client.id != c.id))
@@ -305,7 +285,6 @@ def update_client(s: Session, actor: Actor, client_id: int, data: dict) -> Clien
         if k in data:
             setattr(c, k, data[k])
     if "blocked" in data and data["blocked"] is not None:
-        # блокування онлайн-запису (бот і сайт) — захист від спаму; записати через адміністратора можна
         c.blocked = bool(data["blocked"])
         c.blocked_reason = (data.get("blocked_reason") or "").strip() or None if c.blocked else None
     audit(s, actor, "client", c.id, "update", before, client_public(c), data.get("blocked_reason"))
@@ -313,8 +292,6 @@ def update_client(s: Session, actor: Actor, client_id: int, data: dict) -> Clien
 
 
 def search_clients(s: Session, q: str, limit: int = 50, master_id: int | None = None) -> list[Client]:
-    """master_id — обмежити клієнтами, які записувались до цього майстра
-    (майстер не бачить усю клієнтську базу салону)."""
     from ..models import Appointment
 
     stmt = select(Client)
@@ -333,9 +310,6 @@ NO_PHONE_NAME = "Клієнти без номера"
 
 
 def purge_clients_without_phone(s: Session, actor: Actor, dry_run: bool = False) -> dict:
-    """Прибрати з бази клієнтів без телефону (швидкі записи). Клієнти без історії — видаляються;
-    з історією (записи/замовлення) — їхні візити переносяться на одну картку «Клієнти без номера»,
-    щоб виручка й журнал не постраждали. Хто має майбутній активний запис — не чіпаємо."""
     from datetime import datetime as _dt
 
     from .. import clock

@@ -1,10 +1,3 @@
-"""Звіт про доходи для податкової декларації ФОП (вводиться вручну в кабінеті ДПС / Приват24).
-
-Дохід — сума закритих замовлень (те, що заплатив клієнт), на дату закриття замовлення.
-Якщо замовлення виправляли (`correct_order`), береться остання сума. Комісія банку дохід не зменшує.
-Нічого не змінює в обліку. Права — лише директор.
-"""
-
 from __future__ import annotations
 
 import csv
@@ -56,7 +49,7 @@ def income_report(s: Session, actor: Actor, year: int, quarter: int | None = Non
 
     months: dict[str, dict] = {}
     m = start
-    while m < end:  # усі місяці періоду, навіть без доходу
+    while m < end:
         months[m.strftime("%Y-%m")] = {"month": m.strftime("%Y-%m"), **_empty()}
         m = date(m.year + (m.month == 12), m.month % 12 + 1, 1)
     quarters = {q: {"quarter": q, **_empty()} for q in ([quarter] if quarter else [1, 2, 3, 4])}
@@ -66,7 +59,6 @@ def income_report(s: Session, actor: Actor, year: int, quarter: int | None = Non
         _add(quarters[(o.closed_at.month - 1) // 3 + 1], o)
         _add(total, o)
 
-    # з початку року (для ліміту групи) — завжди до кінця обраного періоду
     ytd = sum(o.amount for o in _orders(s, date(year, 1, 1), end)) if quarter else total["total"]
     limit = int(get_setting(s, "fop_income_limit") or 0)
     return {
@@ -79,14 +71,12 @@ def income_report(s: Session, actor: Actor, year: int, quarter: int | None = Non
 
 
 def _uah(kop: int) -> str:
-    """Копійки → «1234,50» (кома — для Excel з українськими налаштуваннями)."""
     sign = "-" if kop < 0 else ""
     kop = abs(kop)
     return f"{sign}{kop // 100},{kop % 100:02d}"
 
 
 def income_csv(s: Session, actor: Actor, year: int, quarter: int | None = None, detail: str = "day") -> tuple[str, str]:
-    """CSV для Excel (UTF-8 з BOM, роздільник «;»). detail: day — по днях (як Книга обліку доходів) | order — по замовленнях."""
     actor.require(Role.DIRECTOR)
     if detail not in ("day", "order"):
         raise ValidationError("Деталізація: day або order")

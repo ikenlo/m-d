@@ -1,5 +1,3 @@
-"""Хешування паролів (scrypt зі стандартної бібліотеки) та JWT-токени."""
-
 from __future__ import annotations
 
 import base64

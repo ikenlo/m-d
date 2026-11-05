@@ -1,11 +1,3 @@
-"""Графік роботи майстрів.
-
-Порядок визначення робочих годин майстра на дату:
-  1. запис на цю дату (schedule_days) — робочий день з годинами або вихідний;
-  2. особистий тижневий шаблон майстра (users.schedule);
-  3. графік салону (налаштування «schedule»).
-"""
-
 from __future__ import annotations
 
 from datetime import date, timedelta
@@ -32,7 +24,6 @@ def _hm(v: str) -> str:
 
 
 def day_span(s: Session, master: User, day: date, override: ScheduleDay | None = None, *, lookup: bool = True):
-    """(start, end, source) або (None, None, source) для вихідного."""
     if override is None and lookup:
         override = s.scalar(select(ScheduleDay).where(ScheduleDay.master_id == master.id, ScheduleDay.day == day))
     if override is not None:
@@ -68,7 +59,6 @@ def set_day(s: Session, actor: Actor, master_id: int, day: date, *, off: bool = 
 
 
 def reset_day(s: Session, actor: Actor, master_id: int, day: date) -> None:
-    """Повернути день до тижневого шаблону."""
     actor.require(Role.DIRECTOR, Role.ADMIN)
     row = s.scalar(select(ScheduleDay).where(ScheduleDay.master_id == master_id, ScheduleDay.day == day))
     if row:
@@ -77,7 +67,6 @@ def reset_day(s: Session, actor: Actor, master_id: int, day: date) -> None:
 
 
 def copy_week(s: Session, actor: Actor, master_id: int, from_monday: date, weeks: int = 1) -> int:
-    """Скопіювати графік тижня (з урахуванням змін по датах) на наступні тижні."""
     actor.require(Role.DIRECTOR, Role.ADMIN)
     if from_monday.weekday() != 0:
         raise ValidationError("Тиждень має починатися з понеділка")
@@ -96,8 +85,6 @@ def copy_week(s: Session, actor: Actor, master_id: int, from_monday: date, weeks
 
 def parity_pattern(s: Session, actor: Actor, master_id: int, parity: str, date_from: date, date_to: date,
                    start: str | None = None, end: str | None = None) -> int:
-    """Графік «парні / непарні дні»: робочі — дати з потрібною парністю (2, 4, 6… або 1, 3, 5…), решта — вихідні.
-    Години — вказані або звичайні години майстра."""
     actor.require(Role.DIRECTOR, Role.ADMIN)
     if parity not in ("even", "odd"):
         raise ValidationError("Оберіть «парні» або «непарні» дні")
@@ -134,7 +121,7 @@ def grid(s: Session, actor: Actor, date_from: date, date_to: date) -> dict:
         cells[m.id] = {}
         for d in days:
             start, end, src = day_span(s, m, d, overrides.get((m.id, d)), lookup=False)
-            t_start, t_end, _ = day_span(s, m, d, None, lookup=False)  # тижневий шаблон без змін по датах
+            t_start, t_end, _ = day_span(s, m, d, None, lookup=False)
             cells[m.id][d.isoformat()] = {"start": start, "end": end, "off": start is None, "source": src,
                                           "template": [t_start, t_end] if t_start else None}
         hours[m.id] = _usual_hours(s, m)
@@ -143,7 +130,6 @@ def grid(s: Session, actor: Actor, date_from: date, date_to: date) -> dict:
 
 
 def _usual_hours(s: Session, master: User) -> list[str]:
-    """Звичайні години майстра (найчастіші в тижневому шаблоні) — для дня, який позначають робочим."""
     tpl = master.schedule if master.schedule is not None else (get_setting(s, "schedule") or {})
     spans = [tuple(v) for v in tpl.values() if v]
     if not spans:

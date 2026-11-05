@@ -1,12 +1,10 @@
-"""Двофакторний вхід: код у Telegram для директора, спроби, строк дії, довірений пристрій."""
-
 import re
 from datetime import datetime, timedelta
 
 from mds import clock
 from mds.models import LoginChallenge, Notification, User
 
-from .test_api import client  # noqa: F401, F811 — фікстура
+from .test_api import client  # noqa: F401, F811
 
 
 def _code(db):
@@ -34,7 +32,7 @@ def test_code_flow_attempts_and_trusted_device(client, db):  # noqa: F811
     ch = r.json()["challenge_id"]
     code = _code(db)
     with db.session() as s:
-        assert s.get(LoginChallenge, ch).code_hash != code  # код не зберігається відкрито
+        assert s.get(LoginChallenge, ch).code_hash != code
     wrong = "000000" if code != "000000" else "111111"
     r = client.post("/api/auth/login/verify", json={"challenge_id": ch, "code": wrong})
     assert r.status_code == 401 and "Залишилось спроб: 4" in r.json()["detail"]
@@ -42,9 +40,7 @@ def test_code_flow_attempts_and_trusted_device(client, db):  # noqa: F811
     assert r.status_code == 200 and r.json()["token"] and r.json()["device_token"]
     dev = r.json()["device_token"]
     auth = {"Authorization": "Bearer " + r.json()["token"]}
-    # повторно той самий код не діє
     assert client.post("/api/auth/login/verify", json={"challenge_id": ch, "code": code}).status_code == 401
-    # довірений пристрій — без коду
     r = client.post("/api/auth/login", json={"username": "director", "password": "Director123", "device_token": dev})
     assert "token" in r.json()
     assert [d["label"] for d in client.get("/api/auth/devices", headers=auth).json()] == ["iPhone"]
@@ -64,7 +60,6 @@ def test_too_many_attempts_and_expiry(client, db):  # noqa: F811
         client.post("/api/auth/login/verify", json={"challenge_id": ch, "code": wrong})
     r = client.post("/api/auth/login/verify", json={"challenge_id": ch, "code": code})
     assert r.status_code == 401 and "Забагато спроб" in r.json()["detail"]
-    # новий код; через 6 хвилин — застарів
     clock.set_now(datetime(2026, 11, 4, 12, 0))
     ch = client.post("/api/auth/login", json={"username": "director", "password": "Director123"}).json()["challenge_id"]
     code = _code(db)
@@ -72,7 +67,6 @@ def test_too_many_attempts_and_expiry(client, db):  # noqa: F811
     r = client.post("/api/auth/login/verify", json={"challenge_id": ch, "code": code})
     clock.set_now(None)
     assert r.status_code == 401 and "застарів" in r.json()["detail"]
-    # невірний формат
     assert client.post("/api/auth/login/verify", json={"challenge_id": ch, "code": "12ab"}).status_code == 422
 
 
@@ -90,7 +84,7 @@ def test_admin_only_when_enabled_and_password_change_forgets_devices(client, db)
     dev, ha = r["device_token"], {"Authorization": "Bearer " + r["token"]}
     assert client.post("/api/auth/change-password", headers=ha, json={"old_password": "Admin1234", "new_password": "NewAdmin567"}).status_code == 200
     r = client.post("/api/auth/login", json={"username": "admin", "password": "NewAdmin567", "device_token": dev}).json()
-    assert r.get("twofa") is True  # після зміни пароля пристрій треба підтвердити знову
+    assert r.get("twofa") is True
 
 
 def test_emergency_disable(client, db, monkeypatch):  # noqa: F811

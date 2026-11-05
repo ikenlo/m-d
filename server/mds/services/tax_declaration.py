@@ -1,13 +1,3 @@
-"""Річна декларація платника єдиного податку — ФОП 1 групи (F0103407, «у якого податковий (звітний) період рік»)
-+ Додаток 1 про ЄСВ (F0134107) у форматі XML ДПС. (F0103309 — квартальна форма для 3 групи, тут НЕ використовується.)
-
-Програма лише ГОТУЄ файли: ФОП завантажує їх в Електронний кабінет, перевіряє, підписує КЕП / Дія.Підписом і
-відправляє сам. Ключі й підписи програма не зберігає і нічого в ДПС не надсилає.
-
-Форма: наказ Мінфіну № 578 у редакції наказу № 57 від 31.01.2025 (схеми XSD — tests/fixtures/dps, з реєстру ДПС).
-Ставки (мінімальна зарплата на 1 січня, єдиний податок на місяць) вносить директор/бухгалтер — у коді їх немає.
-"""
-
 from __future__ import annotations
 
 import io
@@ -23,7 +13,6 @@ from .common import Actor, all_settings
 
 QUARTERS = {1: (1, 2, 3), 2: (4, 5, 6), 3: (7, 8, 9), 4: (10, 11, 12)}
 
-# поля профілю ФОП у налаштуваннях: ключ → (назва для повідомлення, обов'язкове)
 PROFILE = {
     "fop_tin": ("РНОКПП (податковий номер)", True),
     "fop_name": ("ПІБ ФОП", True),
@@ -42,14 +31,12 @@ PROFILE = {
 
 
 def _d2(kop: int) -> str:
-    """Копійки → «1234.50» (тип DGdecimal2 схеми ДПС)."""
     sign = "-" if kop < 0 else ""
     kop = abs(kop)
     return f"{sign}{kop // 100}.{kop % 100:02d}"
 
 
 def _pct(kop: int, bp: int) -> int:
-    """Відсоток від суми з округленням до копійки (half-up), без float."""
     return (kop * bp + 5000) // 10000
 
 
@@ -58,7 +45,6 @@ def _ddmmyyyy(d: date) -> str:
 
 
 def validate_profile_value(key: str, value) -> object:
-    """Перевірка одного поля профілю (викликається з update_settings)."""
     if key in ("fop_c_reg", "fop_c_raj"):
         if not (isinstance(value, int) and not isinstance(value, bool) and 0 <= value <= 99):
             raise ValidationError(f"{PROFILE[key][0]}: число від 0 до 99")
@@ -84,14 +70,11 @@ def validate_profile_value(key: str, value) -> object:
 
 
 def declaration_data(s, actor: Actor, year: int) -> dict:
-    """Цифри декларації за рік (1 група, звітна, увесь рік на єдиному податку) + чого не вистачає в профілі."""
     actor.require(Role.DIRECTOR)
     from . import taxes
 
     st = all_settings(s)
     jan1 = date(year, 1, 1)
-    # ставки з датами дії («Податки і зарплата → Ставки») мають пріоритет над налаштуваннями — тоді для 2025
-    # беруться ставки 2025 року, для 2026 — 2026-го
     r_mzp, r_ep = taxes.rate_for(s, "min_wage", jan1), taxes.rate_for(s, "single_tax", jan1)
     r_vz, r_esv = taxes.rate_for(s, "military_fop", jan1), taxes.rate_for(s, "esv_fop", jan1)
     mzp = r_mzp.amount if r_mzp else int(st.get("fop_min_wage") or 0)
@@ -109,8 +92,8 @@ def declaration_data(s, actor: Actor, year: int) -> dict:
     missing = [label for key, (label, req) in PROFILE.items() if req and key not in skip and not st.get(key)]
     income = tax_report.income_report(s, actor, year)["total"]["total"]
     months = list(range(1, 13))
-    esv_m = _pct(mzp, r_esv.rate_bp if r_esv and r_esv.rate_bp is not None else 2200)  # ЄСВ 22% МЗП
-    military_m = _pct(mzp, r_vz.rate_bp if r_vz and r_vz.rate_bp is not None else 1000)  # ВЗ 10% МЗП на 1 січня
+    esv_m = _pct(mzp, r_esv.rate_bp if r_esv and r_esv.rate_bp is not None else 2200)
+    military_m = _pct(mzp, r_vz.rate_bp if r_vz and r_vz.rate_bp is not None else 1000)
     return {
         "year": year,
         "group": 1,
@@ -131,7 +114,6 @@ def declaration_data(s, actor: Actor, year: int) -> dict:
 
 
 def _head(st: dict, year: int, c_doc_sub: str, today: date, linked: tuple[str, str, int] | None) -> str:
-    """Шапка DECLARHEAD (версія форм — 7). linked = (C_DOC_SUB пов'язаного документа, ім'я файлу, TYPE)."""
     lk = ""
     if linked:
         sub, fname, typ = linked
@@ -147,7 +129,6 @@ def _head(st: dict, year: int, c_doc_sub: str, today: date, linked: tuple[str, s
 
 
 def filename(st: dict, year: int, c_doc_sub: str) -> str:
-    """Ім'я файлу за стандартом ДПС (тип DGFilename): РЕГ РАЙ ТІН(10) F01 ПІДТИП ВЕР СТАН ТИП НОМЕР ПЕРІОД МІС РІК ДПІ."""
     return (f"{int(st['fop_c_reg']):02d}{int(st['fop_c_raj']):02d}{st['fop_tin']:0>10}F01{c_doc_sub}07"
             f"1000000001512{year}{int(st['fop_c_sti']):04d}.xml")
 
@@ -160,7 +141,6 @@ def _wrap(xsd: str, head: str, body: str) -> bytes:
 
 
 def declaration_files(s, actor: Actor, year: int, today: date) -> list[tuple[str, bytes]]:
-    """Два XML: річна декларація F0103407 і Додаток 1 F0134107 (ЄСВ). Лише 1 група, тип «Звітна», рік."""
     d = declaration_data(s, actor, year)
     if not d["ready"]:
         raise ValidationError("Заповніть дані ФОП: " + ", ".join(d["missing"]))
@@ -196,7 +176,7 @@ def declaration_files(s, actor: Actor, year: int, today: date) -> list[tuple[str
         f"<HZ>1</HZ><HTIN>{e['fop_tin']}</HTIN><HNAME>{e['fop_name']}</HNAME><HY>1</HY><HZY>{year}</HZY>"
         f"<HKVED>{e['fop_kved']}</HKVED>"
         f"<R08G1D>{_ddmmyyyy(date(year, 1, 1))}</R08G1D><R08G2D>{_ddmmyyyy(date(year, 12, 31))}</R08G2D>"
-        "<R081G1>6</R081G1>"  # код категорії 6 — ФОП на спрощеній системі
+        "<R081G1>6</R081G1>"
         + m_rows
         + f"<R09G2>{_d2(d['esv_month_base'] * len(d['months']))}</R09G2><R09G4>{_d2(d['esv_year'])}</R09G4>"
         f"<HBOS>{e['fop_name']}</HBOS>"

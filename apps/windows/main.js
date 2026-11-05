@@ -1,8 +1,3 @@
-// MDS Connect для Windows — вікно з веб-панеллю салону (Electron).
-// Уся логіка на сервері: оновлення сайту одразу видно в застосунку.
-// - сторінки нашого сервера відкриваються у вікні, усе інше (Telegram, Google, карти) — у браузері;
-// - вхід зберігається між запусками; без інтернету — екран «Немає з'єднання»;
-// - запускається лише одна копія; розмір і положення вікна запам'ятовуються.
 "use strict";
 
 const { app, BrowserWindow, Menu, shell, screen } = require("electron");
@@ -22,10 +17,9 @@ function isOurs(url) {
 function openExternal(url) {
   try {
     if (SAFE_EXTERNAL.has(new URL(url).protocol)) shell.openExternal(url);
-  } catch (_) { /* неправильне посилання — ігноруємо */ }
+  } catch (_) {  }
 }
 
-// ---- розмір/положення вікна
 const stateFile = () => path.join(app.getPath("userData"), "window.json");
 function loadBounds() {
   try {
@@ -41,7 +35,7 @@ function loadBounds() {
 }
 function saveBounds() {
   if (!win || win.isDestroyed() || win.isMinimized()) return;
-  try { fs.writeFileSync(stateFile(), JSON.stringify({ ...win.getNormalBounds(), max: win.isMaximized() })); } catch (_) { /* не критично */ }
+  try { fs.writeFileSync(stateFile(), JSON.stringify({ ...win.getNormalBounds(), max: win.isMaximized() })); } catch (_) {  }
 }
 
 function showOffline() {
@@ -73,20 +67,17 @@ function createWindow() {
 
   const wc = win.webContents;
   wc.setUserAgent(`${wc.getUserAgent()} MDSConnectApp/${app.getVersion()} Windows`);
-  // нові вікна: наші сторінки — в цьому ж вікні, решта — у браузері
   wc.setWindowOpenHandler(({ url }) => {
     if (isOurs(url)) wc.loadURL(url); else openExternal(url);
     return { action: "deny" };
   });
   wc.on("will-navigate", (e, url) => {
-    if (url.startsWith("file:")) return; // екран «Немає з'єднання»
+    if (url.startsWith("file:")) return;
     if (!isOurs(url)) { e.preventDefault(); openExternal(url); }
   });
   wc.on("did-fail-load", (_e, code, _desc, url, isMainFrame) => {
-    // -3 = скасовано (звичайний перехід), не помилка
     if (isMainFrame && code !== -3 && !String(url).startsWith("file:")) showOffline();
   });
-  // F5 / Ctrl+R — оновити; Ctrl+± / колесо — масштаб вимкнено, як у веб-панелі
   wc.on("before-input-event", (e, input) => {
     if (input.type !== "keyDown") return;
     const k = input.key.toLowerCase();

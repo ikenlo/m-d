@@ -1,5 +1,3 @@
-"""Річна XML-декларація ФОП 1 групи (F0103407 + Додаток 1 F0134107): точні суми й перевірка офіційними схемами ДПС."""
-
 import io
 import zipfile
 from datetime import date, datetime
@@ -42,16 +40,16 @@ def profile(db, seed):
         update_settings(s, seed["actors"]["director"], PROFILE)
     _visit(db, seed, datetime(2026, 2, 10, 10), 50000)
     _visit(db, seed, datetime(2026, 7, 1, 12), 65050, "card", phone="0670000002")
-    _visit(db, seed, datetime(2025, 12, 30, 10), 99900, phone="0670000003")  # інший рік
+    _visit(db, seed, datetime(2025, 12, 30, 10), 99900, phone="0670000003")
 
 
 def test_data_exact_sums(db, seed, profile):
     with db.session() as s:
         d = tax_declaration.declaration_data(s, seed["actors"]["director"], 2026)
     assert d["ready"] and d["income"] == 115050
-    assert d["single_tax_by_quarter"] == {1: 99840, 2: 99840, 3: 99840, 4: 99840}  # 332,80 × 3
-    assert d["military_levy"] == 86470 * 12  # 10% від 8647 = 864,70 × 12
-    assert (d["esv_month"], d["esv_year"]) == (190234, 2282808)  # 22% від 8647 = 1902,34 × 12
+    assert d["single_tax_by_quarter"] == {1: 99840, 2: 99840, 3: 99840, 4: 99840}
+    assert d["military_levy"] == 86470 * 12
+    assert (d["esv_month"], d["esv_year"]) == (190234, 2282808)
 
 
 def test_xml_valid_against_official_xsd(db, seed, profile):
@@ -126,5 +124,5 @@ def test_rates_by_date_override_settings(db, seed, profile):
         d25 = tax_declaration.declaration_data(s, d, 2025)
         d26 = tax_declaration.declaration_data(s, d, 2026)
     assert (d25["min_wage"], d25["single_tax_month"], d25["esv_month"], d25["military_levy"]) == (800000, 30280, 176000, 960000)
-    assert d26["min_wage"] == 864700 and d26["single_tax_month"] == 30280  # ЄП 2025 діє, доки не задано нову ставку
+    assert d26["min_wage"] == 864700 and d26["single_tax_month"] == 30280
     assert d25["rates_source"] == "ставки з датами"

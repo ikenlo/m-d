@@ -1,5 +1,3 @@
-"""Паралельні запити: подвійний запис і подвійне проведення оплати неможливі."""
-
 import threading
 from datetime import datetime
 

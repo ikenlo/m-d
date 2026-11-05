@@ -15,8 +15,8 @@ router = APIRouter(prefix="/api", tags=["stock", "schedule"])
 
 
 class ReceiveIn(BaseModel):
-    qty: float  # у базових одиницях (г / мл / шт)
-    cost: int | None = None  # копійки; без суми — за ціною упаковки
+    qty: float
+    cost: int | None = None
     as_expense: bool = False
     note: str | None = None
 
@@ -42,7 +42,6 @@ class CopyWeekIn(BaseModel):
     weeks: int = 1
 
 
-# ------------------------------------------------------------------ склад
 @router.get("/stock")
 def stock_list(all: bool = False, actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
     return [stock.material_public(m) for m in stock.list_materials(s, active_only=not all)]
@@ -71,7 +70,6 @@ def stock_moves(material_id: int | None = None, actor: Actor = Depends(get_actor
     return stock.moves(s, actor, material_id)
 
 
-# ----------------------------------------------------------------- графік
 @router.get("/schedule")
 def schedule_grid(date_from: date, date_to: date, actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
     return schedule.grid(s, actor, date_from, date_to)
@@ -90,7 +88,7 @@ def schedule_reset(master_id: int, day: date, actor: Actor = Depends(get_actor),
 
 
 class ParityIn(BaseModel):
-    parity: str  # even | odd
+    parity: str
     date_from: date
     date_to: date
     start: str | None = None
@@ -99,7 +97,6 @@ class ParityIn(BaseModel):
 
 @router.post("/schedule/{master_id}/parity")
 def schedule_parity(master_id: int, body: ParityIn, actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
-    """Графік за парними / непарними датами."""
     return {"days": schedule.parity_pattern(s, actor, master_id, body.parity, body.date_from, body.date_to, body.start, body.end)}
 
 

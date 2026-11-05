@@ -1,5 +1,3 @@
-"""Демо «ФОП 1 група»: очищення лише демо-даних, дохід нижче ліміту 1 групи, без сповіщень, без дублів."""
-
 from datetime import date, datetime
 
 from sqlalchemy import func, select
@@ -39,10 +37,9 @@ def test_purge_removes_only_demo(db, seed):
         assert o is not None and o.amount == 45000
         assert s.scalar(select(func.count(Order.id))) == 1 and s.scalar(select(func.count(Appointment.id))) == 1
         assert s.scalar(select(func.count(Expense.id)).where(Expense.description.like("%(демо)%"))) == 0
-        assert [m.name for m in s.scalars(select(Material))] == ["Гель-лак"]  # справжній матеріал лишився
+        assert [m.name for m in s.scalars(select(Material))] == ["Гель-лак"]
         assert s.scalar(select(func.count(Client.id)).where(Client.phone.like("+38067999%"))) == 0
         assert s.scalar(select(func.count(Client.id)).where(Client.phone == "+380501112233")) == 1
-        # журнал: лишились лише проведення справжнього замовлення
         assert {e.ref_id for e in s.scalars(select(LedgerEntry).where(LedgerEntry.ref_type == "order"))} == {real}
 
 
@@ -50,7 +47,6 @@ def test_seed_fop1_income_under_limit_and_idempotent(db, seed):
     _real_order(db, seed)
     st = seed_fop1(db, date(2026, 1, 1), date(2026, 3, 31), year_target=110_000_000, future_days=5, clients=80)
     q1 = st["income_by_year"]["2026"]
-    # квартал ≈ 1/4 річної цілі з сезонністю (0.85+0.9+1.1)/12 ≈ 26 тис. на 110 тис.… — у межах ±30 %
     expected = 1_100_000 * (0.85 + 0.9 + 1.1) / 12 / (sum([0.85, 0.9, 1.1, 1.0, 1.05, 0.95, 0.85, 0.85, 1.05, 1.1, 1.05, 1.25]) / 12)
     assert 0.7 * expected < q1 < 1.3 * expected
     with db.session() as s:
@@ -58,6 +54,6 @@ def test_seed_fop1_income_under_limit_and_idempotent(db, seed):
         assert fop.share_bp == 0
         bad = s.scalar(select(func.count(Order.id)).where(Order.amount != Order.master_earning + Order.materials_cost + Order.salon_earning))
         assert bad == 0 and s.scalar(select(func.count(Notification.id))) == 0
-        assert s.scalar(select(func.count(Material.id))) == 20  # 19 демо + справжній
+        assert s.scalar(select(func.count(Material.id))) == 20
     assert seed_fop1(db, date(2026, 1, 1), date(2026, 3, 31)) == {"skipped": True}
     assert clock._fixed is None

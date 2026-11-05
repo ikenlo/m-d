@@ -1,5 +1,3 @@
-"""Акаунти співробітників: створення, вхід, права, умови оплати."""
-
 from __future__ import annotations
 
 import secrets
@@ -37,7 +35,6 @@ def user_public(u: User) -> dict:
 
 
 def effective_terms(s: Session, master: User) -> tuple[int, str]:
-    """Фактичні умови оплати майстра: (відсоток у bp, режим матеріалів)."""
     share = master.share_bp if master.share_bp is not None else get_setting(s, "default_share_bp")
     mode = master.materials_mode or get_setting(s, "default_materials_mode")
     return int(share), str(mode)
@@ -140,7 +137,7 @@ def update_user(s: Session, actor: Actor, user_id: int, data: dict) -> User:
     if data.get("bot_pin"):
         _set_pin(u, data["bot_pin"])
     if data.get("is_active") is False:
-        u.token_version += 1  # завершити всі сесії
+        u.token_version += 1
     s.flush()
     audit(s, actor, "user", u.id, "update", before, user_public(u))
     return u
@@ -170,11 +167,6 @@ def change_own_password(s: Session, actor: Actor, old: str, new: str) -> None:
 
 
 def authenticate(s: Session, username: str, password: str) -> tuple[User | None, str | None]:
-    """Перевірка логіна/пароля з тимчасовим блокуванням після 5 невдалих спроб.
-
-    Не кидає виняток, а повертає (user, None) або (None, помилка), щоб
-    лічильник невдалих спроб було збережено (commit) навіть при відмові.
-    """
     u = s.scalar(select(User).where(func.lower(User.username) == username.strip().lower()))
     now = clock.now()
     if u is None:
@@ -196,7 +188,6 @@ def authenticate(s: Session, username: str, password: str) -> tuple[User | None,
 
 
 def new_telegram_link_code(s: Session, actor: Actor, user_id: int) -> str:
-    """Одноразовий код, який співробітник надсилає боту: /link КОД."""
     if actor.user_id != user_id:
         actor.require(Role.DIRECTOR)
     u: User = get_or_404(s, User, user_id, "Користувача")
@@ -224,8 +215,6 @@ def list_masters(s: Session, active_only: bool = True) -> list[User]:
 
 
 def masters_for_service(s: Session, service_id: int) -> list[User]:
-    """Майстри, які виконують послугу. Якщо майстру не призначено жодної
-    послуги — вважаємо, що він виконує всі."""
     out = []
     for m in list_masters(s):
         ids = {x.id for x in m.services}
@@ -233,8 +222,6 @@ def masters_for_service(s: Session, service_id: int) -> list[User]:
             out.append(m)
     return out
 
-
-# ------------------------------------------------------- вхід персоналу в бот
 
 def _set_pin(u: User, pin: str) -> None:
     pin = str(pin).strip()
@@ -244,7 +231,6 @@ def _set_pin(u: User, pin: str) -> None:
 
 
 def set_bot_pin(s: Session, actor: Actor, user_id: int, pin: str) -> None:
-    """PIN задає директор (будь-кому) або співробітник собі."""
     if actor.user_id != user_id:
         actor.require(Role.DIRECTOR)
     u: User = get_or_404(s, User, user_id, "Користувача")
@@ -260,7 +246,6 @@ def check_staff_code(s: Session, code: str) -> bool:
 
 
 def staff_for_bot(s: Session) -> list[User]:
-    """Хто може увійти в розділ персоналу бота: активні майстри й директори з PIN."""
     q = select(User).where(
         User.is_active.is_(True), User.bot_pin_hash.is_not(None), User.role.in_((Role.MASTER, Role.DIRECTOR))
     )
@@ -268,8 +253,6 @@ def staff_for_bot(s: Session) -> list[User]:
 
 
 def verify_bot_pin(s: Session, user_id: int, pin: str, chat_id: int | None = None) -> User | None:
-    """Перевірка PIN. При успіху Telegram цього чату прив'язується до співробітника
-    (щоб він отримував сповіщення)."""
     u = s.get(User, user_id)
     if u is None or not u.is_active or not u.bot_pin_hash:
         return None

@@ -1,5 +1,3 @@
-"""Звіт про доходи для податкової декларації — тонкий шар над services/tax_report.py."""
-
 from __future__ import annotations
 
 from urllib.parse import quote

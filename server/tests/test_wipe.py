@@ -1,5 +1,3 @@
-"""Очищення робочих даних: лишаються акаунти, послуги, налаштування; демо-акаунти й усі операції — видалено."""
-
 from datetime import date
 
 from sqlalchemy import func, select
@@ -29,5 +27,5 @@ def test_wipe_keeps_accounts_services_settings(db, seed):
         assert s.scalar(select(func.count(m.User.id))) == users_before - 1
         assert s.scalar(select(func.count(m.Service.id))) == services_before
         assert s.scalar(select(func.count()).select_from(m.Setting)) == settings_before + 1
-        assert s.scalar(select(func.count(m.AuditLog.id))) == 1  # запис про саме очищення
+        assert s.scalar(select(func.count(m.AuditLog.id))) == 1
     assert already_wiped(db, "2026-11-04") and not already_wiped(db, "інша")

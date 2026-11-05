@@ -1,8 +1,3 @@
-# Збірка застосунків MDS Connect: Android (.apk) і Windows (.exe).
-# - на кожен PR/пуш зі змінами в apps/: збірка + перевірка APK на емуляторі Android;
-# - вручну (Actions → Apps → Run workflow, release = true): ще й GitHub Release з файлами.
-# Підпис APK: секрети ANDROID_KEYSTORE_BASE64 і ANDROID_KEYSTORE_PASSWORD (docs/APPS.md).
-# Без них APK підписується тестовим ключем — встановлюється, але оновлення поверх може не стати.
 name: Apps
 
 on:
@@ -57,7 +52,6 @@ jobs:
           path: out/MDS-Connect-0.1.0.apk
 
   android-smoke:
-    # запуск APK на емуляторі: застосунок відкривається і показує сторінку входу
     needs: android
     runs-on: ubuntu-latest
     steps:

@@ -1,11 +1,3 @@
-"""Склад матеріалів: залишки, прихід, списання на замовлення, інвентаризація.
-
-Облік у базових одиницях матеріалу (г / мл / шт), у тисячних (qty_milli), щоб списувати
-дробові кількості (напр. 0,5 туби = 30 г). Кожен рух пишеться в stock_moves (лише додавання),
-а поточний залишок — у materials.stock_milli (атомарний UPDATE ... + delta).
-Від'ємний залишок дозволено: закриття замовлення не блокується, але склад показує «мінус».
-"""
-
 from __future__ import annotations
 
 from sqlalchemy import select, update
@@ -16,7 +8,7 @@ from ..models import Material, Order, Role, StockMove
 from .common import Actor, audit, get_or_404
 
 
-MAX_MILLI = 10**12  # 1 000 000 000 г / мл / шт — запобіжник від помилкового введення
+MAX_MILLI = 10**12
 
 
 def to_milli(qty) -> int:
@@ -30,7 +22,6 @@ def to_milli(qty) -> int:
 
 
 def line_cost(m: Material, qty_milli: int) -> int:
-    """Собівартість кількості матеріалу: ціна упаковки × частка упаковки."""
     return (m.unit_cost * qty_milli + (m.pack_size * 1000) // 2) // (m.pack_size * 1000)
 
 
@@ -72,8 +63,6 @@ def _move(s: Session, actor: Actor, m: Material, kind: str, qty_milli: int, *, c
 
 def receive(s: Session, actor: Actor, material_id: int, qty, *, cost: int | None = None,
             as_expense: bool = False, note: str | None = None) -> StockMove:
-    """Прихід на склад. qty — у базових одиницях. cost — сума закупівлі (копійки);
-    as_expense=True — одразу записати витрату «Закупівля матеріалів»."""
     actor.require(Role.DIRECTOR, Role.ADMIN)
     m: Material = get_or_404(s, Material, material_id, "Матеріал")
     q = to_milli(qty)
@@ -96,7 +85,6 @@ def receive(s: Session, actor: Actor, material_id: int, qty, *, cost: int | None
 
 
 def adjust(s: Session, actor: Actor, material_id: int, actual_qty, note: str | None = None) -> StockMove | None:
-    """Інвентаризація: встановити фактичний залишок (різниця пишеться рухом)."""
     actor.require(Role.DIRECTOR, Role.ADMIN)
     m: Material = get_or_404(s, Material, material_id, "Матеріал")
     target = to_milli(actual_qty)
@@ -111,7 +99,6 @@ def adjust(s: Session, actor: Actor, material_id: int, actual_qty, note: str | N
 
 
 def writeoff(s: Session, actor: Actor, material_id: int, qty, note: str | None = None) -> StockMove:
-    """Списання без замовлення (зіпсовано, прострочено, на навчання тощо)."""
     actor.require(Role.DIRECTOR, Role.ADMIN)
     m: Material = get_or_404(s, Material, material_id, "Матеріал")
     q = to_milli(qty)
@@ -126,15 +113,13 @@ def writeoff(s: Session, actor: Actor, material_id: int, qty, note: str | None =
 
 
 def auto_writeoff_threshold(s: Session, m: Material) -> int:
-    """Поріг «крихти» в тисячних базової одиниці: частка упаковки з налаштувань × розмір упаковки."""
     from .common import get_setting
 
-    share = int(get_setting(s, "stock_auto_writeoff_milli") or 0)  # 100 = 0,1 упаковки
+    share = int(get_setting(s, "stock_auto_writeoff_milli") or 0)
     return m.pack_size * share
 
 
 def _auto_writeoff(s: Session, actor: Actor, m: Material, order_id: int | None = None) -> StockMove | None:
-    """Після списання лишилась крихта (менше порогу, напр. 0,09 туби) — списати її автоматично."""
     limit = auto_writeoff_threshold(s, m)
     if not limit or not (0 < m.stock_milli < limit):
         return None
@@ -146,7 +131,6 @@ def _auto_writeoff(s: Session, actor: Actor, m: Material, order_id: int | None =
 
 
 def apply_order(s: Session, actor: Actor, o: Order) -> None:
-    """Списати зі складу матеріали закритого замовлення (і крихту залишку, якщо лишилась)."""
     for line in o.materials:
         if line.material_id:
             m = s.get(Material, line.material_id)
@@ -158,8 +142,6 @@ AUTO_RETURN_NOTE = "Повернення автосписання залишку
 
 
 def reverse_order(s: Session, actor: Actor, o: Order, note: str = "Виправлення замовлення") -> None:
-    """Повернути на склад матеріали замовлення (перед заміною матеріалів при виправленні),
-    а також автоматично списану при цьому замовленні крихту залишку (ще не повернуту)."""
     for line in o.materials:
         if line.material_id:
             m = s.get(Material, line.material_id)

@@ -1,5 +1,3 @@
-"""Комунальні витрати та генератор — тонкий шар над services/utilities.py."""
-
 from __future__ import annotations
 
 from datetime import date, datetime
@@ -22,7 +20,7 @@ class ReadingIn(BaseModel):
     read_on: date
     curr: float = Field(ge=0)
     prev: float | None = Field(default=None, ge=0)
-    tariff: int = Field(gt=0)  # копійок за 1 кВт·год
+    tariff: int = Field(gt=0)
     paid_amount: int | None = Field(default=None, ge=0)
     paid_on: date | None = None
     note: str | None = None
@@ -75,7 +73,6 @@ def _month(m: date | None) -> date:
     return u.month_start(m or clock.now().date())
 
 
-# ------------------------------------------------------------ електроенергія
 @router.get("/utilities/readings")
 def readings(actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
     return u.list_readings(s, actor)
@@ -97,7 +94,6 @@ def confirm_reading(reading_id: int, actor: Actor = Depends(get_actor), s: Sessi
     return u.reading_public(u.confirm_reading(s, actor, reading_id))
 
 
-# ------------------------------------------------------------ генератор
 @router.get("/generator")
 def generator_state(actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
     return u.generator_state(s, actor)
@@ -155,7 +151,6 @@ def generator_motohours(body: MotohoursIn, actor: Actor = Depends(get_actor), s:
     return u.set_motohours(s, actor, body.current)
 
 
-# ------------------------------------------------------------ розподіл і аналітика
 @router.get("/utilities/summary")
 def summary(month: date | None = None, actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
     return u.month_summary(s, actor, _month(month))
