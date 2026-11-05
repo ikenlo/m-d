@@ -10,7 +10,7 @@ from fastapi.responses import RedirectResponse
 from pydantic import Field
 from sqlalchemy.orm import Session
 
-from ... import __version__
+from ... import __version__, perf
 from ...errors import Conflict, ValidationError
 from ...models import Role, User
 from ...services import backup, bugreport, gdrive, journal, sync
@@ -81,6 +81,30 @@ def bug_report(body: BugReportIn, request: Request, actor: Actor = Depends(get_a
     """Баг-репорт із програми — директору в Telegram (зі знімком екрана, якщо додано)."""
     return bugreport.create(s, actor, request.app.state.config.data_dir, text=body.text, page=body.page,
                             context=body.context, image_b64=body.image)
+
+
+class RumItem(BaseModel):
+    name: str = Field(max_length=40)
+    ms: float = Field(ge=0, le=300000)
+
+
+class RumIn(BaseModel):
+    items: list[RumItem] = Field(max_length=30)
+
+
+@router.post("/perf/rum", status_code=204)
+def perf_rum(body: RumIn, actor: Actor = Depends(get_actor)):
+    """Виміри з браузера (RUM): час завантаження й відкриття сторінок. Лише назви сторінок і мілісекунди."""
+    for it in body.items:
+        if perf.CLIENT_NAME.match(it.name):
+            perf.record("client", it.name, it.ms, perf.SLOW_CLIENT_MS)
+
+
+@router.get("/perf")
+def perf_stats(actor: Actor = Depends(get_actor)):
+    """Швидкодія з моменту останнього запуску: найповільніші запити API і сторінки в браузерах (директор)."""
+    actor.require(Role.DIRECTOR)
+    return perf.snapshot()
 
 
 @router.get("/health")
