@@ -1259,22 +1259,10 @@ label.row > input[type="checkbox"], label.row > input[type="radio"] { flex: 0 0 
   .tabbar a.active svg { background: var(--hue-bg); border-radius: 10px; padding: 3px 10px; width: 42px; height: 26px; box-sizing: border-box; }
 }
 
-/* меню «Ще» — кольорові плитки за групами */
-.more-group { font-size: var(--fs-xs); font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-3); margin: 16px 2px 8px; }
-.more-group:first-of-type { margin-top: 4px; }
-.more-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
-.more-tile { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; padding: 14px; border-radius: 16px;
-  background: var(--surface); border: 1px solid var(--line); color: var(--ink); text-decoration: none; box-shadow: var(--shadow-sm);
-  transition: transform var(--dur-1) var(--ease), box-shadow var(--dur-2) var(--ease); min-height: 92px; }
-.more-tile:hover { text-decoration: none; box-shadow: var(--shadow); }
-:root[data-theme="dark"] .more-tile { color: var(--ink); }
-.more-tile:active { transform: scale(.97); }
-.more-tile b { font-size: var(--fs-sm); line-height: 1.25; }
-.tile-ico { width: 38px; height: 38px; border-radius: 11px; display: grid; place-items: center; background: var(--hue-bg); color: var(--hue); }
-.tile-ico .i { width: 20px; height: 20px; }
-.more-actions { margin-top: 16px; padding: 4px; }
-.more-act { display: flex; align-items: center; gap: 12px; width: 100%; padding: 12px; border: 0; background: none; color: var(--ink); font: inherit; font-weight: 600; cursor: pointer; border-radius: var(--r-md); text-align: left; }
-.more-act:hover { background: var(--surface-2); }
-.more-act.danger { color: var(--danger); }
-.more-act .i { color: var(--ink-3); }
-.more-act.danger .i { color: var(--danger); }
+/* меню «Ще» — список; іконка в кольорі розділу */
+.more-row { padding: 10px 12px; color: var(--ink); gap: 12px; flex-wrap: nowrap; border-radius: var(--r-md); text-decoration: none; }
+.more-row:hover { background: var(--surface-2); text-decoration: none; }
+:root[data-theme="dark"] .more-row { color: var(--ink); }
+.more-row > .i { color: var(--ink-3); }
+.tile-ico { width: 32px; height: 32px; border-radius: 9px; display: grid; place-items: center; background: var(--hue-bg); color: var(--hue); flex: 0 0 auto; }
+.tile-ico .i { width: 18px; height: 18px; }

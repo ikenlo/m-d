@@ -862,24 +862,12 @@ function viewMore(main) {
   main.append(topbar("Меню"));
   const dark = document.documentElement.getAttribute("data-theme") === "dark";
   const tabs = MOBILE_TABS[state.user.role] || [];
-  const rest = NAV[state.user.role].filter(([id]) => !tabs.includes(id));
-  // плитки по групах (Робота / Фінанси / Салон) — видно всі розділи одразу, кожен своїм кольором
-  const groups = [];
-  for (const it of rest) {
-    const g = it[3] || "Інше";
-    let grp = groups.find((x) => x.name === g);
-    if (!grp) { grp = { name: g, items: [] }; groups.push(grp); }
-    grp.items.push(it);
-  }
-  for (const g of groups) {
-    if (groups.length > 1) main.append(h("div", { class: "more-group" }, g.name));
-    main.append(h("div", { class: "more-grid" }, g.items.map(([id, ico, label]) =>
-      h("a", { href: "#/" + id, class: "more-tile", "data-hue": HUE[id] || "slate" }, h("span", { class: "tile-ico" }, icon(ico)), h("b", {}, label)))));
-  }
-  main.append(h("div", { class: "card more-actions" },
-    h("button", { class: "more-act", onclick: bugReportForm }, icon("bug"), "Повідомити про помилку"),
-    h("button", { class: "more-act", onclick: toggleTheme }, icon(dark ? "sun" : "moon"), dark ? "Світла тема" : "Темна тема"),
-    h("button", { class: "more-act danger", onclick: logout }, icon("logout"), "Вийти")),
+  // список розділів; іконка — у кольорі розділу, як у бічному меню
+  main.append(h("div", { class: "card", style: { padding: "6px" } }, NAV[state.user.role].filter(([id]) => !tabs.includes(id)).map(([id, ico, label]) =>
+    h("a", { href: "#/" + id, class: "row more-row", "data-hue": HUE[id] || "slate" }, h("span", { class: "tile-ico" }, icon(ico)), h("span", { class: "grow" }, label), icon("right", "sm"))),
+    h("button", { class: "btn ghost", style: { width: "100%", justifyContent: "flex-start", padding: "12px" }, onclick: bugReportForm }, icon("bug"), "Повідомити про помилку"),
+    h("button", { class: "btn ghost", style: { width: "100%", justifyContent: "flex-start", padding: "12px" }, onclick: toggleTheme }, icon(dark ? "sun" : "moon"), dark ? "Світла тема" : "Темна тема"),
+    h("button", { class: "btn ghost", style: { width: "100%", justifyContent: "flex-start", padding: "12px", color: "var(--danger)" }, onclick: logout }, icon("logout"), "Вийти")),
     h("p", { class: "muted small", style: { textAlign: "center", marginTop: "14px" } }, "MDS Connect · ", versionTag()));
 }
 
