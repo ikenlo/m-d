@@ -734,7 +734,9 @@ def build_staff_router() -> Router:
                 await cb.answer(EXPIRED, show_alert=True)
                 return
             reqs = callbacks.list_requests(s, Actor.of(u))
-            lines = [f"• {v.e(r.name or 'Клієнт')}, <b>{r.phone}</b> — {r.created_at:%d.%m %H:%M}" for r in reqs]
+            lines = [f"• {v.e(r.name or 'Клієнт')}, <b>{r.phone}</b> — {r.created_at:%d.%m %H:%M}"
+                     + (" · з сайту" if r.source == "site" else "") + (f"\n  {v.e(r.topic)}" if r.topic else "")
+                     for r in reqs]
             rows = [[(f"✅ Передзвонили: {r.phone}", f"s:cbd:{r.id}")] for r in reqs]
         text = ("📞 <b>Просять передзвонити</b>\n" + "\n".join(lines)) if lines else "📞 Нових заявок на дзвінок немає."
         try:

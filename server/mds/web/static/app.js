@@ -1635,6 +1635,7 @@ VIEWS.calendar = async (main) => {
         h("div", { class: "grow" }, h("b", {}, `Просять передзвонити: ${calls.length}`),
           calls.map((c) => h("div", { class: "row", style: { padding: "5px 0" } },
             h("span", {}, c.name || "Клієнт"), h("a", { href: "tel:" + c.phone }, h("b", {}, c.phone)),
+            c.topic || c.source === "site" ? h("span", { class: "small" }, [c.source === "site" ? "з сайту" : "", c.topic].filter(Boolean).join(" · ")) : null,
             h("span", { class: "muted small grow" }, dm(c.created_at), " ", hm(c.created_at)),
             h("button", { class: "btn sm", onclick: async () => { await run(() => api.post(`/api/callbacks/${c.id}/done`), "Позначено"); reload(); } }, icon("ok", "sm"), "Передзвонили"))))));
     }

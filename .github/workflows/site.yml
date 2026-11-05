@@ -34,6 +34,7 @@ jobs:
           rm -rf _site/docs _site/README.md _site/TODO.md
           node --check _site/js/main.js
           node --check _site/js/booking.js
+          node --check _site/js/quick.js
           python3 -c "import json; json.load(open('_site/shared/config.json')); json.load(open('_site/shared/services.json'))"
       - uses: actions/configure-pages@v5
         with:

@@ -24,7 +24,7 @@ from sqlalchemy.orm import Session
 from ... import clock
 from ...errors import DomainError, ValidationError
 from ...models import ApptStatus, Service
-from ...services import bookings, users
+from ...services import bookings, callbacks, users
 from ...services.antispam import TooMany
 from ...services.catalog import normalize_phone
 from ...services.common import Actor, get_setting
@@ -211,3 +211,37 @@ def create_booking(body: BookingIn, request: Request, s: Session = Depends(get_s
     return {"id": appt.id, "status": appt.status, "starts_at": appt.starts_at.isoformat(timespec="minutes"),
             "service": appt.service.name, "master": _short(appt.master.full_name),
             "message": "Дякуємо! Запис отримано — адміністратор підтвердить його найближчим часом."}
+
+
+class CallbackIn(BaseModel):
+    """Швидка заявка: ім'я, телефон і що хоче клієнт — адміністратор передзвонить і підбере час."""
+
+    name: str = Field(max_length=60)
+    phone: str = Field(max_length=32)
+    service: str | None = Field(default=None, max_length=60)  # «Стрижка», «Фарбування» …
+    when: str | None = Field(default=None, max_length=40)  # «Сьогодні», «Завтра», «Як зручно салону»
+    comment: str | None = Field(default=None, max_length=200)
+    website: str | None = None  # пастка для ботів
+    elapsed_ms: int | None = None
+
+
+@router.post("/callbacks", status_code=201)
+def create_callback(body: CallbackIn, request: Request, s: Session = Depends(get_session)):
+    _enabled(s)
+    if not BOOK_LIMIT.hit(client_ip(request)):
+        raise TooMany("Забагато заявок. Спробуйте пізніше або зателефонуйте.")
+    if body.website or body.elapsed_ms is None or body.elapsed_ms < MIN_FILL_MS:
+        raise ValidationError("Не вдалося надіслати заявку. Оновіть сторінку й спробуйте ще раз.")
+    name = " ".join(body.name.split())
+    if not (2 <= len(name) <= 60) or URL_RE.search(name) or not re.search(r"[A-Za-zА-Яа-яІіЇїЄєҐґ]", name):
+        raise ValidationError("Вкажіть ім'я (лише ім'я, без посилань)")
+    parts = [" ".join((x or "").split()) for x in (body.service, body.when, body.comment)]
+    if any(URL_RE.search(x) for x in parts):
+        raise ValidationError("Заявка не може містити посилань")
+    phone = normalize_phone(body.phone)
+    if not re.fullmatch(r"\+380\d{9}", phone):
+        raise ValidationError("Вкажіть український номер телефону, напр. 067 123 45 67")
+    topic = " · ".join(x for x in parts if x) or None
+    r = callbacks.create_request(s, SITE, phone, name, topic=topic, source="site")
+    return {"id": r.id, "status": r.status,
+            "message": "Дякуємо! Заявку отримано — адміністратор зателефонує й підбере зручний час."}

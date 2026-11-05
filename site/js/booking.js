@@ -130,7 +130,7 @@
 
     function showError(msg, withContacts) {
       el.err.hidden = false;
-      el.err.replaceChildren(h("div", {}, msg), withContacts ? h("div", { class: "quick" }, window.MD.quickLinks(config)) : null);
+      el.err.replaceChildren(h("div", {}, msg, withContacts ? h("div", { class: "quick" }, window.MD.quickLinks(config)) : null));
     }
     const clearError = () => { el.err.hidden = true; };
 

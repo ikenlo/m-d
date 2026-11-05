@@ -125,3 +125,33 @@ def test_public_rate_limit_per_ip_and_cors(client, db, monkeypatch):  # noqa: F8
     assert codes[:5] == [422] * 5 and codes[5] == 429
     # CORS лише для дозволених доменів і лише /api/public
     assert "access-control-allow-origin" not in client.get("/api/public/info", headers={"Origin": "https://evil.example"}).headers
+
+
+def _cb(**kw):
+    p = {"name": "Оля", "phone": "067 111 22 33", "service": "Фарбування", "when": "Завтра", "comment": "",
+         "website": "", "elapsed_ms": 6000}
+    p.update(kw)
+    return p
+
+
+def test_public_quick_callback_from_site(client, db):  # noqa: F811
+    clock.set_now(datetime(2026, 11, 2, 9))
+    assert client.post("/api/public/callbacks", json=_cb()).status_code == 503
+    with db.session() as s:
+        update_settings(s, Actor.system(), {"public_booking_enabled": True})
+    assert client.post("/api/public/callbacks", json=_cb(website="x")).status_code == 422
+    assert client.post("/api/public/callbacks", json=_cb(elapsed_ms=800)).status_code == 422
+    assert client.post("/api/public/callbacks", json=_cb(comment="дивіться t.me/spam")).status_code == 422
+    assert client.post("/api/public/callbacks", json=_cb(phone="+1 555 123 4567")).status_code == 422
+    public.BOOK_LIMIT.reset()
+    r = client.post("/api/public/callbacks", json=_cb(comment="  довге  волосся "))
+    assert r.status_code == 201, r.text
+    # повтор протягом години — та сама заявка, без дубля
+    assert client.post("/api/public/callbacks", json=_cb()).json()["id"] == r.json()["id"]
+    with db.session() as s:
+        req = s.query(CallbackRequest).one()
+        assert (req.phone, req.name, req.source) == ("+380671112233", "Оля", "site")
+        assert req.topic == "Фарбування · Завтра · довге волосся"
+    # ліміт спроб з однієї IP
+    codes = [client.post("/api/public/callbacks", json=_cb(phone=f"06700000{i:02d}")).status_code for i in range(6)]
+    assert 429 in codes

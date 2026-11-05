@@ -3,82 +3,146 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <title>M&amp;D Beauty Salon — перукарські послуги та манікюр · онлайн-запис</title>
-  <meta name="description" content="M&amp;D Beauty Salon — перукарські послуги (стрижки, фарбування, мелірування, Total blonde, догляд) та манікюр. Онлайн-запис.">
-  <meta name="theme-color" content="#0f2a22">
+  <title>M&amp;D Beauty Salon — стрижка, фарбування, манікюр · швидкий запис</title>
+  <meta name="description" content="M&amp;D Beauty Salon — стрижки, фарбування, мелірування, Total blonde, догляд та манікюр. Залиште заявку за 30 секунд — ми передзвонимо.">
+  <meta name="theme-color" content="#ff3d7f">
   <meta property="og:type" content="website">
   <meta property="og:locale" content="uk_UA">
   <meta property="og:title" content="M&amp;D Beauty Salon">
-  <meta property="og:description" content="Перукарські послуги та манікюр. Онлайн-запис.">
+  <meta property="og:description" content="Стрижка й фарбування. Залиште заявку — ми передзвонимо.">
   <meta property="og:image" content="img/og.png">
   <link rel="icon" href="img/logo.svg" type="image/svg+xml">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Manrope:wght@400;500;600;700&display=swap">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;700;800&family=Manrope:wght@400;500;600;700;800&display=swap">
   <link rel="stylesheet" href="css/styles.css">
   <script type="application/ld+json" id="ld-json">{"@context":"https://schema.org","@type":"HairSalon","name":"M&D Beauty Salon"}</script>
 </head>
 <body>
-  <a class="skip" href="#booking">Перейти до запису</a>
+  <a class="skip" href="#quick">Перейти до заявки</a>
 
   <header class="site-header" id="top">
     <div class="wrap header-in">
       <a class="brand" href="#top" aria-label="M&amp;D Beauty Salon — на початок">
-        <img src="img/logo.svg" alt="" width="44" height="44">
-        <span><b data-cfg="salon.name">M&amp;D Beauty Salon</b></span>
+        <img src="img/logo.svg" alt="" width="42" height="42">
+        <b data-cfg="salon.name">M&amp;D Beauty Salon</b>
       </a>
       <button class="burger" type="button" aria-expanded="false" aria-controls="nav" aria-label="Меню"><span></span><span></span><span></span></button>
       <nav id="nav" class="nav" aria-label="Розділи">
-        <a href="#services">Послуги</a>
+        <a href="#services">Послуги й ціни</a>
+        <a href="#how">Як записатися</a>
         <a href="#masters">Майстри</a>
-        <a href="#about">Про нас</a>
         <a href="#gallery">Роботи</a>
         <a href="#faq">Питання</a>
         <a href="#contacts">Контакти</a>
-        <a class="btn btn-gold" href="#booking">Записатися</a>
+        <a class="btn btn-primary btn-sm" href="#quick">Залишити заявку</a>
       </nav>
     </div>
   </header>
 
   <main>
-    <!-- 1. Hero -->
+    <!-- 1. Перший екран: заголовок + швидка заявка -->
     <section class="hero" aria-labelledby="hero-title">
+      <div class="blob b1" aria-hidden="true"></div>
+      <div class="blob b2" aria-hidden="true"></div>
+      <div class="blob b3" aria-hidden="true"></div>
       <div class="wrap hero-in">
-        <img class="hero-logo" src="img/logo.svg" alt="Монограма M&amp;D" width="132" height="132">
-        <p class="eyebrow" data-cfg="salon.subtitle">BEAUTY SALON</p>
-        <h1 id="hero-title" data-cfg="salon.name">M&amp;D Beauty Salon</h1>
-        <p class="tagline" data-cfg="salon.tagline">Перукарські послуги та манікюр</p>
-        <p class="note" data-cfg="salon.opening_note"></p>
-        <div class="hero-cta">
-          <a class="btn btn-gold btn-lg" href="#booking">Записатися онлайн</a>
-          <a class="btn btn-ghost btn-lg" href="#services">Послуги й ціни</a>
+        <div class="hero-text">
+          <p class="badge" data-cfg="salon.opening_note"></p>
+          <h1 id="hero-title">Стрижка й&nbsp;фарбування&nbsp;— <span class="hl">запис за&nbsp;30&nbsp;секунд</span></h1>
+          <p class="hero-lead">Залиште ім'я й телефон — адміністратор зателефонує, підбере майстра й зручний час. Без реєстрації та передоплати.</p>
+          <ul class="hero-points">
+            <li><span class="dot d-pink" aria-hidden="true"></span>Стрижки жіночі й чоловічі</li>
+            <li><span class="dot d-sun" aria-hidden="true"></span>Фарбування, мелірування, Total blonde</li>
+            <li><span class="dot d-mint" aria-hidden="true"></span>Догляд, укладки, брови й вії</li>
+          </ul>
+          <div class="quick" id="quick-hero" aria-label="Швидкий зв'язок"></div>
         </div>
-        <div class="quick" id="quick-hero" aria-label="Швидкий зв'язок"></div>
+
+        <!-- Швидка заявка -->
+        <div class="quick-card" id="quick">
+          <form id="quick-form" novalidate aria-labelledby="quick-title">
+            <h2 id="quick-title" class="qc-title">Швидка заявка</h2>
+            <p class="qc-sub">Ми передзвонимо й узгодимо час</p>
+            <fieldset class="qf">
+              <legend>Що робимо?</legend>
+              <div id="q-services" class="pick" role="radiogroup" aria-label="Послуга"></div>
+            </fieldset>
+            <fieldset class="qf">
+              <legend>Коли зручно?</legend>
+              <div id="q-when" class="pick pick-sm" role="radiogroup" aria-label="Коли зручно"></div>
+            </fieldset>
+            <div class="row2">
+              <div class="field">
+                <label for="q-name">Ім'я</label>
+                <input id="q-name" name="name" autocomplete="given-name" maxlength="60" placeholder="Олена" required>
+              </div>
+              <div class="field">
+                <label for="q-phone">Телефон</label>
+                <input id="q-phone" name="phone" type="tel" autocomplete="tel" inputmode="tel" placeholder="067 123 45 67" maxlength="20" required>
+              </div>
+            </div>
+            <!-- пастка для ботів: людина це поле не бачить і не заповнює -->
+            <div class="hp" aria-hidden="true"><label for="q-website">Сайт</label><input id="q-website" name="website" tabindex="-1" autocomplete="off"></div>
+            <div id="q-error" class="alert" role="alert" hidden></div>
+            <button class="btn btn-primary btn-lg btn-block" type="submit" id="q-submit">Залишити заявку</button>
+            <p class="qc-foot">Хочете обрати точний час самі? <a href="#booking">Онлайн-запис&nbsp;→</a></p>
+            <p id="q-mock" class="demo-note" hidden>Демо-режим: заявка зберігається лише у вашому браузері.</p>
+          </form>
+          <div id="q-done" class="done" hidden tabindex="-1"></div>
+        </div>
       </div>
     </section>
+
+    <!-- біжучий рядок категорій -->
+    <div class="ticker" aria-hidden="true"><div class="ticker-in" id="ticker"></div></div>
 
     <!-- 2. Послуги й прайс -->
     <section id="services" class="section" aria-labelledby="services-title">
       <div class="wrap">
-        <p class="eyebrow">Прайс</p>
-        <h2 id="services-title">Послуги й ціни</h2>
-        <p class="lead">Ціна залежить від довжини й густоти волосся. «від» — остаточну вартість майстер назве на консультації.</p>
+        <div class="sec-head">
+          <p class="eyebrow">Прайс</p>
+          <h2 id="services-title">Послуги й ціни</h2>
+          <p class="lead">«від» — остаточну ціну майстер назве на консультації: вона залежить від довжини й густоти волосся.</p>
+        </div>
         <div id="promos" class="promos" hidden></div>
-        <div id="price-list" class="accordion" aria-live="polite"><p class="muted">Завантаження прайсу…</p></div>
+        <div id="cat-tabs" class="tabs" role="tablist" aria-label="Категорії послуг"></div>
+        <div id="price-list" class="price" aria-live="polite"><p class="muted">Завантаження прайсу…</p></div>
       </div>
     </section>
 
-    <!-- 3. Майстри -->
-    <section id="masters" class="section section-alt" aria-labelledby="masters-title">
+    <!-- 3. Як записатися -->
+    <section id="how" class="section section-tint" aria-labelledby="how-title">
       <div class="wrap">
-        <p class="eyebrow">Команда</p>
-        <h2 id="masters-title">Майстри</h2>
+        <div class="sec-head">
+          <p class="eyebrow">Просто</p>
+          <h2 id="how-title">Як записатися</h2>
+        </div>
+        <ol class="steps">
+          <li class="step s-pink"><span class="num">1</span><h3>Залиште заявку</h3><p>Оберіть послугу й залиште ім'я та телефон — це займе пів хвилини.</p></li>
+          <li class="step s-sun"><span class="num">2</span><h3>Ми передзвонимо</h3><p>Адміністратор підбере майстра й зручний для вас час.</p></li>
+          <li class="step s-mint"><span class="num">3</span><h3>Приходьте</h3><p>Оплата в салоні після послуги — готівкою або карткою.</p></li>
+        </ol>
+        <div class="how-alt">
+          <a class="btn btn-primary btn-lg" href="#quick">Залишити заявку</a>
+          <a class="btn btn-ghost btn-lg" href="#booking">Обрати час онлайн</a>
+        </div>
+      </div>
+    </section>
+
+    <!-- 4. Майстри -->
+    <section id="masters" class="section" aria-labelledby="masters-title">
+      <div class="wrap">
+        <div class="sec-head">
+          <p class="eyebrow">Команда</p>
+          <h2 id="masters-title">Майстри</h2>
+        </div>
         <div id="masters-list" class="masters"></div>
       </div>
     </section>
 
-    <!-- 4. Про нас -->
-    <section id="about" class="section" aria-labelledby="about-title">
+    <!-- 5. Про нас -->
+    <section id="about" class="section section-tint" aria-labelledby="about-title">
       <div class="wrap about">
         <div>
           <p class="eyebrow">Про нас</p>
@@ -86,20 +150,22 @@
           <p id="about-text" class="lead"></p>
         </div>
         <ul class="features">
-          <li><b>Перукарські послуги</b><span>стрижки, фарбування, мелірування, Total blonde, догляд</span></li>
-          <li><b>Манікюр</b><span>послуги уточнюються</span></li>
-          <li><b>Оплата в салоні</b><span>готівкою або карткою</span></li>
-          <li><b>Онлайн-запис</b><span>оберіть послугу, майстра й вільний час</span></li>
+          <li class="f-pink"><b>Перукарські послуги</b><span>стрижки, фарбування, мелірування, Total blonde, догляд</span></li>
+          <li class="f-violet"><b>Манікюр, брови й вії</b><span>послуги уточнюються</span></li>
+          <li class="f-sun"><b>Оплата в салоні</b><span>готівкою або карткою, без передоплати</span></li>
+          <li class="f-mint"><b>Запис як зручно</b><span>заявка, онлайн-запис, Telegram або дзвінок</span></li>
         </ul>
       </div>
     </section>
 
-    <!-- 5. Галерея -->
-    <section id="gallery" class="section section-alt" aria-labelledby="gallery-title">
+    <!-- 6. Галерея -->
+    <section id="gallery" class="section" aria-labelledby="gallery-title">
       <div class="wrap">
-        <p class="eyebrow">Портфоліо</p>
-        <h2 id="gallery-title">Наші роботи</h2>
-        <p class="lead muted" id="gallery-note">Фото робіт з'являться після відкриття салону. Поки що — дивіться Instagram.</p>
+        <div class="sec-head">
+          <p class="eyebrow">Портфоліо</p>
+          <h2 id="gallery-title">Наші роботи</h2>
+          <p class="lead" id="gallery-note">Фото робіт з'являться після відкриття салону. Поки що — дивіться Instagram.</p>
+        </div>
         <div id="gallery-grid" class="gallery"></div>
         <h3 class="sub-h">До / після</h3>
         <div id="ba-grid" class="ba"></div>
@@ -107,95 +173,42 @@
     </section>
 
     <!-- Подарункові сертифікати -->
-    <section id="gifts" class="section" aria-labelledby="gifts-title" hidden>
-      <div class="wrap gift">
-        <div>
-          <p class="eyebrow">Подарунок</p>
-          <h2 id="gifts-title">Подарунковий сертифікат</h2>
-          <p class="lead" id="gift-text"></p>
-          <p class="muted small">Сертифікат оформлюється в салоні; оплата — готівкою або карткою на місці. Онлайн-оплати немає.</p>
+    <section id="gifts" class="section section-pad-sm" aria-labelledby="gifts-title" hidden>
+      <div class="wrap">
+        <div class="gift">
+          <div>
+            <p class="eyebrow">Подарунок</p>
+            <h2 id="gifts-title">Подарунковий сертифікат</h2>
+            <p class="lead" id="gift-text"></p>
+            <p class="small">Оформлюється в салоні; оплата — готівкою або карткою на місці. Онлайн-оплати немає.</p>
+          </div>
+          <a class="btn btn-dark btn-lg" id="gift-btn" href="#contacts">Замовити</a>
         </div>
-        <a class="btn btn-gold btn-lg" id="gift-btn" href="#contacts">Замовити</a>
       </div>
     </section>
 
     <!-- Відгуки — лише справжні; поки їх немає, блок приховано -->
-    <section id="reviews" class="section section-alt" aria-labelledby="reviews-title" hidden>
+    <section id="reviews" class="section" aria-labelledby="reviews-title" hidden>
       <div class="wrap">
-        <p class="eyebrow">Відгуки</p>
-        <h2 id="reviews-title">Відгуки клієнтів</h2>
-        <p class="lead">Залиште відгук після візиту — це допоможе іншим клієнтам.</p>
+        <div class="sec-head">
+          <p class="eyebrow">Відгуки</p>
+          <h2 id="reviews-title">Відгуки клієнтів</h2>
+          <p class="lead">Залиште відгук після візиту — це допоможе іншим клієнтам.</p>
+        </div>
         <a class="btn btn-ghost" id="reviews-link" href="#" target="_blank" rel="noopener">Відгуки в Google</a>
       </div>
     </section>
 
-    <!-- 6. FAQ -->
-    <section id="faq" class="section" aria-labelledby="faq-title">
+    <!-- 7. Онлайн-запис з вибором часу -->
+    <section id="booking" class="section section-tint" aria-labelledby="booking-title">
       <div class="wrap narrow">
-        <p class="eyebrow">Питання</p>
-        <h2 id="faq-title">Часті питання</h2>
-        <div class="accordion faq">
-          <div class="acc-item">
-            <h3><button class="acc-btn" type="button" aria-expanded="false" aria-controls="faq-1" id="faq-1-btn">Як записатися?</button></h3>
-            <div class="acc-panel" id="faq-1" role="region" aria-labelledby="faq-1-btn" hidden>
-              <p>Онлайн на цьому сайті (оберіть послугу, майстра, дату й вільний час), через Telegram-бот салону або телефоном. Після запису адміністратор зв'яжеться з вами для підтвердження.</p>
-            </div>
-          </div>
-          <div class="acc-item">
-            <h3><button class="acc-btn" type="button" aria-expanded="false" aria-controls="faq-2" id="faq-2-btn">Як перенести або скасувати запис?</button></h3>
-            <div class="acc-panel" id="faq-2" role="region" aria-labelledby="faq-2-btn" hidden>
-              <p>Напишіть у Telegram або зателефонуйте — будь ласка, якомога раніше, щоб час міг використати інший клієнт. Якщо записувались через бота — перенести чи скасувати можна прямо там.</p>
-            </div>
-          </div>
-          <div class="acc-item">
-            <h3><button class="acc-btn" type="button" aria-expanded="false" aria-controls="faq-3" id="faq-3-btn">Як оплатити?</button></h3>
-            <div class="acc-panel" id="faq-3" role="region" aria-labelledby="faq-3-btn" hidden>
-              <p>У салоні після послуги — готівкою або карткою. Передоплата й онлайн-оплата не потрібні.</p>
-            </div>
-          </div>
-          <div class="acc-item">
-            <h3><button class="acc-btn" type="button" aria-expanded="false" aria-controls="faq-4" id="faq-4-btn">Чому в прайсі «від»?</button></h3>
-            <div class="acc-panel" id="faq-4" role="region" aria-labelledby="faq-4-btn" hidden>
-              <p>Вартість залежить від довжини, густоти волосся й витрати матеріалу. Остаточну ціну майстер назве перед початком роботи.</p>
-            </div>
-          </div>
-          <div class="acc-item">
-            <h3><button class="acc-btn" type="button" aria-expanded="false" aria-controls="faq-5" id="faq-5-btn">Як обробляються інструменти?</button></h3>
-            <div class="acc-panel" id="faq-5" role="region" aria-labelledby="faq-5-btn" hidden>
-              <p id="faq-sterile">Інструменти очищуються та дезінфікуються після кожного клієнта; інструменти для манікюру проходять стерилізацію. Деталі можна уточнити в майстра.</p>
-            </div>
-          </div>
+        <div class="sec-head">
+          <p class="eyebrow">Онлайн-запис</p>
+          <h2 id="booking-title">Оберіть точний час</h2>
+          <p class="lead">Послуга, майстер, дата й вільний час. Адміністратор підтвердить запис.</p>
         </div>
-      </div>
-    </section>
-
-    <!-- 7. Контакти -->
-    <section id="contacts" class="section section-alt" aria-labelledby="contacts-title">
-      <div class="wrap contacts">
-        <div>
-          <p class="eyebrow">Контакти</p>
-          <h2 id="contacts-title">Як нас знайти</h2>
-          <dl class="contact-list">
-            <div><dt>Адреса</dt><dd id="c-address">уточнюється</dd></div>
-            <div><dt>Телефон</dt><dd id="c-phone">уточнюється</dd></div>
-            <div><dt>Години роботи</dt><dd><span id="c-status" class="status" hidden></span><span id="c-hours">уточнюються</span></dd></div>
-          </dl>
-          <div class="quick" id="quick-contacts" aria-label="Зв'язатися"></div>
-        </div>
-        <div id="map" class="map">
-          <div class="map-ph"><img src="img/logo.svg" alt="" width="64" height="64" loading="lazy"><p>Карта з'явиться, щойно буде вказано адресу салону.</p></div>
-        </div>
-      </div>
-    </section>
-
-    <!-- 8. Запис онлайн -->
-    <section id="booking" class="section booking-section" aria-labelledby="booking-title">
-      <div class="wrap narrow">
-        <p class="eyebrow">Онлайн-запис</p>
-        <h2 id="booking-title">Записатися</h2>
-        <p class="lead">Оберіть послугу, майстра, дату й вільний час. Адміністратор підтвердить запис.</p>
         <p id="mock-note" class="demo-note" hidden>Демонстраційний режим: запис зберігається лише у вашому браузері й нікуди не надсилається.</p>
-        <form id="booking-form" class="booking" novalidate>
+        <form id="booking-form" class="booking card" novalidate>
           <div class="field">
             <label for="b-service">Послуга</label>
             <select id="b-service" name="service" required><option value="">Оберіть послугу</option></select>
@@ -226,34 +239,74 @@
             <label for="b-comment">Коментар <span class="muted small">(необов'язково)</span></label>
             <textarea id="b-comment" name="comment" rows="2" maxlength="300"></textarea>
           </div>
-          <!-- пастка для ботів: людина це поле не бачить і не заповнює -->
           <div class="hp" aria-hidden="true"><label for="b-website">Сайт</label><input id="b-website" name="website" tabindex="-1" autocomplete="off"></div>
           <div id="b-summary" class="summary" hidden></div>
           <div id="b-error" class="alert" role="alert" hidden></div>
-          <button class="btn btn-gold btn-lg btn-block" type="submit" id="b-submit">Записатися</button>
+          <button class="btn btn-primary btn-lg btn-block" type="submit" id="b-submit">Записатися</button>
           <p class="muted small">Натискаючи «Записатися», ви погоджуєтесь, що салон зв'яжеться з вами за вказаним номером щодо запису.</p>
         </form>
-        <div id="b-done" class="done" hidden tabindex="-1"></div>
+        <div id="b-done" class="done card" hidden tabindex="-1"></div>
+      </div>
+    </section>
+
+    <!-- 8. FAQ -->
+    <section id="faq" class="section" aria-labelledby="faq-title">
+      <div class="wrap narrow">
+        <div class="sec-head">
+          <p class="eyebrow">Питання</p>
+          <h2 id="faq-title">Часті питання</h2>
+        </div>
+        <div class="faq">
+          <details><summary>Як записатися?</summary>
+            <p>Найшвидше — «Швидка заявка» вгорі сторінки: адміністратор передзвонить і підбере час. Також можна обрати час самостійно в онлайн-записі, написати в Telegram-бот салону або зателефонувати.</p></details>
+          <details><summary>Як перенести або скасувати запис?</summary>
+            <p>Напишіть у Telegram або зателефонуйте — будь ласка, якомога раніше, щоб час міг використати інший клієнт. Якщо записувались через бота — перенести чи скасувати можна прямо там.</p></details>
+          <details><summary>Як оплатити?</summary>
+            <p>У салоні після послуги — готівкою або карткою. Передоплата й онлайн-оплата не потрібні.</p></details>
+          <details><summary>Чому в прайсі «від»?</summary>
+            <p>Вартість залежить від довжини, густоти волосся й витрати матеріалу. Остаточну ціну майстер назве перед початком роботи.</p></details>
+          <details><summary>Як обробляються інструменти?</summary>
+            <p id="faq-sterile">Інструменти очищуються та дезінфікуються після кожного клієнта; інструменти для манікюру проходять стерилізацію. Деталі можна уточнити в майстра.</p></details>
+        </div>
+      </div>
+    </section>
+
+    <!-- 9. Контакти -->
+    <section id="contacts" class="section section-dark" aria-labelledby="contacts-title">
+      <div class="wrap contacts">
+        <div>
+          <p class="eyebrow">Контакти</p>
+          <h2 id="contacts-title">Як нас знайти</h2>
+          <dl class="contact-list">
+            <div><dt>Адреса</dt><dd id="c-address">уточнюється</dd></div>
+            <div><dt>Телефон</dt><dd id="c-phone">уточнюється</dd></div>
+            <div><dt>Години роботи</dt><dd><span id="c-status" class="status" hidden></span><span id="c-hours">уточнюються</span></dd></div>
+          </dl>
+          <div class="quick" id="quick-contacts" aria-label="Зв'язатися"></div>
+        </div>
+        <div id="map" class="map">
+          <div class="map-ph"><img src="img/logo.svg" alt="" width="64" height="64" loading="lazy"><p>Карта з'явиться, щойно буде вказано адресу салону.</p></div>
+        </div>
       </div>
     </section>
   </main>
 
   <footer class="site-footer">
     <div class="wrap footer-in">
-      <div class="brand"><img src="img/logo.svg" alt="" width="36" height="36" loading="lazy"><b data-cfg="salon.name">M&amp;D Beauty Salon</b></div>
+      <div class="brand"><img src="img/logo.svg" alt="" width="34" height="34" loading="lazy"><b data-cfg="salon.name">M&amp;D Beauty Salon</b></div>
       <div class="quick" id="quick-footer"></div>
-      <p class="muted small">Послуги населенню · оплата в салоні готівкою або карткою · без cookie та трекерів</p>
+      <p class="small">Послуги населенню · оплата в салоні готівкою або карткою · без cookie та трекерів</p>
     </div>
   </footer>
 
   <!-- мобільна липка панель -->
   <div class="sticky-cta" id="sticky-cta">
-    <a class="btn btn-gold" href="#booking">Записатися</a>
+    <a class="btn btn-primary" href="#quick">Залишити заявку</a>
     <div class="quick quick-icons" id="quick-sticky"></div>
   </div>
 
   <script src="js/main.js" defer></script>
   <script src="js/booking.js" defer></script>
-  <script type="module" src="js/hero3d.js"></script>
+  <script src="js/quick.js" defer></script>
 </body>
 </html>

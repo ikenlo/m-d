@@ -95,22 +95,35 @@
     }
   }
 
+  // прайс: вкладки категорій + картки послуг; кожна категорія має свій колір
+  const TONES = ["pink", "sun", "mint", "violet", "sky", "coral"];
   function renderPriceList(c, services, onBook) {
-    const box = $("#price-list");
-    box.replaceChildren();
-    services.categories.forEach((cat, ci) => {
-      const id = "cat-" + cat.id;
-      const btn = h("button", { class: "acc-btn", type: "button", "aria-expanded": ci === 0 ? "true" : "false", "aria-controls": id, id: id + "-btn" },
-        cat.title, h("span", { class: "count" }, cat.services.length > 1 || cat.services[0]?.price !== null ? `${cat.services.length}` : ""));
-      const panel = h("div", { class: "acc-panel", id, role: "region", "aria-labelledby": id + "-btn", hidden: ci !== 0 },
-        cat.services.map((s) => h("div", { class: "svc" },
+    const tabs = $("#cat-tabs"), box = $("#price-list");
+    const cats = services.categories;
+    function show(ci, focus) {
+      [...tabs.children].forEach((b, i) => { b.setAttribute("aria-selected", String(i === ci)); b.tabIndex = i === ci ? 0 : -1; });
+      if (focus) tabs.children[ci].focus();
+      const cat = cats[ci];
+      box.setAttribute("aria-labelledby", "tab-" + cat.id);
+      box.className = "price tone-" + TONES[ci % TONES.length];
+      box.replaceChildren(...cat.services.map((s) => h("div", { class: "svc" },
+        h("div", { class: "svc-main" },
           h("span", { class: "svc-name" }, s.name),
-          h("span", { class: "svc-price" + (s.price === null ? " todo" : "") }, priceText(s)),
           h("span", { class: "svc-meta" }, s.duration_min ? h("span", {}, durText(s.duration_min)) : null,
-            s.level && c.levels?.[s.level] ? h("span", { class: "level" }, c.levels[s.level]) : null),
-          s.price !== null ? h("button", { class: "btn btn-ghost btn-sm", type: "button", onclick: () => onBook(s.id), "aria-label": `Записатися: ${s.name}` }, "Записатися") : null)));
-      box.append(h("div", { class: "acc-item" }, h("h3", {}, btn), panel));
-    });
+            s.level && c.levels?.[s.level] ? h("span", { class: "level" }, c.levels[s.level]) : null)),
+        h("span", { class: "svc-price" + (s.price === null ? " todo" : "") }, priceText(s)),
+        s.price !== null ? h("button", { class: "btn btn-ghost btn-sm", type: "button", onclick: () => onBook(s.id), "aria-label": `Записатися: ${s.name}` }, "Записатися") : null)));
+    }
+    tabs.replaceChildren(...cats.map((cat, ci) => h("button", { class: "tab t-" + TONES[ci % TONES.length], type: "button", role: "tab", id: "tab-" + cat.id,
+      "aria-controls": "price-list", "aria-selected": "false", onclick: () => show(ci),
+      onkeydown: (e) => { const d = e.key === "ArrowRight" ? 1 : e.key === "ArrowLeft" ? -1 : 0; if (d) { e.preventDefault(); show((ci + d + cats.length) % cats.length, true); } } },
+    cat.title, h("span", { class: "count" }, String(cat.services.filter((s) => s.price !== null).length || "")))));
+    box.setAttribute("role", "tabpanel");
+    show(0);
+    // біжучий рядок — назви категорій
+    const words = cats.map((x) => x.title);
+    const strip = () => words.map((w, i) => h("span", { class: "tk t-" + TONES[i % TONES.length] }, w));
+    $("#ticker").replaceChildren(h("div", { class: "tk-row" }, strip()), h("div", { class: "tk-row" }, strip()));
   }
 
   function renderPromos(c) {
@@ -134,7 +147,7 @@
     const g = c.gallery || {};
     const works = g.works || [];
     $("#gallery-grid").replaceChildren(...(works.length ? works.map((w) => h("div", { class: "tile" }, h("img", { src: w.src, alt: w.alt || "Робота майстра", loading: "lazy", width: 600, height: 600 })))
-      : Array.from({ length: 6 }, () => h("div", { class: "tile", "aria-hidden": "true" }, h("span", {}, "M&D")))));
+      : Array.from({ length: 6 }, (_, i) => h("div", { class: "tile ph-tile tone-" + TONES[i % TONES.length], "aria-hidden": "true" }, h("span", {}, "M&D")))));
     if (works.length) $("#gallery-note").hidden = true;
     const ba = g.before_after || [];
     $("#ba-grid").replaceChildren(...(ba.length ? ba : [{}, {}]).map((x) => h("div", { class: "ba-item", "aria-hidden": ba.length ? null : "true" },
@@ -180,19 +193,21 @@
     const burger = $(".burger"), nav = $("#nav");
     burger.addEventListener("click", () => { const o = nav.classList.toggle("open"); burger.setAttribute("aria-expanded", String(o)); });
     nav.addEventListener("click", (e) => { if (e.target.closest("a")) { nav.classList.remove("open"); burger.setAttribute("aria-expanded", "false"); } });
-    // акордеони (прайс і FAQ)
-    document.addEventListener("click", (e) => {
-      const b = e.target.closest(".acc-btn");
-      if (!b) return;
-      const open = b.getAttribute("aria-expanded") === "true";
-      b.setAttribute("aria-expanded", String(!open));
-      document.getElementById(b.getAttribute("aria-controls")).hidden = open;
-    });
-    // липку кнопку ховаємо, коли форма запису на екрані
+    // липку панель ховаємо, коли на екрані будь-яка з форм (швидка заявка або онлайн-запис)
     const sticky = $("#sticky-cta");
     if ("IntersectionObserver" in window) {
-      new IntersectionObserver((en) => sticky.classList.toggle("hide", en.some((x) => x.isIntersecting)), { threshold: 0.05 }).observe($("#booking"));
+      const vis = new Map();
+      const io = new IntersectionObserver((en) => {
+        en.forEach((x) => vis.set(x.target, x.isIntersecting));
+        sticky.classList.toggle("hide", [...vis.values()].some(Boolean));
+      }, { threshold: 0.05 });
+      io.observe($("#quick")); io.observe($("#booking"));
     }
+    // тінь шапки після прокрутки
+    const header = $(".site-header");
+    const onScroll = () => header.classList.toggle("scrolled", window.scrollY > 8);
+    window.addEventListener("scroll", onScroll, { passive: true });
+    onScroll();
   }
 
   window.MD = window.MD || {};
@@ -206,12 +221,12 @@
   window.MD.ready = (async () => {
     ui();
     const [config, services] = await Promise.all([loadJSON("config.json"), loadJSON("services.json")]);
-    document.querySelectorAll("[data-cfg]").forEach((el) => { const v = get(config, el.dataset.cfg); if (v) el.textContent = v; else if (el.dataset.cfg === "salon.opening_note") el.hidden = true; });
+    document.querySelectorAll("[data-cfg]").forEach((el) => { const v = get(config, el.dataset.cfg); if (v) { el.textContent = v; el.hidden = false; } else if (el.dataset.cfg === "salon.opening_note") el.hidden = true; });
     if (config.salon?.name) document.title = `${config.salon.name} — ${config.salon.tagline || "онлайн-запис"}`;
     ["#quick-hero", "#quick-contacts", "#quick-footer"].forEach((s) => $(s).replaceChildren(...quickLinks(config)));
     $("#quick-sticky").replaceChildren(...quickLinks(config, { icons: true }).slice(0, 2));
     renderPromos(config);
-    renderPriceList(config, services, (id) => window.MD.pickService && window.MD.pickService(id));
+    renderPriceList(config, services, (id) => (window.MD.pickQuick || window.MD.pickService)?.(id));
     renderMasters(config);
     renderGallery(config);
     renderExtras(config);

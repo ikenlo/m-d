@@ -490,6 +490,8 @@ class CallbackRequest(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     phone: Mapped[str] = mapped_column(String(32))
     name: Mapped[str | None] = mapped_column(String(128))
+    topic: Mapped[str | None] = mapped_column(String(160))  # що хоче клієнт (з сайту: «Фарбування · завтра»)
+    source: Mapped[str] = mapped_column(String(16), default="telegram", server_default="telegram")  # telegram | site
     telegram_user_id: Mapped[int | None] = mapped_column(BigInteger)
     status: Mapped[str] = mapped_column(String(16), default="new")  # new | done
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
