@@ -339,7 +339,8 @@ function emptyState(text, ico = "inbox") { return h("div", { class: "empty" }, i
 function labelTables(root) {
   root.querySelectorAll("table:not([data-labeled])").forEach((t) => {
     const ths = [...(t.querySelector("tr")?.querySelectorAll("th") || [])];
-    const heads = ths.map((th) => (th.innerText || th.textContent).replace(/\s+/g, " ").trim());
+    // textContent, а не innerText: innerText повертає вже ВЕЛИКІ літери (text-transform заголовка)
+    const heads = ths.map((th) => (th.textContent || "").replace(/\s+/g, " ").trim());
     const hide = ths.map((th) => th.classList.contains("m-hide"));
     if (!heads.length) return;
     t.setAttribute("data-labeled", "1");
@@ -350,6 +351,7 @@ function labelTables(root) {
         const span = Number(td.getAttribute("colspan") || 1);
         if (heads[i] && span === 1) td.setAttribute("data-label", heads[i]);
         if (hide[i] && span === 1) td.classList.add("m-hide");
+        if (i === 0 && span === 1) td.classList.add("m-title"); // на телефоні — заголовок картки
         // на телефоні порожні рядки картки («Вид», «Telegram» без значення) не показуємо
         if (!(td.textContent || "").trim() && !td.querySelector("button, input, select, a, svg, img")) td.classList.add("m-empty");
         i += span;
@@ -2853,8 +2855,8 @@ VIEWS.orders = async (main) => {
         g.items.map((o) => h("tr", { class: "click" + (o.needs_materials ? " no-mat" : ""), onclick: () => (o.needs_materials ? orderMaterialsSheet(o, load) : orderSheet(o.id, load)) },
           h("td", {}, h("b", {}, hm(o.closed_at)), h("div", { class: "muted small" }, "#", o.id, o.revision > 1 ? " · виправлено" : "")),
           h("td", {}, h("div", {}, o.client_name, o.needs_materials ? h("span", { class: "chip st-overdue", style: { marginLeft: "6px" } }, "без матеріалів") : null), h("div", { class: "muted small" }, o.service_name)),
-          h("td", {}, h("span", { class: "row", style: { gap: "8px" } }, avatar(o.master_name, "xs"), o.master_name)),
-          h("td", {}, h("span", { class: "row", style: { gap: "6px" } }, icon(payIco(o.payment_method), "sm"), PAY[o.payment_method])),
+          h("td", {}, h("span", { class: "row nowrap", style: { gap: "8px" } }, avatar(o.master_name, "xs"), h("span", {}, o.master_name))),
+          h("td", {}, h("span", { class: "row nowrap", style: { gap: "6px" } }, icon(payIco(o.payment_method), "sm"), PAY[o.payment_method])),
           h("td", { class: "num" }, h("b", {}, money(o.amount))), h("td", { class: "num muted" }, money(o.materials_cost)),
           h("td", { class: "num" }, money(o.master_earning)), h("td", { class: "num" }, money(o.salon_earning))))]),
       h("tr", { class: "total-row" }, h("td", { colspan: 4 }, h("b", {}, `Разом: ${rows.length}`)), h("td", { class: "num" }, h("b", {}, money(total))),
@@ -2920,8 +2922,8 @@ VIEWS.expenses = async (main) => {
       list.length ? h("div", { class: "card table-wrap", style: { marginTop: "12px" } }, h("table", {},
         h("tr", {}, h("th", {}, "Дата"), h("th", {}, "Категорія"), h("th", {}, "Опис"), h("th", { class: "num" }, "Сума"), h("th", {})),
         list.map((e) => h("tr", {}, h("td", {}, dmy(e.spent_on)), h("td", {}, expCat(e.category)), h("td", {}, e.description || ""), h("td", { class: "num" }, money(e.amount)),
-          h("td", { class: "right" }, h("button", { class: "btn sm danger", onclick: () => confirmSheet("Видалити витрату?", `${expCat(e.category)} ${money(e.amount)}`, "Видалити",
-            async (reason) => { await run(() => api.del(`/api/expenses/${e.id}?reason=${encodeURIComponent(reason)}`), "Видалено"); load(); }, { danger: true, withReason: true }) }, "×"))))))
+          h("td", { class: "right" }, h("button", { class: "icon-btn del-ico", title: "Видалити", "aria-label": "Видалити витрату", onclick: () => confirmSheet("Видалити витрату?", `${expCat(e.category)} ${money(e.amount)}`, "Видалити",
+            async (reason) => { await run(() => api.del(`/api/expenses/${e.id}?reason=${encodeURIComponent(reason)}`), "Видалено"); load(); }, { danger: true, withReason: true }) }, icon("trash", "sm")))))))
         : h("div", { class: "card", style: { marginTop: "12px" } }, emptyState("Витрат за період немає")));
   };
   const add = () => {
