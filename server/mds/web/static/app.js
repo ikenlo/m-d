@@ -775,35 +775,90 @@ function renderApp() {
     .finally(() => skel.remove());
 }
 
+const isPhone = () => window.matchMedia("(max-width: 760px)").matches;
+function deckCards(el) {
+  return [...el.children].flatMap((c) => (c.classList.contains("card") ? [c] : [...c.children].filter((x) => x.classList.contains("card"))));
+}
+function makeDeckTabs(el, cards) {
+  const bar = h("div", { class: "seg deck-tabs-bar", role: "tablist" });
+  const show = (i) => {
+    cards.forEach((c, j) => c.classList.toggle("deck-hide", j !== i));
+    [...bar.children].forEach((b, j) => { b.classList.toggle("on", j === i); b.setAttribute("aria-selected", String(j === i)); });
+  };
+  cards.forEach((c, i) => bar.append(h("button", { type: "button", role: "tab", onclick: () => show(i) },
+    c.dataset.tab || (c.querySelector("h3")?.textContent || String(i + 1)).trim())));
+  el.before(bar);
+  el.classList.add("deck-tabs");
+  show(0);
+}
+function attachPager(el, dots, isDeck) {
+  const per = isDeck ? 1 : 2;
+  const stops = () => {
+    const kids = [...el.children], r0 = el.getBoundingClientRect(), padL = parseFloat(getComputedStyle(el).paddingLeft) || 0;
+    const max = el.scrollWidth - el.clientWidth, out = [];
+    for (let i = 0; i < kids.length; i += per) out.push(Math.max(0, Math.min(max, Math.round(kids[i].getBoundingClientRect().left - r0.left + el.scrollLeft - padL))));
+    return [...new Set(out)];
+  };
+  const nearest = (s, x) => s.reduce((b, v, i) => (Math.abs(v - x) < Math.abs(s[b] - x) ? i : b), 0);
+  let last = "";
+  const fitHeight = () => {
+    const kids = el.children;
+    if (!isDeck || !kids.length || !isPhone()) { el.style.height = ""; return; }
+    const idx = nearest(stops(), el.scrollLeft);
+    el.style.height = kids[Math.min(kids.length - 1, idx)].offsetHeight + 6 + "px";
+  };
+  const draw = () => {
+    fitHeight();
+    const s = stops(), cur = nearest(s, el.scrollLeft), key = s.length + ":" + cur;
+    if (key === last) return;
+    last = key;
+    dots.replaceChildren(...(s.length > 1 && isPhone() ? s.map((_, i) => h("i", { class: i === cur ? "on" : "" })) : []));
+  };
+  let x0 = null, y0 = 0, s0 = 0, t0 = 0, axis = null;
+  el.addEventListener("touchstart", (e) => {
+    if (!isPhone() || e.touches.length !== 1) { x0 = null; return; }
+    x0 = e.touches[0].clientX; y0 = e.touches[0].clientY; s0 = el.scrollLeft; t0 = Date.now(); axis = null;
+  }, { passive: true });
+  el.addEventListener("touchmove", (e) => {
+    if (x0 === null) return;
+    const dx = e.touches[0].clientX - x0, dy = e.touches[0].clientY - y0;
+    if (!axis && Math.abs(dx) + Math.abs(dy) > 8) axis = Math.abs(dx) > Math.abs(dy) ? "x" : "y";
+    if (axis !== "x") return;
+    e.preventDefault();
+    el.scrollLeft = s0 - dx;
+  }, { passive: false });
+  const end = (e) => {
+    if (x0 !== null && axis === "x") {
+      const dx = (e.changedTouches?.[0]?.clientX ?? x0) - x0;
+      const s = stops(), from = nearest(s, s0);
+      const fast = Math.abs(dx) / Math.max(1, Date.now() - t0) > 0.3;
+      const to = Math.abs(dx) > 40 || fast ? Math.max(0, Math.min(s.length - 1, from + (dx < 0 ? 1 : -1))) : from;
+      el.scrollTo({ left: s[to], behavior: "smooth" });
+    }
+    x0 = null; axis = null;
+  };
+  el.addEventListener("touchend", end);
+  el.addEventListener("touchcancel", end);
+  el.addEventListener("scroll", () => requestAnimationFrame(draw), { passive: true });
+  window.addEventListener("resize", draw);
+  draw();
+}
 function enhanceSwipes(root) {
   for (const el of root.querySelectorAll(".grid.kpi, .swipe-deck")) {
     if (el.dataset.sw) continue;
     el.dataset.sw = "1";
+    const isDeck = el.classList.contains("swipe-deck");
+    if (isDeck) {
+      const cards = deckCards(el);
+      if (cards.length <= 3) { makeDeckTabs(el, cards); continue; }
+    } else if (el.children.length <= 3) {
+      el.classList.add("few");
+      el.style.setProperty("--n", String(el.children.length));
+      continue;
+    }
     const dots = h("div", { class: "swipe-dots", "aria-hidden": "true" });
     el.after(dots);
-    let last = "";
-    const isDeck = el.classList.contains("swipe-deck");
-    const fitHeight = () => {
-      const kids = el.children;
-      if (!kids.length || el.scrollWidth <= el.clientWidth + 1) { el.style.height = ""; return; }
-      const step = kids.length > 1 ? kids[1].offsetLeft - kids[0].offsetLeft : el.clientWidth;
-      const slide = kids[Math.min(kids.length - 1, Math.max(0, Math.round(el.scrollLeft / Math.max(1, step))))];
-      el.style.height = slide.offsetHeight + 6 + "px";
-    };
-    const draw = () => {
-      if (isDeck) fitHeight();
-      const w = el.clientWidth;
-      const pages = w ? Math.max(1, Math.ceil(el.scrollWidth / w - 0.05)) : 1;
-      const max = el.scrollWidth - w;
-      const cur = max > 0 ? Math.round((el.scrollLeft / max) * (pages - 1)) : 0;
-      const key = pages + ":" + cur;
-      if (key === last) return;
-      last = key;
-      dots.replaceChildren(...(pages > 1 ? Array.from({ length: pages }, (_, i) => h("i", { class: i === cur ? "on" : "" })) : []));
-    };
-    el.addEventListener("scroll", () => requestAnimationFrame(draw), { passive: true });
-    window.addEventListener("resize", draw);
-    draw();
+    attachPager(el, dots, isDeck);
   }
   for (const el of root.querySelectorAll(".scroll-box")) {
     if (el.dataset.sw) continue;
@@ -844,13 +899,18 @@ async function refreshView(btn) {
   const TH = 72;
   let y0 = null, dy = 0, ind = null;
   const reset = () => { ind?.remove(); ind = null; y0 = null; dy = 0; };
+  let x0 = 0;
+  const SCROLLERS = ".grid.kpi, .swipe-deck, .daystrip, .slot-strip, .qb-chips, .qb-times, .scroll-box, .table-wrap, .seg";
   window.addEventListener("touchstart", (e) => {
-    y0 = (state.user && window.scrollY <= 0 && !document.querySelector(".overlay") && e.touches.length === 1) ? e.touches[0].clientY : null;
+    const inside = e.target.closest && e.target.closest(SCROLLERS);
+    y0 = (state.user && window.scrollY <= 0 && !inside && !document.querySelector(".overlay") && e.touches.length === 1) ? e.touches[0].clientY : null;
+    x0 = y0 === null ? 0 : e.touches[0].clientX;
     dy = 0;
   }, { passive: true });
   window.addEventListener("touchmove", (e) => {
     if (y0 === null) return;
     dy = e.touches[0].clientY - y0;
+    if (Math.abs(e.touches[0].clientX - x0) > Math.max(12, dy * 0.6)) { reset(); return; }
     if (dy <= 4) { ind?.remove(); ind = null; return; }
     if (!ind) { ind = h("div", { class: "ptr" }, icon("refresh")); document.body.append(ind); }
     const p = Math.min(dy, 130);
@@ -2369,7 +2429,7 @@ VIEWS.dashboard = async (main) => {
         kpi("Середній чек", s.average_check, "", { ico: "receipt", prev: p.average_check, sub: `${s.orders_count} замовл. · ${s.clients_count} клієнтів`, onclick: () => checkSheet(ex) })),
       ins ? insightsBlock(ins) : null,
       h("div", { class: "grid two swipe-deck", style: { marginTop: "12px" } },
-        h("div", { class: "card" }, h("div", { class: "card-head" }, h("h3", {}, "Куди йдуть гроші"), h("span", { class: "muted small" }, `${dmy(s.from)} — ${dmy(s.to)}`)),
+        h("div", { class: "card", "data-tab": "Куди гроші" }, h("div", { class: "card-head" }, h("h3", {}, "Куди йдуть гроші"), h("span", { class: "muted small" }, `${dmy(s.from)} — ${dmy(s.to)}`)),
           h("div", { class: "sum-line" }, h("span", {}, "Виручка"), h("b", {}, money(s.revenue))),
           h("div", { class: "sum-line" }, h("span", { class: "muted" }, "− Частка майстрів"), h("span", {}, money(s.masters_share))),
           h("div", { class: "sum-line" }, h("span", { class: "muted" }, "− Матеріали"), h("span", {}, money(s.materials))),
@@ -2377,12 +2437,12 @@ VIEWS.dashboard = async (main) => {
           expRows.map(([l, v, , href]) => h(href ? "a" : "div", { class: "sum-line" + (href ? " link" : ""), href: href || null }, h("span", { class: "muted" }, "− " + l), h("span", {}, money(v)))),
           h("div", { class: "sum-line total" }, h("span", {}, "Чистий прибуток"), h("span", { class: s.net_profit < 0 ? "neg" : "" }, money(s.net_profit)))),
         h("div", { class: "stack" },
-          h("div", { class: "card" }, h("div", { class: "card-head" }, h("h3", {}, "Зарплата майстрів")),
+          h("div", { class: "card", "data-tab": "Зарплати" }, h("div", { class: "card-head" }, h("h3", {}, "Зарплата майстрів")),
             h("div", { class: "sum-line" }, h("span", {}, "Нараховано за період"), h("b", {}, money(s.masters_share))),
             h("div", { class: "sum-line" }, h("span", {}, "Виплачено за період"), h("b", {}, money(s.payouts))),
             h("div", { class: "sum-line total" }, h("span", {}, "Борг по зарплаті зараз"), h("span", {}, money(s.salary_debt_total))),
             s.salary_debt_total > 0 ? h("a", { href: "#/shifts", class: "small" }, "Підтвердити виплати →") : null),
-          h("div", { class: "card" }, h("div", { class: "card-head" }, h("h3", {}, "Оплати клієнтів")),
+          h("div", { class: "card", "data-tab": "Оплати" }, h("div", { class: "card-head" }, h("h3", {}, "Оплати клієнтів")),
             [["cash", "banknote"], ["card", "card"], ["transfer", "transfer"]].filter(([k]) => k !== "transfer" || s.by_payment.transfer).map(([k, ic]) => {
               const v = s.by_payment[k] || 0;
               return h("div", { class: "stack", style: { marginBottom: "8px" } },
