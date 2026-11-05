@@ -208,3 +208,20 @@ def test_auto_writeoff_of_tiny_remainder(db, seed):
         stock.receive(s, d, t.id, "10")
         stock.writeoff(s, d, t.id, "8", "x")
         assert s.get(Material, t.id).stock_milli == 2_000
+
+
+def test_schedule_even_odd_days(db, seed):
+    d, m1 = seed["actors"]["director"], seed["actors"]["m1"]
+    with db.session() as s:
+        n = schedule.parity_pattern(s, d, seed["m1"], "even", date(2026, 11, 1), date(2026, 11, 10), "10:00", "19:00")
+        assert n == 10
+        g = schedule.grid(s, d, date(2026, 11, 1), date(2026, 11, 10))["cells"][seed["m1"]]
+        assert [k[-2:] for k, c in sorted(g.items()) if not c["off"]] == ["02", "04", "06", "08", "10"]
+        assert g["2026-11-04"]["start"] == "10:00"
+        schedule.parity_pattern(s, d, seed["m1"], "odd", date(2026, 11, 1), date(2026, 11, 4))
+        g = schedule.grid(s, d, date(2026, 11, 1), date(2026, 11, 4))["cells"][seed["m1"]]
+        assert [k[-2:] for k, c in sorted(g.items()) if not c["off"]] == ["01", "03"]
+        with pytest.raises(Forbidden):
+            schedule.parity_pattern(s, m1, seed["m1"], "odd", date(2026, 11, 1), date(2026, 11, 4))
+        with pytest.raises(ValidationError):
+            schedule.parity_pattern(s, d, seed["m1"], "x", date(2026, 11, 1), date(2026, 11, 4))
