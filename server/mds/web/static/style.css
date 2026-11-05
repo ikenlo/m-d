@@ -1226,3 +1226,27 @@ label.row > input[type="checkbox"], label.row > input[type="radio"] { flex: 0 0 
   .scroll-box { max-height: 380px; overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
   .scroll-box.more { -webkit-mask-image: linear-gradient(#000 calc(100% - 48px), transparent); mask-image: linear-gradient(#000 calc(100% - 48px), transparent); }
 }
+
+/* Оновлення вигляду: більше повітря, м'якші тіні, міні-графіки, обведені статуси */
+:root { --shadow-card: 0 1px 2px rgba(20, 30, 25, .04), 0 10px 28px -14px rgba(20, 30, 25, .16); }
+:root[data-theme="dark"] { --shadow-card: 0 1px 2px rgba(0, 0, 0, .3), 0 12px 30px -16px rgba(0, 0, 0, .6); }
+.card { box-shadow: var(--shadow-card); border-color: color-mix(in srgb, var(--line) 75%, transparent); }
+.card-head h3 { font-size: var(--fs-md); font-weight: 700; letter-spacing: -.01em; }
+.kpi-tile { gap: 8px; }
+.kpi-ico { border-radius: 50%; }
+.kpi-row { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 4px 10px; min-width: 0; }
+.spark { flex: 0 0 auto; width: 84px; height: 30px; margin-left: auto; overflow: visible; }
+.spark path { fill: none; stroke: var(--gold); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.kpi-tile.dark .spark path { stroke: var(--gold-soft); }
+.kpi-tile.dark {
+  background: radial-gradient(130% 120% at 100% 0%, var(--brand-2) 0%, var(--brand) 62%);
+  box-shadow: 0 1px 2px rgba(20, 30, 25, .12), 0 16px 32px -16px rgba(20, 57, 44, .55);
+}
+.chip { border: 1px solid color-mix(in srgb, currentColor 28%, transparent); }
+th { background: transparent; font-weight: 600; letter-spacing: .05em; border-bottom-color: var(--line); }
+th, td { padding-top: 12px; padding-bottom: 12px; }
+tbody tr:hover td, table tr:not(:first-child):hover td { background: color-mix(in srgb, var(--surface-2) 70%, transparent); }
+.empty svg { background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--line); }
+@media (max-width: 760px) {
+  .grid.kpi.kpi-6 .spark { width: 64px; height: 22px; }
+}

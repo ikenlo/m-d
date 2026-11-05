@@ -293,12 +293,41 @@ function deltaEl(cur, prev) {
   return h("span", { class: "delta " + cls, title: "Порівняно з попереднім періодом: " + money(prev) }, (p > 0 ? "▲ " : p < 0 ? "▼ " : "") + Math.abs(p) + "%");
 }
 
-function kpi(label, value, cls = "", { ico = null, prev, vs = null, sub = null, raw = false, onclick = null } = {}) {
+function sparkline(values) {
+  const NS = "http://www.w3.org/2000/svg";
+  const v = values.filter((x) => Number.isFinite(x));
+  if (v.length < 2) return null;
+  const W = 100, H = 32, lo = Math.min(...v), hi = Math.max(...v), span = hi - lo || 1;
+  const pts = v.map((x, i) => [(i / (v.length - 1)) * W, H - 3 - ((x - lo) / span) * (H - 6)]);
+  let d = `M${pts[0][0].toFixed(1)} ${pts[0][1].toFixed(1)}`;
+  for (let i = 1; i < pts.length; i++) {
+    const [x0, y0] = pts[i - 1], [x1, y1] = pts[i], cx = (x0 + x1) / 2;
+    d += ` C${cx.toFixed(1)} ${y0.toFixed(1)} ${cx.toFixed(1)} ${y1.toFixed(1)} ${x1.toFixed(1)} ${y1.toFixed(1)}`;
+  }
+  const svg = document.createElementNS(NS, "svg");
+  svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+  svg.setAttribute("preserveAspectRatio", "none");
+  svg.setAttribute("class", "spark");
+  svg.setAttribute("aria-hidden", "true");
+  const path = document.createElementNS(NS, "path");
+  path.setAttribute("d", d);
+  path.setAttribute("vector-effect", "non-scaling-stroke");
+  svg.append(path);
+  return svg;
+}
+function dailySeries(items, dateOf, valueOf) {
+  const m = new Map();
+  for (const x of items) { const k = dateOf(x).slice(0, 10); m.set(k, (m.get(k) || 0) + valueOf(x)); }
+  return [...m.keys()].sort().map((k) => m.get(k));
+}
+
+function kpi(label, value, cls = "", { ico = null, prev, vs = null, sub = null, raw = false, onclick = null, spark = null } = {}) {
   const d = deltaEl(value, prev);
-  return h(onclick ? "button" : "div", { class: "card kpi-tile " + cls + (onclick ? " kpi-link" : ""), onclick, type: onclick ? "button" : null },
+  const line = spark ? sparkline(spark) : null;
+  return h(onclick ? "button" : "div", { class: "card kpi-tile " + cls + (onclick ? " kpi-link" : "") + (line ? " has-spark" : ""), onclick, type: onclick ? "button" : null },
     h("div", { class: "kpi-top" }, ico ? h("span", { class: "kpi-ico" }, icon(ico, "sm")) : null, h("span", { class: "kpi-label" }, label),
       onclick ? h("span", { class: "kpi-more" }, icon("right", "sm")) : null),
-    h("div", { class: "kpi-value" + (value < 0 ? " neg" : "") }, raw ? value : money(value)),
+    h("div", { class: "kpi-row" }, h("div", { class: "kpi-value" + (value < 0 ? " neg" : "") }, raw ? value : money(value)), line),
     d || sub ? h("div", { class: "row small muted" }, d, d && vs ? vs : null, sub) : null);
 }
 
@@ -2333,10 +2362,10 @@ VIEWS.dashboard = async (main) => {
     const ex = { s, p, d, vs, exp, expRows, opEx };
     body.replaceChildren(...[
       h("div", { class: "grid kpi" },
-        kpi("Виручка салону", s.revenue, "dark", { ico: "banknote", prev: p.revenue, vs, onclick: () => revenueSheet(ex) }),
+        kpi("Виручка салону", s.revenue, "dark", { ico: "banknote", prev: p.revenue, vs, spark: d.by_day.map((x) => x.revenue), onclick: () => revenueSheet(ex) }),
         kpi("Витрати", opEx, "", { ico: "wallet", prev: p.operating_expenses, sub: "комунальні, генератор, реклама…", onclick: () => expensesSheet(ex) }),
         kpi("Чистий прибуток", s.net_profit, "accent", { ico: "trend", prev: p.net_profit, vs, onclick: () => profitSheet(ex) }),
-        kpi("Валовий прибуток", s.gross_profit, "", { ico: "chart", prev: p.gross_profit, onclick: () => profitSheet(ex) }),
+        kpi("Валовий прибуток", s.gross_profit, "", { ico: "chart", prev: p.gross_profit, spark: d.by_day.map((x) => x.salon_net_from_orders), onclick: () => profitSheet(ex) }),
         kpi("Середній чек", s.average_check, "", { ico: "receipt", prev: p.average_check, sub: `${s.orders_count} замовл. · ${s.clients_count} клієнтів`, onclick: () => checkSheet(ex) })),
       ins ? insightsBlock(ins) : null,
       h("div", { class: "grid two swipe-deck", style: { marginTop: "12px" } },
@@ -2917,11 +2946,11 @@ VIEWS.orders = async (main) => {
     const total = sum((o) => o.amount);
     const kpis = h("div", { class: "grid kpi kpi-6" },
       kpi("Замовлень", rows.length, "", { ico: "receipt", raw: true, sub: rows.length ? `середній чек ${money(Math.round(total / rows.length))}` : null }),
-      kpi("Виручка", total, "dark", { ico: "trend" }),
+      kpi("Виручка", total, "dark", { ico: "trend", spark: dailySeries(rows, (o) => o.closed_at, (o) => o.amount) }),
       kpi("Готівка", cash, "", { ico: "banknote" }),
       kpi("Картка", total - cash, "", { ico: "card" }),
       kpi("Майстрам", sum((o) => o.master_earning), "", { ico: "coins" }),
-      kpi("Салону", sum((o) => o.salon_earning), "accent", { ico: "home" }));
+      kpi("Салону", sum((o) => o.salon_earning), "accent", { ico: "home", spark: dailySeries(rows, (o) => o.closed_at, (o) => o.salon_earning) }));
     if (!rows.length) { body.replaceChildren(kpis, h("div", { class: "card" }, emptyState(list.length ? "Нічого не знайдено — змініть пошук чи фільтр" : "Немає замовлень за період", "receipt"))); return; }
     const days = [];
     for (const o of rows) {
@@ -3030,7 +3059,7 @@ VIEWS.myorders = async (main) => {
     const earn = list.reduce((a, o) => a + o.master_earning, 0);
     body.replaceChildren(
       h("div", { class: "grid kpi", style: { marginBottom: "12px" } },
-        kpi("Замовлень", list.length, "", { ico: "receipt", raw: true }), kpi("Виручка", total, "", { ico: "banknote" }), kpi("Мій заробіток", earn, "dark", { ico: "wallet" })),
+        kpi("Замовлень", list.length, "", { ico: "receipt", raw: true }), kpi("Виручка", total, "", { ico: "banknote" }), kpi("Мій заробіток", earn, "dark", { ico: "wallet", spark: dailySeries(list, (o) => o.closed_at, (o) => o.master_earning) })),
       bad.length ? incompleteBlock(bad, load) : h("div"),
       list.length ? h("div", { class: "card ord-list" }, list.map((o) => h("button", { class: "ord-item" + (o.missing.length ? " no-mat" : ""), onclick: () => myOrderSheet(o.id, load) },
         h("div", { class: "ord-time" }, dm(o.closed_at), h("br"), hm(o.closed_at)),
