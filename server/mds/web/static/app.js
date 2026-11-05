@@ -344,6 +344,20 @@ function barList(rows, total = null) {
 }
 const pctOf = (v, total) => (total ? `${Math.round((v / total) * 1000) / 10}%`.replace(".", ",") : "");
 
+function searchToggle(input, ...extra) {
+  const close = h("button", { type: "button", class: "icon-btn", "aria-label": "Закрити пошук", title: "Закрити пошук", onclick: () => {
+    if (input.value) { input.value = ""; input.dispatchEvent(new Event("input")); }
+    box.classList.add("hidden"); btn.classList.remove("on");
+  } }, icon("x", "sm"));
+  const box = h("div", { class: "search-pop hidden" }, h("div", { class: "search-box grow" }, icon("search", "sm"), input), ...extra, close);
+  const btn = h("button", { type: "button", class: "icon-btn search-btn", "aria-label": "Пошук", title: "Пошук", onclick: () => {
+    const open = box.classList.toggle("hidden") === false;
+    btn.classList.toggle("on", open);
+    if (open) input.focus(); else close.click();
+  } }, icon("search"));
+  input.addEventListener("keydown", (e) => { if (e.key === "Escape") close.click(); });
+  return { btn, box };
+}
 function emptyState(text, ico = "inbox") { return h("div", { class: "empty" }, icon(ico), h("div", {}, text)); }
 
 function labelTables(root) {
@@ -2365,6 +2379,7 @@ VIEWS.clients = async (main) => {
     isDir ? h("button", { class: "btn only-desk", onclick: doExport }, icon("filetext", "sm"), "Експорт") : null,
     h("button", { class: "btn only-desk", onclick: dupSheet }, icon("users", "sm"), "Дублікати"),
     isDir ? h("button", { class: "btn ghost only-desk", onclick: purge }, icon("trash", "sm"), "Без номера") : null));
+  let topBtn = null, topClients = [];
   if (isDir) {
     const box = h("div");
     const loadA = async (days) => {
@@ -2377,21 +2392,25 @@ VIEWS.clients = async (main) => {
         kpi("Активні", a.active_clients, "", { ico: "check", raw: true, sub: `${a.visits} візитів` }),
         kpi("Повторні візити", `${Math.round(a.repeat_share_bp / 100)}%`, "", { ico: "history", raw: true }),
         kpi("Середній чек", a.average_check, "accent", { ico: "receipt" }),
-        kpi("Перестали ходити", a.stopped, a.stopped ? "" : "", { ico: "alert", raw: true })),
-        a.top_clients.length ? h("details", { class: "card", style: { marginBottom: "12px" } }, h("summary", { class: "row", style: { cursor: "pointer" } }, icon("trend", "sm"), h("b", {}, "Найприбутковіші клієнти за період")),
-          h("div", { style: { marginTop: "10px" } }, barList(a.top_clients.map((x) => [x.name, x.spent, `${x.visits} віз.`]), a.top_clients[0].spent))) : null);
+        kpi("Перестали ходити", a.stopped, a.stopped ? "" : "", { ico: "alert", raw: true })));
+      topClients = a.top_clients;
+      topBtn.disabled = !topClients.length;
     };
     box.className = "cl-analytics";
+    topBtn = h("button", { type: "button", class: "btn cl-top", onclick: () => openSheet("Найприбутковіші клієнти",
+      topClients.length ? barList(topClients.map((x) => [x.name, x.spent, `${x.visits} віз.`]), topClients[0].spent) : emptyState("За період немає даних", "trend")) },
+      icon("trend", "sm"), h("span", {}, "Найприбутковіші клієнти"));
     main.append(h("div", { class: "filters cl-period" }, seg([[30, "30 днів"], [90, "90 днів"], [365, "Рік"]], 30, (v) => loadA(Number(v)))), box);
     loadA(30);
   }
-  const search = h("input", { type: "search", placeholder: "Ім'я або телефон", "aria-label": "Пошук: ім'я, прізвище або телефон", id: "client-search" });
+  const search = h("input", { type: "search", placeholder: "Ім'я, телефон", "aria-label": "Пошук: ім'я, прізвище або телефон", id: "client-search" });
   const sort = select([["name", "За ім'ям"], ["visits", "За візитами"], ...(isDir ? [["spent", "За витратами"]] : []), ["last_visit", "Нещодавні візити"], ["created", "Нові картки"]], "name", { style: { width: "auto" }, "aria-label": "Сортування" });
   const chips = h("div", { class: "chips-row cl-chips" });
   const list = h("div");
   const more = h("button", { class: "btn", style: { width: "100%", marginTop: "10px" } }, "Показати ще");
-  main.append(h("div", { class: "row filters-2 cl-search", style: { marginBottom: "10px" } }, h("div", { class: "search-box grow" }, icon("search", "sm"), search), sort,
-    h("button", { class: "btn only-mob-flex cl-more", type: "button", "aria-label": "Дії: експорт, дублікати, без номера", onclick: actionsSheet }, icon("more"))), chips, list, more);
+  const sToggle = searchToggle(search, sort);
+  main.append(h("div", { class: "row cl-search", style: { marginBottom: "10px" } }, topBtn || h("span", { class: "grow" }), sToggle.btn,
+    h("button", { class: "btn only-mob-flex cl-more", type: "button", "aria-label": "Дії: експорт, дублікати, без номера", onclick: actionsSheet }, icon("more"))), sToggle.box, chips, list, more);
   let req = 0, items = [];
   async function load(append = false) {
     const my = ++req;
@@ -2401,10 +2420,9 @@ VIEWS.clients = async (main) => {
     const r = await api.get("/api/clients/base?" + qs).catch((e) => { toast(e.message, true); return null; });
     if (!r || my !== req) return;
     items = append ? items.concat(r.items) : r.items;
-    const total = Object.values(r.segments).reduce((x, y) => x + y, 0);
-    const chip = (key, label, n) => h("button", { class: "chip-btn" + ((key === "bday" ? st.birthdays : !st.birthdays && st.segment === key) ? " on" : ""),
-      onclick: () => { st.birthdays = key === "bday"; st.segment = key === "bday" ? "" : key; load(); } }, label, n !== null ? h("span", { class: "chip-n" }, String(n)) : null);
-    chips.replaceChildren(chip("", "Усі", total), ...Object.entries(r.segment_labels).map(([k, l]) => chip(k, l, r.segments[k])), chip("bday", "🎂 Дні народження", null));
+    const chip = (key, label, n) => h("button", { class: "chip-btn" + (st.segment === key ? " on" : ""),
+      onclick: () => { st.birthdays = false; st.segment = st.segment === key ? "" : key; load(); } }, label, n !== null ? h("span", { class: "chip-n" }, String(n)) : null);
+    chips.replaceChildren(...["new", "regular", "lapsed"].filter((k) => r.segment_labels[k]).map((k) => chip(k, r.segment_labels[k], r.segments[k])));
     list.replaceChildren(items.length ? h("div", { class: "card ord-list anim-in" }, items.map((c) => h("button", { class: "ord-item cl-item", onclick: () => clientSheet(c.id, () => load()) },
       avatar(c.name, "sm"),
       h("div", { class: "grow ord-main" }, h("b", {}, c.name), h("div", { class: "muted small" }, c.phone || "без номера", c.birthday && st.birthdays ? ` · 🎂 ${dm(c.birthday)}` : "")),
@@ -2433,7 +2451,9 @@ async function clientsSimple(main) {
   main.append(topbar("Клієнти", "Ваші клієнти та їхні візити"));
   const q = h("input", { placeholder: "Пошук за ім'ям або телефоном", type: "search", id: "client-search" });
   const box = h("div", { class: "card ord-list", style: { marginTop: "12px" } });
-  main.append(h("div", { class: "search-box" }, icon("search", "sm"), q), box);
+  const sToggle = searchToggle(q);
+  main.querySelector(".topbar > .row").prepend(sToggle.btn);
+  main.append(sToggle.box, box);
   let timer;
   const load = async () => {
     const list = await api.get("/api/clients?q=" + encodeURIComponent(q.value.trim()));
@@ -3633,7 +3653,8 @@ VIEWS.stock = async (main) => {
     canEdit ? h("button", { class: "btn primary", onclick: () => materialForm(null, list, refresh) }, icon("plus", "sm"), "Матеріал") : null));
   const search = h("input", { type: "search", placeholder: "Пошук: назва або тон", id: "stock-search", oninput: (e) => { q = e.target.value.trim().toLowerCase(); draw(); } });
   const tabs = seg([["left", "Залишки"], ["moves", "Рух складу"]], tab, (v) => { tab = v; if (v === "left") movesFor = null; draw(); });
-  main.append(h("div", { class: "row stock-bar" }, tabs, h("div", { class: "search-box grow" }, icon("search", "sm"), search)), body);
+  const sToggle = searchToggle(search);
+  main.append(h("div", { class: "row stock-bar" }, tabs, sToggle.btn), sToggle.box, body);
 
   async function draw() {
     if (tab === "moves") {
