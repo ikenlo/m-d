@@ -1250,3 +1250,9 @@ tbody tr:hover td, table tr:not(:first-child):hover td { background: color-mix(i
 @media (max-width: 760px) {
   .grid.kpi.kpi-6 .spark { width: 64px; height: 22px; }
 }
+
+.login-card { overflow: hidden; }
+.login-card::before { height: 3px; border-radius: 0; }
+.login-form > .login-btn { margin-top: 20px; }
+.login-form > .login-err, .login-form > .login-hint { margin-top: 12px; }
+.login-foot { max-width: 320px; margin-left: auto; margin-right: auto; text-wrap: balance; line-height: 1.45; }
