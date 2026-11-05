@@ -119,6 +119,7 @@ h3 { font-size: var(--fs-md); }
 .right { text-align: right; }
 .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .grow { flex: 1; min-width: 0; }
+.row.nowrap { flex-wrap: nowrap; }
 .stack > * + * { margin-top: 12px; }
 .hidden { display: none !important; }
 .num, .kpi-value, td.num { font-variant-numeric: tabular-nums; }
@@ -156,6 +157,8 @@ svg.i.lg { width: 22px; height: 22px; }
   display: grid; place-items: center; cursor: pointer;
 }
 .icon-btn:hover { background: rgba(127, 127, 127, .14); }
+.icon-btn.del-ico { color: var(--ink-3); }
+.icon-btn.del-ico:hover { color: var(--danger); background: var(--danger-bg); }
 
 .main { flex: 1; min-width: 0; padding: 22px 28px 90px; max-width: 1360px; }
 .topbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 18px; flex-wrap: wrap; }
@@ -499,12 +502,15 @@ body::before {
 @media (max-width: 640px) {
   table.resp, table.resp tbody { display: block; }
   table.resp tr:has(th) { display: none; }
-  table.resp tr { display: block; padding: 10px 14px; border-bottom: 1px solid var(--line); }
+  /* рядок таблиці на телефоні — картка: перша клітинка = заголовок, далі «підпис — значення» */
+  table.resp tr { display: block; padding: 12px 16px; border-bottom: 1px solid var(--line); }
   table.resp tr:last-child { border-bottom: 0; }
-  table.resp td { display: flex; justify-content: space-between; gap: 12px; padding: 4px 0; border: 0; text-align: right; }
-  table.resp td::before { content: attr(data-label); color: var(--ink-3); font-size: var(--fs-xs); font-weight: 600; text-align: left; flex-shrink: 0; }
+  table.resp td { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding: 3px 0; border: 0; text-align: right; font-size: var(--fs-sm); }
+  table.resp td::before { content: attr(data-label); color: var(--ink-3); font-size: var(--fs-sm); font-weight: 500; text-align: left; flex-shrink: 0; }
   table.resp td:not([data-label])::before, table.resp td[data-label=""]::before { content: none; }
   table.resp td:first-child { font-weight: 700; }
+  table.resp td.m-title { justify-content: flex-start; text-align: left; font-size: var(--fs-md); padding: 0 0 6px; color: var(--ink); }
+  table.resp td.m-title::before { content: none; }
   table.resp td.right { justify-content: flex-end; flex-wrap: wrap; }
   table.resp .m-hide { display: none; }
   .card.table-wrap { padding: 0; }
@@ -1025,11 +1031,11 @@ tr.no-mat td { background: var(--danger-bg); }
   /* кругла «+» по центру меню, виступає над лінією — щоб легко натиснути великим пальцем */
   .tab-plus { display: flex; flex: 1; align-items: center; justify-content: center; border: 0; background: none; padding: 0; cursor: pointer; position: relative; -webkit-tap-highlight-color: transparent; }
   /* зелена кнопка в самій панелі: не налазить на вміст, без розмитого ореолу; лише легкий відблиск зверху */
-  .tab-plus span { width: 56px; height: 40px; border-radius: 14px; display: grid; place-items: center; color: #fff; border: 0;
-    background: linear-gradient(160deg, #3fb07a 0%, #1f8a5b 60%, #176f49 100%);
-    box-shadow: 0 4px 12px -2px rgba(23, 111, 73, .45), inset 0 1px 0 rgba(255, 255, 255, .25);
+  .tab-plus span { width: 48px; height: 48px; border-radius: 50%; display: grid; place-items: center; color: #fff; border: 0; margin-top: -6px;
+    background: linear-gradient(160deg, #3fb07a 0%, #1f8a5b 55%, #176f49 100%);
+    box-shadow: 0 0 0 4px rgba(31, 138, 91, .12), 0 6px 16px -4px rgba(23, 111, 73, .55), inset 0 1px 0 rgba(255, 255, 255, .25);
     transition: transform var(--dur-1) var(--ease), box-shadow var(--dur-1) var(--ease); }
-  .tab-plus:active span { transform: scale(.94); box-shadow: 0 2px 6px -2px rgba(23, 111, 73, .5), inset 0 1px 0 rgba(255, 255, 255, .2); }
+  .tab-plus:active span { transform: scale(.94); box-shadow: 0 0 0 3px rgba(31, 138, 91, .14), 0 2px 6px -2px rgba(23, 111, 73, .5), inset 0 1px 0 rgba(255, 255, 255, .2); }
   .tab-plus svg { width: 24px; height: 24px; stroke-width: 2.6; }
   :root[data-theme="dark"] .tab-plus span { color: #fff; }
 }
@@ -1053,7 +1059,8 @@ label.row > input[type="checkbox"], label.row > input[type="radio"] { flex: 0 0 
 :root[data-theme="dark"] label.row > input[type="checkbox"] { accent-color: var(--gold); }
 @media (max-width: 760px) {
   /* перемикачі й вкладки — на всю ширину, кнопки рівні */
-  .seg { display: flex; width: 100%; }
+  /* довгі вкладки («Квартальна відомість», «Фіксована ставка») переносяться на другий рядок, а не ховаються за краєм */
+  .seg { display: flex; width: 100%; flex-wrap: wrap; overflow-x: visible; }
   .seg button { flex: 1 1 0; min-width: max-content; text-align: center; padding-left: 8px; padding-right: 8px; }
   .filters .row, .filters-2 { width: 100%; }
   .filters-2 > .seg { flex: 1 1 100%; }
@@ -1073,7 +1080,7 @@ label.row > input[type="checkbox"], label.row > input[type="radio"] { flex: 0 0 
   .btn { padding-left: 12px; padding-right: 12px; }
   .callout { gap: 10px; }
 }
-.fab { width: 56px; height: 56px; border-radius: 18px; background: linear-gradient(160deg, #3fb07a 0%, #1f8a5b 60%, #176f49 100%); box-shadow: 0 8px 20px -4px rgba(23, 111, 73, .5), inset 0 1px 0 rgba(255, 255, 255, .25); }
+.fab { width: 56px; height: 56px; border-radius: 50%; background: linear-gradient(160deg, #3fb07a 0%, #1f8a5b 55%, #176f49 100%); box-shadow: 0 0 0 5px rgba(31, 138, 91, .12), 0 8px 20px -4px rgba(23, 111, 73, .5), inset 0 1px 0 rgba(255, 255, 255, .25); }
 :root[data-theme="dark"] .fab { background: linear-gradient(160deg, #3fb07a 0%, #1f8a5b 60%, #176f49 100%); color: #fff; }
 .qb-empty { grid-column: 1 / -1; display: flex; gap: 8px; align-items: flex-start; padding: 10px 12px; border-radius: var(--r-md); background: var(--surface-2); color: var(--ink-2); font-size: var(--fs-sm); }
 .qb-empty svg { color: var(--ink-3); flex: 0 0 auto; margin-top: 2px; }
