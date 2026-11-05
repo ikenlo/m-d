@@ -87,6 +87,12 @@ p { margin: 0 0 1em; }
 .hero-cta { display: flex; gap: 12px; flex-wrap: wrap; justify-content: center; margin: 10px 0 22px; animation: rise .8s .3s ease-out both; }
 @keyframes rise { from { opacity: 0; transform: translateY(14px); } }
 @media (min-width: 900px) { .hero { padding: 96px 0 104px; } .hero-logo { width: 150px; height: 150px; } }
+/* 3D-медальйон (js/hero3d.js) — на місці логотипа, того ж розміру: без зсуву сторінки */
+.hero-3d { display: block; width: 120px; height: 120px; margin-bottom: 18px; opacity: 0; transition: opacity .6s ease;
+  filter: drop-shadow(0 12px 28px rgba(201, 164, 92, .28)); }
+.hero-3d.on { opacity: 1; }
+.hero-logo.is-3d { display: none; }
+@media (min-width: 900px) { .hero-3d { width: 150px; height: 150px; } }
 
 /* швидкі контакти */
 .quick { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
