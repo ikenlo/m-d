@@ -155,6 +155,8 @@ const weekday = (iso) => WD[new Date(iso + "T12:00").getDay()];
 const phoneLink = (p, attrs = {}) => (p ? h("a", { href: "tel:" + p, ...attrs }, attrs.label ?? p) : h("span", { class: "muted" }, "без номера"));
 const uuid = () => (crypto.randomUUID ? crypto.randomUUID() : Date.now() + "-" + Math.random().toString(16).slice(2));
 
+// іконка статусу в картці календаря
+const EV_ICON = { pending: "alert", confirmed: "ok", in_progress: "play", completed: "check" };
 const STATUS = {
   pending: "Очікує", confirmed: "Підтверджено", in_progress: "Триває",
   completed: "Завершено", cancelled: "Скасовано", no_show: "Не прийшов",
@@ -1666,35 +1668,62 @@ VIEWS.calendar = async (main) => {
     }
     main.append(agenda);
   } else {
-    let startMin = 24 * 60, endMin = 0;
-    for (const m of masters) { const sp = spanOf(m); if (sp) { startMin = Math.min(startMin, toMin(sp[0])); endMin = Math.max(endMin, toMin(sp[1])); } }
-    for (const a of list) { startMin = Math.min(startMin, toMin(hm(a.starts_at))); endMin = Math.max(endMin, toMin(hm(a.ends_at))); }
-    if (startMin >= endMin) { startMin = 9 * 60; endMin = 20 * 60; }
-    startMin = Math.floor(startMin / 60) * 60; endMin = Math.ceil(endMin / 60) * 60;
-    const STEP = 30, ROW = 40, HEAD = 56, TIMEW = 58;
-    const rows = (endMin - startMin) / STEP;
+    // 30 хв = 46 px: у найкоротшому записі вміщаються два рядки (час+клієнт, послуга+ціна)
+    const STEP = 30, ROW = 46, HEAD = 60, TIMEW = 52, GAP = 30;
+    const fmt = (x) => `${pad(Math.floor(x / 60))}:${pad(x % 60)}`;
+    // показуємо лише години графіка та години з записами; порожні проміжки між ними згортаються в тонкий рядок
+    const hrs = new Set();
+    const addHours = (a0, a1) => { for (let hh = Math.floor(a0 / 60); hh < Math.ceil(a1 / 60); hh++) hrs.add(hh); };
+    for (const m of masters) { const sp = spanOf(m); if (sp) addHours(toMin(sp[0]), toMin(sp[1])); }
+    for (const a of activeList) addHours(toMin(hm(a.starts_at)), Math.max(toMin(hm(a.ends_at)), toMin(hm(a.starts_at)) + 1));
+    if (!hrs.size) addHours(9 * 60, 20 * 60);
+    const hours = [...hrs].sort((x, y) => x - y);
+    const rowsDef = [];
+    let yAcc = HEAD;
+    hours.forEach((hh, k) => {
+      if (k && hh !== hours[k - 1] + 1) { rowsDef.push({ gap: true, from: (hours[k - 1] + 1) * 60, to: hh * 60, y: yAcc, hgt: GAP }); yAcc += GAP; }
+      for (const half of [0, STEP]) { rowsDef.push({ min: hh * 60 + half, y: yAcc, hgt: ROW }); yAcc += ROW; }
+    });
+    const startMin = hours[0] * 60, endMin = (hours[hours.length - 1] + 1) * 60;
+    const yOf = (x) => {
+      for (const r of rowsDef) {
+        if (r.gap) { if (x >= r.from && x < r.to) return r.y + GAP * (x - r.from) / (r.to - r.from); }
+        else if (x >= r.min && x < r.min + STEP) return r.y + ((x - r.min) / STEP) * ROW;
+        else if (x < r.min) return r.y;
+      }
+      return yAcc;
+    };
     const colW = isMaster ? "minmax(240px, 1fr)" : "minmax(180px, 1fr)";
 
-    const grid = h("div", { class: "cal-grid", style: { gridTemplateColumns: `${TIMEW}px repeat(${masters.length}, ${colW})`, gridTemplateRows: `${HEAD}px repeat(${rows}, ${ROW}px)` } });
+    const grid = h("div", { class: "cal-grid", style: { gridTemplateColumns: `${TIMEW}px repeat(${masters.length}, ${colW})`, gridTemplateRows: `${HEAD}px ` + rowsDef.map((r) => r.hgt + "px").join(" ") } });
     grid.append(h("div", { class: "cal-corner" }));
     masters.forEach((m) => {
-      const n = activeList.filter((a) => a.master_id === m.id).length;
+      const mine = activeList.filter((a) => a.master_id === m.id);
+      const sum = mine.reduce((t, a) => t + (a.price || 0), 0);
       const sp = spanOf(m);
-      grid.append(h("div", { class: "cal-head" + (sp ? "" : " is-off") }, avatar(m.full_name, "sm"),
-        h("div", { class: "who" }, h("b", {}, m.full_name), h("span", {}, sp ? `${sp[0]}–${sp[1]}` : "вихідний")),
-        n ? h("i", { class: "cnt" }, String(n)) : null));
+      // підсумок колонки: години, кількість записів і сума за прайсом; «вихідний» лише коли записів немає
+      const hours = sp ? `${sp[0]}–${sp[1]}` : (mine.length ? "поза графіком" : "вихідний");
+      grid.append(h("div", { class: "cal-head" + (sp || mine.length ? "" : " is-off") }, avatar(m.full_name, "sm"),
+        h("div", { class: "who" }, h("b", {}, m.full_name),
+          h("span", {}, hours, mine.length ? ` · ${mine.length} ${plural(mine.length, "запис", "записи", "записів")}` : "")),
+        sum ? h("i", { class: "cnt" }, money(sum)) : null));
     });
-    for (let r = 0; r < rows; r++) {
-      const min = startMin + r * STEP;
-      const time = `${pad(Math.floor(min / 60))}:${pad(min % 60)}`;
-      grid.append(h("div", { class: "cal-time" + (r === 0 ? " first" : "") }, min % 60 === 0 ? time : ""));
+    rowsDef.forEach((row, r) => {
+      if (row.gap) {
+        grid.append(h("div", { class: "cal-gap", style: { gridColumn: `1 / span ${masters.length + 1}` } },
+          h("span", {}, `${fmt(row.from)}–${fmt(row.to)}`), " · без записів"));
+        return;
+      }
+      const min = row.min;
+      const time = fmt(min);
+      grid.append(h("div", { class: "cal-time" + (r === 0 || rowsDef[r - 1].gap ? " first" : "") }, min % 60 === 0 ? time : ""));
       masters.forEach((m) => {
         const sp = spanOf(m);
         const off = !sp || min < toMin(sp[0]) || min >= toMin(sp[1]);
         grid.append(h("div", { class: "cal-cell" + (off ? " off" : "") + (min % 60 ? " half" : ""), title: off ? "Неробочий час" : `Новий запис · ${m.full_name} · ${time}`,
           onclick: off ? null : () => quickBook({ master_id: m.id, date: day, time }) }, off ? null : h("span", { class: "cell-add" }, "+ ", time)));
       });
-    }
+    });
     const wrap = h("div", { class: "cal" }, grid);
     main.append(wrap);
     main.append(h("div", { class: "legend" },
@@ -1707,22 +1736,47 @@ VIEWS.calendar = async (main) => {
         const col = masters.findIndex((m) => m.id === a.master_id);
         if (col < 0) return;
         const head = heads[col];
-        const top = HEAD + ((toMin(hm(a.starts_at)) - startMin) / STEP) * ROW;
-        const height = Math.max(((toMin(hm(a.ends_at)) - toMin(hm(a.starts_at))) / STEP) * ROW - 3, 24);
-        grid.append(h("div", { class: "cal-ev " + a.status, title: `${hm(a.starts_at)}–${hm(a.ends_at)} ${a.client.name} · ${a.service_name}`,
+        const top = yOf(toMin(hm(a.starts_at)));
+        const height = Math.max(yOf(toMin(hm(a.ends_at))) - top - 3, 26);
+        const short = height < 60;
+        const nowM = day === today() ? new Date().getHours() * 60 + new Date().getMinutes() : -1;
+        const past = nowM >= 0 && toMin(hm(a.ends_at)) <= nowM && a.status !== "completed";
+        grid.append(h("div", { class: `cal-ev st-${a.status}` + (short ? " short" : "") + (past ? " past" : ""),
+          title: `${hm(a.starts_at)}–${hm(a.ends_at)} · ${a.client.name} · ${a.service_name} · ${money(a.price)} · ${STATUS[a.status] || ""}`,
           style: { top: top + 2 + "px", height: height + "px", left: head.offsetLeft + 4 + "px", width: head.offsetWidth - 8 + "px", animationDelay: Math.min(i * 25, 300) + "ms" },
           onclick: () => apptSheet(a, reload) },
-          h("div", { class: "ev-top" }, h("b", {}, a.client.name), height > 30 ? h("span", { class: "t" }, `${hm(a.starts_at)}–${hm(a.ends_at)}`) : null),
-          height > 50 ? h("div", { class: "ev-svc" }, a.service_name) : null,
-          height > 72 ? h("div", { class: "ev-price" }, money(a.price)) : null));
+          h("div", { class: "ev-top" }, h("span", { class: "ev-time" }, hm(a.starts_at)), h("b", {}, a.client.name),
+            h("span", { class: "ev-st", title: STATUS[a.status] || "" }, icon(EV_ICON[a.status] || "clock", "sm"))),
+          h("div", { class: "ev-sub" }, h("span", { class: "ev-svc" }, a.service_name), h("b", { class: "ev-price" }, money(a.price))),
+          short ? null : h("div", { class: "ev-meta" }, `${hm(a.starts_at)}–${hm(a.ends_at)} · ${STATUS[a.status] || ""}`,
+            a.client.phone ? h("a", { href: "tel:" + a.client.phone, class: "ev-call", "aria-label": "Подзвонити", onclick: (e) => e.stopPropagation() }, icon("phone", "sm")) : null)));
+      });
+      // вільні вікна в робочий час (≥ 30 хв) — підписані й клікабельні: одразу видно, куди можна записати
+      masters.forEach((m, col) => {
+        const sp = spanOf(m);
+        if (!sp) return;
+        const head = heads[col];
+        const busy = activeList.filter((a) => a.master_id === m.id).map((a) => [toMin(hm(a.starts_at)), toMin(hm(a.ends_at))]).sort((x, y) => x[0] - y[0]);
+        let cur = Math.max(toMin(sp[0]), day === today() ? Math.ceil((new Date().getHours() * 60 + new Date().getMinutes()) / STEP) * STEP : 0);
+        const end = toMin(sp[1]);
+        const gaps = [];
+        for (const [b0, b1] of busy) { if (b0 - cur >= STEP) gaps.push([cur, b0]); cur = Math.max(cur, b1); }
+        if (end - cur >= STEP) gaps.push([cur, end]);
+        for (const [g0, g1] of gaps) {
+          const len = g1 - g0;
+          grid.append(h("button", { class: "cal-free", type: "button",
+            style: { top: yOf(g0) + 4 + "px", left: head.offsetLeft + 6 + "px", width: head.offsetWidth - 12 + "px" },
+            onclick: () => quickBook({ master_id: m.id, date: day, time: fmt(g0) }) },
+            icon("plus", "sm"), `Вільно ${fmt(g0)}–${fmt(g1)}`, h("span", {}, len >= 60 ? ` · ${Math.floor(len / 60)} год${len % 60 ? " " + (len % 60) + " хв" : ""}` : ` · ${len} хв`)));
+        }
       });
       // лінія «зараз»
       if (day === today()) {
         const now = new Date();
         const nm = now.getHours() * 60 + now.getMinutes();
         if (nm >= startMin && nm <= endMin) {
-          grid.append(h("div", { class: "now-line", style: { top: HEAD + ((nm - startMin) / STEP) * ROW + "px", left: TIMEW + "px", right: "0" } }));
-          if (params.get("d") === null) wrap.scrollTop = Math.max(0, ((nm - startMin) / STEP) * ROW - 120);
+          grid.append(h("div", { class: "now-line", style: { top: yOf(nm) + "px", left: TIMEW + "px", right: "0" } }));
+          if (params.get("d") === null) wrap.scrollTop = Math.max(0, yOf(nm) - HEAD - 120);
         }
       }
     });
