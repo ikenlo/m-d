@@ -3447,38 +3447,46 @@ VIEWS.schedule = async (main) => {
   const body = h("div", { class: "grid two" });
   main.append(body, h("div", { class: "legend" },
     h("span", { class: "chip", style: { background: "var(--ok)", color: "#fff" } }, "✓ робочий"), h("span", { class: "chip st-cancelled" }, "сірий — вихідний"),
-    h("span", {}, "Золота рамка — змінено на цю дату. Години замість галочки — якщо не звичайні.")));
+    h("span", {}, "Години замість галочки — якщо не звичайні.")));
 
-  const card = (m) => {
-    const cells = g.cells[m.id];
+  // кнопка дня; при натисканні міняємо лише її (і лічильник), а не перемальовуємо всі картки — без затримок
+  const counters = {};
+  const workCount = (m) => g.days.filter((d) => !g.cells[m.id][d].off).length;
+  const dayBtn = (m, d) => {
+    const c = g.cells[m.id][d];
     const usual = m.usual_hours;
-    const work = g.days.filter((d) => !cells[d].off).length;
+    const unusual = !c.off && (c.start !== usual[0] || c.end !== usual[1]);
+    const btn = h("button", {
+      type: "button", disabled: !canEdit || null, "aria-pressed": String(!c.off),
+      class: "sched-day " + (c.off ? "off" : "on") + (d === today() ? " today" : ""),
+      "aria-label": `${weekday(d)} ${dm(d)}: ${c.off ? "вихідний" : `${c.start}–${c.end}`}`,
+      onclick: () => (mode === "hours" ? dayForm(m, d, c) : toggle(m, d, c, btn)),
+    },
+    h("span", { class: "num" }, String(+d.slice(8, 10))),
+    c.off ? null : unusual ? h("span", { class: "hrs" }, `${short(c.start)}–${short(c.end)}`) : icon("ok"));
+    return btn;
+  };
+  const card = (m) => {
+    const usual = m.usual_hours;
+    counters[m.id] = h("div", { class: "muted small" });
+    const setCount = () => { counters[m.id].textContent = `робочих днів: ${workCount(m)} · зазвичай ${short(usual[0])}–${short(usual[1])}`; };
+    counters[m.id].refresh = setCount;
+    setCount();
     return h("div", { class: "card stack" },
       h("div", { class: "row sched-head" }, avatar(m.full_name, "sm"),
-        h("div", { class: "grow" }, h("b", {}, m.full_name),
-          h("div", { class: "muted small" }, `робочих днів: ${work} · зазвичай ${short(usual[0])}–${short(usual[1])}`)),
+        h("div", { class: "grow" }, h("b", {}, m.full_name), counters[m.id]),
         canEdit ? h("div", { class: "sched-actions" }, h("button", { class: "btn sm", onclick: () => parityForm(m) }, "Парні / непарні…"),
           h("button", { class: "btn sm ghost", onclick: () => copyForm(m) }, "Копіювати тиждень…")) : null),
       h("div", { class: "sched-grid" },
         ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Нд"].map((w) => h("div", { class: "sched-wd" }, w)),
-        g.days.map((d) => {
-          const c = cells[d];
-          const unusual = !c.off && (c.start !== usual[0] || c.end !== usual[1]);
-          return h("button", {
-            type: "button", disabled: !canEdit || null, "aria-pressed": String(!c.off),
-            class: "sched-day " + (c.off ? "off" : "on") + (c.source === "day" ? " changed" : "") + (d === today() ? " today" : ""),
-            "aria-label": `${weekday(d)} ${dm(d)}: ${c.off ? "вихідний" : `${c.start}–${c.end}`}`,
-            onclick: () => (mode === "hours" ? dayForm(m, d, c) : toggle(m, d, c)),
-          },
-          h("span", { class: "num" }, String(+d.slice(8, 10))),
-          c.off ? null : unusual ? h("span", { class: "hrs" }, `${short(c.start)}–${short(c.end)}`) : icon("ok"));
-        })));
+        g.days.map((d) => dayBtn(m, d))));
   };
   const draw = () => body.replaceChildren(...g.masters.map(card));
   draw();
 
+  // зміни йдуть на сервер по черзі у фоні; на екрані — одразу. Помилка → повертаємо графік із сервера.
   let busy = Promise.resolve(), pending = 0, failed = false;
-  function toggle(m, d, c) {
+  function toggle(m, d, c, btn) {
     const api_url = `/api/schedule/${m.id}/${d}`;
     const tpl = c.template; // тижневий шаблон цього дня (null — за шаблоном вихідний)
     let req;
@@ -3492,20 +3500,15 @@ VIEWS.schedule = async (main) => {
       Object.assign(c, { off: false, start: s1, end: e1 });
     }
     c.source = "day";
-    draw(); // одразу показуємо галочку, сервер підтверджує
-    // зміни йдуть на сервер по черзі; звіряємось із сервером лише коли черга порожня —
-    // інакше швидкі натискання «відскакували» назад, поки решта ще в дорозі
+    btn.replaceWith(dayBtn(m, d));
+    counters[m.id].refresh();
     pending++;
     busy = busy.then(async () => {
       try { await req(); } catch (e) { failed = true; toast(e.message, true); }
       pending--;
-      if (pending === 0) {
+      if (pending === 0 && failed) {
         const fresh = await api.get(url).catch(() => null);
-        if (fresh && pending === 0) {
-          const changed = failed || JSON.stringify(fresh.cells) !== JSON.stringify(g.cells);
-          g = fresh; failed = false;
-          if (changed) draw();
-        }
+        if (fresh && pending === 0) { g = fresh; failed = false; draw(); }
       }
     });
   }

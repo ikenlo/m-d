@@ -580,7 +580,6 @@ body::before {
 .sched-day.off .num { font-weight: 500; opacity: .7; }
 .sched-day .i { width: 14px; height: 14px; stroke-width: 3.2; }
 .sched-day .hrs { font-size: var(--fs-micro); font-weight: 700; line-height: 1; white-space: nowrap; }
-.sched-day.changed { box-shadow: 0 0 0 2px var(--gold); }
 .sched-day.today { outline: 2px solid var(--ink); outline-offset: 2px; }
 
 /* Аналітика і прогноз */
