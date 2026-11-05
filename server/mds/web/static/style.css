@@ -1336,3 +1336,8 @@ tbody tr:hover td, table tr:not(:first-child):hover td { background: color-mix(i
 .search-pop input::-webkit-search-cancel-button { -webkit-appearance: none; display: none; }
 .stock-bar { flex-wrap: nowrap; }
 .stock-bar > .seg { flex: 1 1 auto; width: auto; min-width: 0; }
+.cl-search { flex-wrap: nowrap !important; align-items: center; gap: 8px; }
+.cl-search > .cl-top { flex: 1 1 auto; min-width: 0; justify-content: flex-start; overflow: hidden; }
+.cl-search > .cl-top span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.search-pop > .search-box { min-width: 0; }
+.search-pop > select { flex: 0 1 auto; width: auto !important; max-width: 36%; min-width: 0; font-size: var(--fs-sm) !important; }
