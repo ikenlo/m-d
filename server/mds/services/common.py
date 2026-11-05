@@ -148,6 +148,12 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "antispam_whitelist": ["+380687166910"],
     # SMS/Viber клієнтам (TurboSMS; ключ — змінні сервера MDS_TURBOSMS_TOKEN і MDS_TURBOSMS_SENDER)
     "sms_enabled": False,
+    "sms_price": 0,  # ціна однієї SMS за тарифом TurboSMS, копійки (для обліку витрат на розсилки)
+    "sms_auto_birthday": False,  # автопривітання з днем народження (лише зі згодою)
+    "sms_auto_return": False,  # автонагадування про повторний візит (лише зі згодою)
+    "sms_auto_hour": 11,  # о котрій годині надсилати автоматичні повідомлення
+    "sms_birthday_text": "{name}, вітаємо з днем народження! 🎉 Даруємо приємний бонус на наступний візит у M&D.",
+    "sms_return_text": "{name}, час оновити образ 💇 Запишіться в M&D — оберемо зручний час.",
     "antispam_max_active": 2,  # активних майбутніх записів на клієнта
     "antispam_max_per_day": 3,  # нових онлайн-записів від клієнта за добу
     "antispam_max_pending_total": 20,  # непідтверджених онлайн-записів у черзі
@@ -258,6 +264,14 @@ def update_settings(s: Session, actor: Actor, data: dict[str, Any]) -> dict[str,
                 raise ValidationError("Білий список: перелік номерів")
             value = sorted({normalize_phone(str(x)) for x in value if str(x).strip()})
             data[key] = value
+        if key in ("sms_auto_birthday", "sms_auto_return") and not isinstance(value, bool):
+            raise ValidationError(f"{key}: так або ні")
+        if key == "sms_price" and not (isinstance(value, int) and not isinstance(value, bool) and 0 <= value <= 100_000):
+            raise ValidationError("Ціна SMS — від 0 до 1000 ₴")
+        if key == "sms_auto_hour" and not (isinstance(value, int) and 8 <= value <= 21):
+            raise ValidationError("Година автоповідомлень — з 8 до 21")
+        if key in ("sms_birthday_text", "sms_return_text") and not (isinstance(value, str) and 0 < len(value) <= 670):
+            raise ValidationError("Текст повідомлення — до 670 символів")
         if key == "sms_enabled" and not isinstance(value, bool):
             raise ValidationError("SMS: так або ні")
         if key.startswith("client_seg_") and not (isinstance(value, int) and not isinstance(value, bool) and 0 < value <= 10**10):

@@ -490,7 +490,7 @@ const NAV = {
     ["dashboard", "chart", "Огляд", "Огляд"],
     ["calendar", "calendar", "Календар", "Робота"], ["schedule", "calclock", "Графік роботи", "Робота"], ["clients", "users", "Клієнти", "Робота"],
     ["stock", "box", "Склад", "Робота"],
-    ["orders", "receipt", "Замовлення", "Фінанси"], ["shifts", "coins", "Зміни й виплати", "Фінанси"], ["expenses", "wallet", "Витрати", "Фінанси"], ["utilities", "gauge", "Комунальні і генератор", "Фінанси"], ["taxreport", "filetext", "Звіт для податкової", "Фінанси"], ["taxes", "landmark", "Податки і зарплата", "Фінанси"],
+    ["orders", "receipt", "Замовлення", "Фінанси"], ["shifts", "coins", "Зміни й виплати", "Фінанси"], ["expenses", "wallet", "Витрати", "Фінанси"], ["utilities", "gauge", "Комунальні і генератор", "Фінанси"], ["taxreport", "filetext", "Звіт для податкової", "Фінанси"], ["taxes", "landmark", "Податки і зарплата", "Фінанси"], ["sms", "send", "SMS-розсилки", "Фінанси"],
     ["staff", "usercog", "Персонал", "Салон"], ["catalog", "scissors", "Послуги", "Салон"],
     ["settings", "settings", "Налаштування", "Салон"], ["journal", "book", "Журнал", "Салон"],
     ["profile", "user", "Профіль"],
@@ -1875,11 +1875,16 @@ async function clientSheet(id, onChange) {
         c.top_services.length ? barList(c.top_services.map((x) => [x.name, x.count * 100, `${x.count} раз`]), c.top_services[0].count * 100) : emptyState("Ще немає", "scissors"),
         h("h3", {}, "Майстри"), c.top_masters.length ? h("div", { class: "stack" }, c.top_masters.map((m) => h("div", { class: "row" }, avatar(m.name, "sm"), h("span", { class: "grow" }, m.name), h("b", {}, `${m.count} візитів`)))) : emptyState("Ще немає", "user"));
     } else if (tab === "msg") {
+      const msgBox = h("div", {}, h("p", { class: "muted small" }, "Завантаження…"));
       body.replaceChildren(h("div", { class: "info-list" },
         h("div", { class: "info-row" }, icon("send"), "Telegram: ", h("b", {}, c.telegram_linked ? "підключено — нагадування й сервісні повідомлення приходять у бот" : "не підключено")),
         h("div", { class: "info-row" }, icon("megaphone"), "Реклама: ", h("b", {}, c.marketing_consent ? "дозволено" : "не надсилати (немає згоди)")),
         h("div", { class: "info-row" }, icon("history"), "Останній контакт: ", h("b", {}, c.last_contact_at ? `${dmy(c.last_contact_at)} ${hm(c.last_contact_at)}` : "—"))),
-        h("p", { class: "muted small" }, "Історія SMS / Viber зі статусами доставки з'явиться тут після підключення TurboSMS (розділ «SMS-розсилки»)."));
+        msgBox);
+      if (isMgr) api.get(`/api/sms/messages?client_id=${id}`).then((list) => msgBox.replaceChildren(list.length
+        ? h("div", { class: "card ord-list" }, list.map((m) => h("div", { class: "ord-item" }, h("div", { class: "ord-time" }, dm(m.created_at)),
+          h("div", { class: "grow ord-main muted small sms-text" }, m.text), h("div", { class: "ord-amt" }, smsChip(m.status)))))
+        : h("p", { class: "muted small" }, "SMS / Viber цьому клієнту ще не надсилались."))).catch(() => {});
     } else {
       const notes = h("textarea", { rows: 4, placeholder: "Примітки адміністратора (бачить персонал)" }, c.notes || "");
       const wishes = h("textarea", { rows: 3, placeholder: "Побажання клієнта: улюблений майстер, напій, алергії, формула фарби…" }, c.wishes || "");
@@ -1908,6 +1913,109 @@ async function clientSheet(id, onChange) {
   openSheet(c.name, h("div", { class: "stack" }, tabBar, body));
   draw("info");
 }
+
+// ---------- SMS-розсилки (директор): баланс і витрати, аналіз бази, одноразові розсилки, автоматизація, історія
+const SMS_STATUS = { queued: ["у черзі", "st-pending"], sent: ["надіслано", "st-confirmed"], delivered: ["доставлено", "st-completed"],
+  failed: ["помилка", "st-overdue"], not_configured: ["не підключено", "st-cancelled"] };
+const smsChip = (st) => { const [l, c] = SMS_STATUS[st] || [st, ""]; return h("span", { class: "chip " + c }, l); };
+const smsParts = (t) => (t.length <= 70 ? 1 : Math.ceil(t.length / 67));
+VIEWS.sms = async (main) => {
+  const [sm, ins, camps, msgs] = await Promise.all([api.get("/api/sms/summary"), api.get("/api/sms/insights"), api.get("/api/sms/campaigns"), api.get("/api/sms/messages")]);
+  const st = state.settings || {};
+  main.append(topbar("SMS-розсилки", "Viber + SMS через TurboSMS: баланс, розсилки, аналіз бази",
+    h("button", { class: "btn primary", onclick: () => campaignForm() }, icon("send", "sm"), "Нова розсилка")));
+  main.append(h("div", { class: "grid kpi kpi-6" },
+    kpi("Баланс TurboSMS", sm.balance === null ? "—" : `${sm.balance.toLocaleString("uk-UA", { maximumFractionDigits: 2 })} ₴`, "dark", { ico: "wallet", raw: true, sub: sm.configured ? "залишок на рахунку" : "не підключено" }),
+    kpi("Витрачено цього місяця", sm.spent_month, "", { ico: "banknote", sub: `усього ${money(sm.spent_total)} · у «Витратах»` }),
+    kpi("Надіслано цього місяця", sm.sent_month, "", { ico: "send", raw: true, sub: `усього ${sm.sent_total}` }),
+    kpi("Клієнтів зі згодою", sm.consent_clients, "accent", { ico: "users", raw: true, sub: "лише їм — реклама" })));
+  if (!sm.configured || !sm.enabled) {
+    main.append(h("div", { class: "callout" }, icon("alert"), h("div", { class: "small" },
+      h("b", {}, sm.configured ? "TurboSMS підключено, але SMS вимкнено. " : "TurboSMS ще не підключено. "),
+      sm.configured ? "Увімкніть нижче в «Налаштуваннях SMS»." : "Зареєструйтесь на turbosms.ua (Viber + SMS), додайте змінні сервера MDS_TURBOSMS_TOKEN і MDS_TURBOSMS_SENDER. До того розсилки не надсилаються, а повідомлення в історії мають статус «не підключено».")));
+  }
+  // аналіз бази: коли й кому надсилати
+  main.append(h("div", { class: "section" }, h("h2", {}, "Аналіз бази")),
+    h("div", { class: "card stack" },
+      h("div", { class: "row", style: { gap: "10px", alignItems: "center" } }, icon("clock"),
+        h("div", { class: "grow" }, "Найкращий час для повідомлень: ", h("b", {}, `${ins.best_day}, ${ins.best_hour}`),
+          h("div", { class: "muted small" }, `за ${ins.sample} записами за пів року — трохи раніше, ніж клієнти зазвичай записуються`))),
+      ins.recommendations.length ? h("div", { class: "rec-grid" }, ins.recommendations.map((r) => h("div", { class: "rec" },
+        h("div", { class: "row" }, h("b", { class: "grow" }, r.title), h("span", { class: "chip plain" }, `${r.count}`)),
+        h("div", { class: "muted small" }, `${r.audience_label} · «${r.text.replace("{name}", "Олено")}»`),
+        h("button", { class: "btn sm", onclick: () => campaignForm({ audience: r.audience, title: r.title, text: r.text }) }, icon("send", "sm"), "Створити розсилку"))))
+        : h("p", { class: "muted small", style: { margin: 0 } }, "Поки немає клієнтів зі згодою на рекламу — відмічайте згоду в картках клієнтів.")));
+  // автоматизація й ціна
+  const on = h("input", { type: "checkbox", checked: !!st.sms_enabled });
+  const price = h("input", { inputmode: "decimal", value: kopToInput(st.sms_price || 0), placeholder: "напр. 1,20" });
+  const bday = h("input", { type: "checkbox", checked: !!st.sms_auto_birthday });
+  const ret = h("input", { type: "checkbox", checked: !!st.sms_auto_return });
+  const hour = select(Array.from({ length: 14 }, (_, i) => [i + 8, `${i + 8}:00`]), st.sms_auto_hour || 11);
+  const bdayText = h("textarea", { rows: 2 }, st.sms_birthday_text || "");
+  const retText = h("textarea", { rows: 2 }, st.sms_return_text || "");
+  const testPhone = h("input", { type: "tel", placeholder: "Ваш номер для тесту" });
+  main.append(h("details", { class: "card", style: { marginTop: "12px" } }, h("summary", { class: "row", style: { cursor: "pointer" } }, icon("settings", "sm"), h("b", {}, "Налаштування SMS й автоматизація")),
+    h("div", { class: "stack", style: { marginTop: "12px" } },
+      h("label", { class: "row" }, on, "SMS / Viber увімкнено"),
+      field("Ціна 1 SMS за тарифом, ₴ (для обліку витрат)", price),
+      h("label", { class: "row" }, bday, "Вітати з днем народження (зі згодою, раз на рік)"), field("Текст привітання ({name} — ім'я)", bdayText),
+      h("label", { class: "row" }, ret, "Нагадувати про повторний візит, коли настав звичний інтервал (зі згодою, не частіше раз на 30 днів)"), field("Текст нагадування", retText),
+      field("Надсилати автоматичні о", hour),
+      h("button", { class: "btn primary", onclick: async () => {
+        state.settings = await run(() => api.put("/api/settings", { sms_enabled: on.checked, sms_price: toKop(price.value) || 0, sms_auto_birthday: bday.checked,
+          sms_auto_return: ret.checked, sms_auto_hour: Number(hour.value), sms_birthday_text: bdayText.value.trim(), sms_return_text: retText.value.trim() }), "Збережено");
+        reload();
+      } }, "Зберегти"),
+      h("div", { class: "row" }, h("div", { class: "grow" }, testPhone), h("button", { class: "btn", onclick: async () => {
+        if (!testPhone.value.trim()) return toast("Вкажіть номер", true);
+        const r = await run(() => api.post("/api/sms/test", { phone: testPhone.value }));
+        toast(r.ready ? "Тестове повідомлення в черзі — статус у «Повідомленнях»" : "TurboSMS не підключено — статус «не підключено»", !r.ready);
+        setTimeout(reload, 1500);
+      } }, "Тест")))));
+  // історія
+  const hist = h("div");
+  const drawHist = (tab) => hist.replaceChildren(tab === "camps"
+    ? (camps.length ? h("div", { class: "card ord-list" }, camps.map((c) => h("div", { class: "ord-item" },
+      h("div", { class: "ord-time" }, dm(c.created_at)),
+      h("div", { class: "grow ord-main" }, h("b", {}, c.title), h("div", { class: "muted small" }, `${c.audience_label} · ${c.recipients} отримувачів · ${money(c.cost)}`),
+        h("div", { class: "row small", style: { gap: "4px", flexWrap: "wrap" } }, Object.entries(c.statuses).map(([k, n]) => h("span", {}, smsChip(k), " ", n))))))) : h("div", { class: "card" }, emptyState("Розсилок ще не було", "send")))
+    : (msgs.length ? h("div", { class: "card ord-list" }, msgs.map((m) => h("div", { class: "ord-item" },
+      h("div", { class: "ord-time" }, dm(m.created_at), h("div", { class: "muted small" }, hm(m.created_at))),
+      h("div", { class: "grow ord-main" }, h("b", {}, m.client_name || m.phone), h("div", { class: "muted small sms-text" }, m.text),
+        m.error ? h("div", { class: "small neg" }, m.error) : null),
+      h("div", { class: "ord-amt" }, smsChip(m.status), h("span", { class: "small muted" }, m.kind === "service" ? "сервісне" : "реклама"))))) : h("div", { class: "card" }, emptyState("Повідомлень ще немає", "send"))));
+  main.append(h("div", { class: "section" }, h("h2", {}, "Історія")), h("div", { class: "filters" }, seg([["camps", "Розсилки"], ["msgs", "Повідомлення"]], "camps", drawHist)), hist);
+  drawHist("camps");
+
+  async function campaignForm(pre = {}) {
+    const title = h("input", { value: pre.title || "", placeholder: "Напр. «Осіння акція»" });
+    const aud = select(Object.entries({ all: "Усі зі згодою", new: "Нові", regular: "Постійні", vip: "VIP", lapsed: "Давно не були", inactive: "Неактивні", birthdays: "Дні народження (7 днів)", return_due: "Час повторного візиту" }), pre.audience || "all");
+    const text = h("textarea", { rows: 4, maxlength: 670, placeholder: "{name}, …" }, pre.text || "");
+    const info = h("div", { class: "card gen-preview stack" });
+    const send = h("button", { class: "btn primary big" }, icon("send"), "Надіслати");
+    let last = null, t;
+    const preview = async () => {
+      clearTimeout(t);
+      t = setTimeout(async () => {
+        if (!text.value.trim()) { info.replaceChildren(h("span", { class: "muted small" }, "Напишіть текст — тут з'являться отримувачі й вартість")); return; }
+        last = await api.post(`/api/sms/campaigns?dry_run=true`, { title: title.value || "чернетка", text: text.value, audience: aud.value }).catch((e) => { toast(e.message, true); return null; });
+        if (!last) return;
+        info.replaceChildren(h("div", { class: "sum-line" }, h("span", {}, "Отримувачів (зі згодою)"), h("b", {}, String(last.recipients))),
+          h("div", { class: "sum-line" }, h("span", {}, `Довжина: ${text.value.length} симв. · ${last.parts} SMS на людину`), h("b", {}, money(last.cost))),
+          h("div", { class: "muted small" }, "Так побачить клієнт: ", h("b", {}, last.preview)),
+          !last.ready ? h("div", { class: "small neg" }, "TurboSMS не підключено або вимкнено — надіслати поки неможливо") : null);
+        send.disabled = !last.ready || !last.recipients;
+      }, 350);
+    };
+    [title, text].forEach((x) => x.addEventListener("input", preview)); aud.addEventListener("change", preview);
+    send.addEventListener("click", () => confirmSheet("Надіслати розсилку?", `${last?.recipients || 0} отримувачів, ≈ ${money(last?.cost || 0)} (запишеться у «Витрати → Реклама»). Надіслане скасувати неможливо.`, "Надіслати",
+      async () => { await run(() => api.post("/api/sms/campaigns", { title: title.value, text: text.value, audience: aud.value }), "Розсилку запущено"); reload(); }));
+    openSheet("Нова розсилка", h("div", { class: "stack" }, field("Назва (для себе)", title), field("Кому", aud),
+      field("Текст ({name} — ім'я клієнта)", text), info, send,
+      h("p", { class: "muted small", style: { margin: 0 } }, "Лише клієнтам зі згодою на рекламу. Сервісні повідомлення (перенесення запису) надсилаються окремо, без згоди.")));
+    preview();
+  }
+};
 
 // ---------- Клієнти: база з аналітикою, сегментами, пошуком, сортуванням і сторінками
 VIEWS.clients = async (main) => {
