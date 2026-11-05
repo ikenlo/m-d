@@ -77,3 +77,13 @@ def test_max_masters_limit(db, seed):
         adm = users.create_user(s, sysa, username="adm2", password="Admin1234", full_name="Адмін 2", role=Role.ADMIN)
         with pytest.raises(ValidationError):
             users.update_user(s, d, adm.id, {"role": Role.MASTER})
+
+
+def test_reschedule_into_off_hours_needs_confirmation(db, seed):
+    adm = seed["actors"]["admin"]
+    with db.session() as s:
+        a = _book(s, adm, seed, 10)
+        with pytest.raises(Conflict) as e:
+            bookings.reschedule(s, adm, a.id, starts_at=datetime(2026, 11, 2, 20))
+        assert e.value.code == "off_hours"
+        assert bookings.reschedule(s, adm, a.id, starts_at=datetime(2026, 11, 2, 20), confirm_off_hours=True).starts_at.hour == 20

@@ -1357,121 +1357,189 @@ function quickBook({ master_id = null, date = today(), time = null, client = nul
   loadTimes();
 }
 
-function apptForm({ appt = null, master_id = null, date = today(), time = "10:00", prefill = null, onSaved = null } = {}, onChange) {
+function apptForm({ appt = null, master_id = null, date = today(), time = null, prefill = null, onSaved = null } = {}, onChange) {
   const isMaster = state.user.role === "master";
   const masters = isMaster ? [{ id: state.user.id, full_name: state.user.full_name }] : state.masters;
-  const activeServices = state.services.filter((s) => s.is_active);
-  const svc = select(activeServices.map((s) => [s.id, `${[s.section, s.subcategory || s.category].filter(Boolean).join(" · ")}${s.section || s.category ? " · " : ""}${s.name} · ${priceText(s)} · ${s.duration_min}\u00a0хв`]), appt ? appt.service_id : activeServices[0]?.id);
-  const mst = select(masters.map((m) => [m.id, m.full_name]), appt ? appt.master_id : master_id || masters[0]?.id);
-  const d = h("input", { type: "date", value: appt ? appt.starts_at.slice(0, 10) : date });
-  const t = h("input", { type: "time", step: 300, value: appt ? hm(appt.starts_at) : time });
-  const dur = h("input", { type: "number", min: 5, step: 5, value: appt ? appt.duration_min : "" });
-  const price = h("input", { inputmode: "decimal", value: appt ? kopToInput(appt.price) : "" });
-  const comment = h("input", { value: appt?.comment || "", placeholder: "необов'язково" });
-  const slots = h("div", { class: "slot-strip" });
-  const slotHead = h("span", { class: "muted" });
+  const services = state.services.filter((s) => s.is_active || (appt && s.id === appt.service_id));
+  const svcById = (id) => services.find((s) => s.id === id);
+  const sectionOf = (s) => s.section || "Інші";
+  const sections = [...new Set(services.map(sectionOf))];
+  const startSvc = appt ? svcById(appt.service_id) : null;
+  const st = {
+    master: appt ? appt.master_id : master_id || masters[0]?.id,
+    service: startSvc?.id || null,
+    section: startSvc ? sectionOf(startSvc) : (sections.find((x) => /жіноч/i.test(x)) || sections[0]),
+    category: startSvc?.category || null,
+    date: appt ? appt.starts_at.slice(0, 10) : date,
+    time: appt ? hm(appt.starts_at) : time,
+    clientId: null,
+  };
   const phone = h("input", { type: "tel", inputmode: "tel", placeholder: "необов'язково", value: prefill?.phone || "" });
   const name = h("input", { placeholder: "Ім'я клієнта", autocapitalize: "words", value: prefill?.name || "" });
-  const svcInfo = h("span", { class: "grow" });
-  const svcEdit = h("div", { class: "ap-grid ap-grid-2 hidden" }, field("Тривалість, хв", dur), field("Ціна, ₴", price));
-  const svcToggle = h("button", { type: "button", class: "btn sm ghost", onclick: () => {
-    const open = svcEdit.classList.toggle("hidden") === false;
-    svcToggle.textContent = open ? "Сховати" : "Змінити";
-    if (open) dur.focus();
-  } }, "Змінити");
-  const curSvc = () => state.services.find((x) => String(x.id) === svc.value);
-  const drawInfo = () => {
-    const s = curSvc() || {};
-    const m = dur.value ? +dur.value : s.duration_min;
-    const p = price.value ? money(toKop(price.value)) : priceText(s);
-    const custom = !!(dur.value || price.value);
-    svcInfo.replaceChildren(h("b", {}, `${m}\u00a0хв · ${p}`), h("span", { class: "muted" }, custom ? " · змінено" : " · за послугою"));
-    dur.placeholder = s.duration_min ? String(s.duration_min) : "";
-    price.placeholder = s.price !== undefined ? kopToInput(s.price) : "";
-  };
-  [dur, price].forEach((el) => el.addEventListener("input", drawInfo));
-  const markSlot = () => [...slots.querySelectorAll(".slot")].forEach((b) => b.classList.toggle("on", b.textContent === t.value));
-  t.addEventListener("input", markSlot);
   const found = h("div", { class: "muted small" });
-  let clientId = null;
+  const price = h("input", { inputmode: "decimal", value: appt && startSvc?.price_from ? kopToInput(appt.price) : "" });
+  const priceField = field("Ціна, ₴", price);
+  const manual = h("input", { type: "time", step: 300, value: st.time || "" });
+  const manualBox = h("div", { class: "hidden" }, field("Свій час", manual));
+  const secBox = h("div", {});
+  const catBox = h("div", { class: "ap-cats" });
+  const svcBox = h("div", { class: "ap-svcs" });
+  const svcInfo = h("div", { class: "svc-strip hidden" });
+  const mBox = h("div", { class: "qb-chips" });
+  const dBox = h("div", { class: "qb-chips qb-days" });
+  const dPick = h("input", { type: "date", value: st.date, class: "qb-date", "aria-label": "Інша дата" });
+  const tBox = h("div", { class: "qb-times" });
+  const offBox = h("div", {});
+  let offList = [];
+  const chip = (label, on, onclick, sub) => h("button", { type: "button", class: "qb-chip" + (on ? " on" : ""), onclick }, h("b", {}, label), sub ? h("small", {}, sub) : null);
 
-  const loadSlots = async () => {
-    slotHead.textContent = "шукаю…";
-    try {
-      const list = await api.get(`/api/availability?master_id=${mst.value}&service_id=${svc.value}&day=${d.value}`);
-      slotHead.textContent = list.length ? `${list.length} ${plural(list.length, "вікно", "вікна", "вікон")}` : "";
-      slots.replaceChildren(...(list.length ? list.map((x) =>
-        h("button", { class: "slot", type: "button", onclick: () => { t.value = x; markSlot(); } }, x)) : [h("span", { class: "muted small" }, "Вільних вікон немає — оберіть інший день або вкажіть час вручну")]));
-      markSlot();
-    } catch (e) { slotHead.textContent = ""; slots.replaceChildren(); }
+  const drawSections = () => {
+    secBox.replaceChildren(sections.length > 1 ? seg(sections.map((x) => [x, /чолов/i.test(x) ? "Чоловіча" : /жіноч/i.test(x) ? "Жіноча" : x]), st.section,
+      (v) => { st.section = v; st.category = null; drawServices(); }) : h("span"));
+    secBox.firstChild?.classList?.add("ap-sections");
   };
-  [svc, mst, d].forEach((el) => el.addEventListener("change", loadSlots));
-  svc.addEventListener("change", drawInfo);
+  const drawServices = () => {
+    const inSec = services.filter((s) => sectionOf(s) === st.section);
+    const cats = [...new Set(inSec.map((s) => s.category || "Інше"))];
+    const useCats = cats.length > 1 && inSec.length > 6;
+    if (useCats && !cats.includes(st.category)) st.category = startSvc && sectionOf(startSvc) === st.section ? startSvc.category : null;
+    catBox.replaceChildren(...(useCats ? cats.map((c) => h("button", { type: "button", class: "chip-btn" + (c === st.category ? " on" : ""),
+      onclick: () => { st.category = st.category === c ? null : c; drawServices(); } }, c)) : []));
+    const list = useCats ? (st.category ? inSec.filter((s) => (s.category || "Інше") === st.category) : []) : inSec;
+    const groups = [];
+    for (const s of list) {
+      const g = useCats ? s.subcategory || "" : "";
+      if (!groups.length || groups[groups.length - 1].g !== g) groups.push({ g, items: [] });
+      groups[groups.length - 1].items.push(s);
+    }
+    svcBox.replaceChildren(...(useCats && !st.category ? [h("div", { class: "muted small" }, "Оберіть категорію")] : groups.map((gr) => h("div", { class: "ap-svc-group" },
+      gr.g ? h("div", { class: "ap-svc-sub" }, gr.g) : null,
+      h("div", { class: "ap-svc-grid" }, gr.items.map((s) => h("button", { type: "button", class: "ap-svc" + (s.id === st.service ? " on" : ""),
+        onclick: () => { st.service = s.id; st.time = appt && st.time ? st.time : null; drawServices(); drawInfo(); loadTimes(); } },
+        h("b", {}, s.name), h("small", {}, `${s.duration_min} хв · ${priceText(s)}`))))))));
+  };
+  const drawInfo = () => {
+    const s = svcById(st.service);
+    svcInfo.classList.toggle("hidden", !s);
+    priceField.classList.toggle("hidden", !(s && s.price_from));
+    if (!s) return;
+    if (s.price_from) price.placeholder = kopToInput(s.price);
+    svcInfo.replaceChildren(icon("clock", "sm"), h("span", { class: "grow" }, h("b", {}, s.name), h("span", { class: "muted" }, ` · ${s.duration_min} хв · ${priceText(s)}`)));
+  };
+  const drawMasters = () => mBox.replaceChildren(...masters.map((m) => chip(m.full_name.split(" ")[0], m.id === st.master, () => { st.master = m.id; drawMasters(); loadTimes(); })));
+  const drawDays = () => {
+    const days = [0, 1, 2].map((i) => addDays(today(), i));
+    const label = (dd, i) => (i < 2 ? ["Сьогодні", "Завтра"][i] : WD_LONG[(new Date(dd + "T12:00").getDay() + 6) % 7]);
+    dBox.replaceChildren(...days.map((dd, i) => chip(label(dd, i), dd === st.date, () => { st.date = dd; st.time = null; dPick.value = dd; drawDays(); loadTimes(); }, dm(dd))),
+      h("label", { class: "qb-chip" + (days.includes(st.date) ? "" : " on") }, h("b", {}, days.includes(st.date) ? "Інша" : dm(st.date)), dPick));
+  };
+  dPick.addEventListener("change", () => { if (dPick.value) { st.date = dPick.value; st.time = null; drawDays(); loadTimes(); } });
+  const pick = (x) => {
+    st.time = x; manual.value = x;
+    timesWrap.querySelectorAll(".qb-time").forEach((b) => b.classList.toggle("on", b.textContent === x));
+    summary();
+  };
+  manual.addEventListener("input", () => { st.time = manual.value || null; timesWrap.querySelectorAll(".qb-time").forEach((b) => b.classList.toggle("on", b.textContent === st.time)); summary(); });
+  let req = 0;
+  async function loadTimes() {
+    summary();
+    if (!st.service || !st.master) { tBox.replaceChildren(h("div", { class: "qb-empty" }, "Спершу оберіть послугу")); offBox.replaceChildren(); return; }
+    const my = ++req;
+    timesWrap.style.minHeight = timesWrap.offsetHeight ? timesWrap.offsetHeight + "px" : "";
+    tBox.classList.add("loading");
+    const r = await api.get(`/api/availability/detail?master_id=${st.master}&service_id=${st.service}&day=${st.date}`)
+      .catch(() => ({ slots: [], off_hours: [], working: true }));
+    if (my !== req) return;
+    tBox.classList.remove("loading");
+    const list = [...r.slots];
+    offList = r.off_hours || [];
+    if (appt && st.time && st.date === appt.starts_at.slice(0, 10) && !list.includes(st.time) && !offList.includes(st.time)) list.push(st.time), list.sort();
+    tBox.replaceChildren(...(list.length ? list.map((x) => h("button", { type: "button", class: "qb-time" + (x === st.time ? " on" : ""), onclick: () => pick(x) }, x))
+      : [h("div", { class: "qb-empty" }, icon("calendar", "sm"), h("span", {}, offTextFor(r, isMaster)))]));
+    offBox.replaceChildren(...(offList.length ? [h("details", { class: "qb-off", open: offList.includes(st.time) || null },
+      h("summary", {}, icon("clock", "sm"), h("span", {}, r.working ? `Поза графіком (${r.hours[0]}–${r.hours[1]})` : "Неробочий день"),
+        h("small", { class: "muted" }, r.off_policy === "if_free_place" ? "є вільне місце · з підтвердженням" : "з підтвердженням")),
+      h("div", { class: "qb-times" }, offList.map((x) => h("button", { type: "button", class: "qb-time off" + (x === st.time ? " on" : ""), onclick: () => pick(x) }, x))))] : []));
+    summary();
+    requestAnimationFrame(() => { timesWrap.style.minHeight = ""; });
+  }
+  const timesWrap = h("div", { class: "qb-times-wrap" }, tBox, offBox,
+    h("button", { type: "button", class: "link-btn", onclick: (e) => { manualBox.classList.toggle("hidden"); e.currentTarget.textContent = manualBox.classList.contains("hidden") ? "Вказати свій час" : "Сховати свій час"; } }, "Вказати свій час"),
+    manualBox);
+
   let timer;
   phone.addEventListener("input", () => {
     clearTimeout(timer);
-    clientId = null;
+    st.clientId = null;
     timer = setTimeout(async () => {
       const digits = phone.value.replace(/\D/g, "");
-      if (digits.length < 9 || isMaster && false) { found.textContent = ""; return; }
+      if (digits.length < 9) { found.textContent = ""; return; }
       try {
         const list = await api.get("/api/clients?q=" + encodeURIComponent(digits.slice(-9)));
         if (list.length === 1) {
-          clientId = list[0].id; name.value = list[0].name; found.textContent = "Постійний клієнт: " + list[0].name;
-          const card = await api.get(`/api/clients/${clientId}`).catch(() => null);
+          st.clientId = list[0].id; if (!name.value.trim()) name.value = list[0].name; found.textContent = "Постійний клієнт: " + list[0].name;
+          const card = await api.get(`/api/clients/${st.clientId}`).catch(() => null);
           const fav = card?.favorite_master;
           if (fav && !isMaster && masters.some((m) => m.id === fav.id)) {
-            if (!master_id) { mst.value = String(fav.id); loadSlots(); }
+            if (!master_id) { st.master = fav.id; drawMasters(); loadTimes(); }
             found.textContent = `Постійний клієнт: ${list[0].name} · ⭐ улюблений майстер — ${fav.full_name} (${fav.visits} візитів)`;
           }
-        }
-        else found.textContent = list.length ? `Знайдено ${list.length}` : "Новий клієнт";
+        } else found.textContent = list.length ? `Знайдено ${list.length}` : "Новий клієнт";
       } catch (_) { found.textContent = ""; }
     }, 350);
   });
 
-  const save = h("button", { class: "btn primary big ap-save", onclick: async () => {
-    const body = {
-      master_id: +mst.value, service_id: +svc.value, starts_at: `${d.value}T${t.value}`,
-      comment: comment.value.trim() || null,
-    };
-    if (dur.value) body.duration_min = +dur.value;
-    if (price.value) body.price = toKop(price.value);
+  const save = h("button", { class: "btn primary big ap-save" });
+  function summary() {
+    const s = svcById(st.service);
+    save.disabled = !(s && st.time && st.master);
+    save.replaceChildren(icon("ok"), s && st.time ? `${appt ? "Зберегти" : "Записати"} · ${dm(st.date)} о ${st.time}` : appt ? "Зберегти зміни" : "Записати");
+  }
+  save.addEventListener("click", async () => {
+    const s = svcById(st.service);
+    const body = { master_id: st.master, service_id: st.service, starts_at: `${st.date}T${st.time}` };
+    if (s?.price_from && price.value.trim()) {
+      const kop = toKop(price.value);
+      if (!(kop >= 0)) return toast("Невірна ціна", true);
+      body.price = kop;
+    }
     save.disabled = true;
     try {
       if (appt) {
+        if (offList.includes(st.time)) body.confirm_off_hours = true;
         await run(() => api.patch(`/api/appointments/${appt.id}`, body), "Запис змінено");
       } else {
-        if (clientId) body.client_id = clientId;
+        if (st.clientId) body.client_id = st.clientId;
         else {
-          if (!phone.value.trim() && !name.value.trim()) { save.disabled = false; name.focus(); return toast("Вкажіть ім'я клієнта (телефон — необов'язково)", true); }
-          body.client_phone = phone.value.trim() || null; body.client_name = name.value;
+          if (name.value.trim().length < 2) { save.disabled = false; name.focus(); name.classList.add("invalid"); return toast("Вкажіть ім'я клієнта (телефон — необов'язково)", true); }
+          body.client_phone = phone.value.trim() || null; body.client_name = name.value.trim();
+        }
+        if (offList.includes(st.time)) {
+          const ok = await inlineConfirm(save, `${dm(st.date)} о ${st.time} — поза графіком роботи. Записати клієнта на неробочий час?`, "Так, записати");
+          if (!ok) { save.disabled = false; return; }
+          body.confirm_off_hours = true;
         }
         const created = await createAppt(body, save, "Запис створено");
         if (onSaved) await onSaved(created);
       }
       closeSheet();
       onChange();
-    } catch (_) { save.disabled = false; }
-  } }, appt ? "Зберегти зміни" : "Записати");
+    } catch (_) { summary(); }
+  });
+  name.addEventListener("input", () => name.classList.remove("invalid"));
 
+  drawSections(); drawServices(); drawInfo(); drawMasters(); drawDays();
   openSheet(appt ? "Перенести / змінити запис" : "Новий запис",
     h("div", { class: "stack ap-form" },
       appt ? h("div", { class: "client-box" }, icon("user", "sm"), h("div", { class: "grow" }, h("b", {}, appt.client.name), h("div", { class: "muted small" }, appt.client.phone || "без номера")))
         : h("section", { class: "ap-section" }, h("div", { class: "ap-title" }, "Клієнт"),
           h("div", { class: "ap-grid ap-grid-sm2" }, field("Ім'я", name), field("Телефон", phone)), found),
-      h("section", { class: "ap-section" }, h("div", { class: "ap-title" }, "Послуга"),
-        field("Послуга", svc),
-        h("div", { class: "svc-strip" }, icon("clock", "sm"), svcInfo, svcToggle),
-        svcEdit,
-        isMaster ? null : field("Майстер", mst)),
-      h("section", { class: "ap-section" }, h("div", { class: "ap-title" }, "Час"),
-        h("div", { class: "ap-grid ap-grid-2" }, field("Дата", d), field("Час", t)),
-        h("div", { class: "slot-panel" }, h("div", { class: "slot-head" }, h("span", {}, "Вільний час"), slotHead), slots)),
-      field("Коментар", comment),
+      h("section", { class: "ap-section" }, h("div", { class: "ap-title" }, "Послуга"), secBox, catBox, svcBox, svcInfo, priceField),
+      masters.length > 1 ? h("section", { class: "ap-section" }, h("div", { class: "ap-title" }, "Майстер"), mBox) : null,
+      h("section", { class: "ap-section" }, h("div", { class: "ap-title" }, "День"), dBox),
+      h("section", { class: "ap-section" }, h("div", { class: "ap-title" }, "Час"), timesWrap),
       save));
-  drawInfo();
-  loadSlots();
+  loadTimes();
 }
 
 

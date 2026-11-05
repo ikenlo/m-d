@@ -331,6 +331,7 @@ def reschedule(
     duration_min: int | None = None,
     price: int | None = None,
     comment: str | None = None,
+    confirm_off_hours: bool = False,
 ) -> Appointment:
     a = get_appointment(s, actor, appt_id)
     if a.status not in ApptStatus.EDITABLE:
@@ -360,6 +361,10 @@ def reschedule(
     dur = timedelta(minutes=duration_min) if duration_min else (a.ends_at - a.starts_at)
     new_end = new_start + dur
     time_changed = new_start != a.starts_at or new_end != a.ends_at or new_master.id != a.master_id
+    if time_changed and not from_bot and is_off_hours(s, new_master, new_start, new_end):
+        check_off_hours(s, new_master, new_start, new_end)
+        if not confirm_off_hours:
+            raise Conflict("Цей час поза графіком роботи. Підтвердіть перенесення на неробочий час", code="off_hours")
     if time_changed:
         _check_slot(s, new_master, new_start, new_end, a.id, strict_hours=from_bot)
     old_master = a.master

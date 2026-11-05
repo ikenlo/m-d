@@ -155,6 +155,7 @@ class AppointmentPatch(BaseModel):
     duration_min: int | None = Field(default=None, ge=5, le=720)
     price: int | None = None
     comment: str | None = None
+    confirm_off_hours: bool = False
 
 
 class StatusIn(BaseModel):
