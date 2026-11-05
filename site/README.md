@@ -10,6 +10,8 @@ site/
   css/styles.css     стилі (mobile-first)
   js/main.js         розділи сторінки з shared/config.json і shared/services.json
   js/booking.js      онлайн-запис (mock або live API)
+  js/hero3d.js       3D-медальйон M&D у першому екрані (Three.js з js/vendor, MIT); лише на потужних пристроях,
+                     вимикається при «зменшити рух», економії трафіку, 2G, < 4 ГБ пам'яті або < 4 ядрах — тоді звичайний логотип
   img/logo.svg       монограма M&D (плейсхолдер — замініть своїм логотипом)
   img/og.png         картинка для соцмереж (Open Graph)
   docs/api.md        контракт API запису
