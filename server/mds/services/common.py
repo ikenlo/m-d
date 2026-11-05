@@ -157,16 +157,14 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "antispam_max_active": 2,  # активних майбутніх записів на клієнта
     "antispam_max_per_day": 3,  # нових онлайн-записів від клієнта за добу
     "antispam_max_pending_total": 20,  # непідтверджених онлайн-записів у черзі
-    "antispam_site_per_hour": 15,  # записів із сайту за годину загалом
     "antispam_callbacks_per_day": 2,  # заявок «передзвоніть» з одного номера за добу
     "antispam_callbacks_per_hour": 20,  # заявок «передзвоніть» за годину загалом
-    "public_booking_enabled": False,
     # клієнтська база: критерії сегментів (налаштовує директор)
     "client_seg_regular_visits": 3,  # «Постійний» — від стількох візитів
     "client_seg_vip_visits": 10,  # «VIP» — від стількох візитів…
     "client_seg_vip_spent": 1_000_000,  # …або від такої суми витрат, копійки (10 000 ₴)
     "client_seg_lapsed_days": 45,  # «Давно не був» — без візиту стільки днів
-    "client_seg_inactive_days": 90,  # «Неактивний» — без візиту стільки днів  # онлайн-запис із сайту (публічний API)
+    "client_seg_inactive_days": 90,  # «Неактивний» — без візиту стільки днів
     # ---- генератор (значення діють для НОВИХ запусків; минулі зберігають свої)
     "generator_fuel_lph_milli": 0,  # витрата бензину, л/год × 1000 (1500 = 1,5 л/год)
     "generator_fuel_price": 0,  # ціна бензину, копійок за 1 л
@@ -276,8 +274,6 @@ def update_settings(s: Session, actor: Actor, data: dict[str, Any]) -> dict[str,
             raise ValidationError("SMS: так або ні")
         if key.startswith("client_seg_") and not (isinstance(value, int) and not isinstance(value, bool) and 0 < value <= 10**10):
             raise ValidationError("Критерії сегментів — додатні цілі числа")
-        if key == "public_booking_enabled" and not isinstance(value, bool):
-            raise ValidationError("Онлайн-запис із сайту: так або ні")
         if key == "stock_auto_writeoff_milli" and not (isinstance(value, int) and not isinstance(value, bool) and 0 <= value <= 500):
             raise ValidationError("Автосписання залишку: від 0 до 0,5 упаковки")
         if key == "twofa_roles" and not (isinstance(value, list) and all(r in ("director", "admin") for r in value)):

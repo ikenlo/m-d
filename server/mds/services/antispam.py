@@ -23,7 +23,7 @@ from ..models import Appointment, ApptStatus, CallbackRequest, Client
 from .common import get_setting
 
 ACTIVE = (ApptStatus.PENDING, ApptStatus.CONFIRMED, ApptStatus.IN_PROGRESS)
-ONLINE = ("telegram", "site")
+ONLINE = ("telegram",)
 
 
 class TooMany(DomainError):
@@ -67,13 +67,6 @@ def check_booking(s: Session, client: Client, source: str) -> None:
             Appointment.status == ApptStatus.PENDING, Appointment.source.in_(ONLINE), Appointment.starts_at >= now)) or 0
         if pending >= lim:
             raise TooMany("Зараз багато нових записів — адміністратор їх опрацьовує. Спробуйте пізніше або зателефонуйте.")
-    if source == "site":
-        lim = _n(s, "antispam_site_per_hour")
-        if lim:
-            hour = s.scalar(select(func.count(Appointment.id)).where(
-                Appointment.source == "site", Appointment.created_at >= now - timedelta(hours=1))) or 0
-            if hour >= lim:
-                raise TooMany("Онлайн-запис тимчасово перевантажений. Спробуйте за годину або зателефонуйте.")
 
 
 def needs_confirmation(s: Session, client: Client) -> bool:

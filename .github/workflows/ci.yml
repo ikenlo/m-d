@@ -24,10 +24,6 @@ jobs:
       - name: JS syntax
         run: |
           node --check mds/web/static/app.js
-          node --check ../site/js/main.js
-          node --check ../site/js/booking.js
-          node --check ../site/js/hero3d.js
-          python -c "import json; json.load(open('../shared/config.json')); json.load(open('../shared/services.json'))"
       - name: Tests
         run: python -m pytest
 

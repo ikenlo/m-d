@@ -174,7 +174,7 @@ def create_appointment(
     if not service.is_active:
         raise ValidationError("Послуга недоступна")
     from_bot = actor.role == "client"  # клієнт сам: Telegram-бот або сайт
-    source = "site" if actor.name == "site" else ("telegram" if from_bot else "staff")
+    source = "telegram" if from_bot else "staff"
     if from_bot and starts_at < clock.now():
         raise ValidationError("Не можна записатися на минулий час")
 

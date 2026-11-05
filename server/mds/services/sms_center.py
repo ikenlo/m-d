@@ -189,7 +189,7 @@ def insights(s: Session, actor: Actor) -> dict:
     actor.require(Role.DIRECTOR)
     since = clock.now() - timedelta(days=180)
     created = [a for (a,) in s.execute(select(Appointment.created_at).where(Appointment.created_at >= since,
-                                                                            Appointment.source.in_(("telegram", "site"))))]
+                                                                            Appointment.source == "telegram"))]
     if len(created) < 10:  # мало онлайн-записів — орієнтуємось на час візитів
         created = [a for (a,) in s.execute(select(Order.closed_at).where(Order.closed_at >= since))]
     hours, days = Counter(x.hour for x in created), Counter(x.weekday() for x in created)

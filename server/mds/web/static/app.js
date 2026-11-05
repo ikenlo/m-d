@@ -496,7 +496,7 @@ async function liveTick() {
       const n = r.new || [];
       if (n.length === 1) {
         const a = n[0];
-        toast(`🆕 Новий запис${a.source === "telegram" ? " з Telegram" : a.source === "site" ? " з сайту" : ""}: ${a.client_name}, ${dm(a.starts_at)} о ${hm(a.starts_at)}`, false, 8000);
+        toast(`🆕 Новий запис${a.source === "telegram" ? " з Telegram" : ""}: ${a.client_name}, ${dm(a.starts_at)} о ${hm(a.starts_at)}`, false, 8000);
       } else if (n.length > 1) toast(`🆕 Нових записів: ${n.length}`, false, 8000);
       const ents = VIEW_ENTITIES[currentRoute()] || [];
       if ((r.entities || []).some((e) => e === "*" || ents.includes(e))) liveRefresh();
@@ -902,7 +902,6 @@ function apptSheet(a, onChange) {
         h("div", { class: "info-row" }, icon("user"), "Майстер: ", h("b", {}, a.master_name)),
         h("div", { class: "info-row" }, icon("banknote"), "Ціна: ", h("b", {}, money(a.price))),
         a.source === "telegram" ? h("div", { class: "info-row" }, icon("send"), "Запис через Telegram-бот") : null,
-        a.source === "site" ? h("div", { class: "info-row" }, icon("search"), "Запис із сайту — зателефонуйте клієнту для підтвердження") : null,
         a.comment ? h("div", { class: "info-row" }, icon("edit"), a.comment) : null,
         a.cancel_reason ? h("div", { class: "info-row" }, icon("cancel"), "Причина: ", a.cancel_reason) : null,
         a.order_id ? h("div", { class: "info-row" }, icon("receipt"), "Замовлення #", a.order_id) : null),
@@ -1368,7 +1367,7 @@ async function pendingBlock(onChange) {
       h("div", { style: { minWidth: "96px" } }, h("b", {}, dayWord(a.starts_at)), h("div", { style: { fontSize: "18px", fontWeight: 700 } }, hm(a.starts_at))),
       h("div", { class: "grow", style: { minWidth: "180px" } },
         h("div", {}, h("b", {}, a.client.name), " · ", phoneLink(a.client.phone)),
-        h("div", { class: "muted small" }, a.service_name, isMgr ? ` · ${a.master_name}` : "", a.source === "telegram" ? " · з Telegram" : a.source === "site" ? " · з сайту" : ""),
+        h("div", { class: "muted small" }, a.service_name, isMgr ? ` · ${a.master_name}` : "", a.source === "telegram" ? " · з Telegram" : ""),
         a.awaiting_client ? h("div", { class: "chip st-in_progress", style: { marginTop: "6px", whiteSpace: "normal", borderRadius: "8px" } }, `Запропоновано ${hm(a.starts_at)} — чекаємо відповіді клієнта в боті`) : null),
       h("div", { class: "row" },
         h("button", { class: "btn sm primary", title: a.awaiting_client ? "Якщо клієнт погодився телефоном, а не в боті" : null,
@@ -2574,23 +2573,21 @@ function genRunsTable(runs, onEdit) {
 function antispamSettingsCard(st) {
   const num = (k, d) => h("input", { type: "number", min: 0, max: 1000, value: st[k] ?? d });
   const f = { antispam_max_active: num("antispam_max_active", 2), antispam_max_per_day: num("antispam_max_per_day", 3),
-    antispam_max_pending_total: num("antispam_max_pending_total", 20), antispam_site_per_hour: num("antispam_site_per_hour", 15),
+    antispam_max_pending_total: num("antispam_max_pending_total", 20),
     antispam_callbacks_per_day: num("antispam_callbacks_per_day", 2) };
-  const site = h("input", { type: "checkbox", checked: !!st.public_booking_enabled });
   const wl = h("input", { value: (st.antispam_whitelist || []).join(", "), placeholder: "+380687166910" });
   const smsOn = h("input", { type: "checkbox", checked: !!st.sms_enabled });
   const smsNote = h("p", { class: "muted small", style: { margin: 0 } }, "Перевіряю підключення TurboSMS…");
   api.get("/api/sms/status").then((r) => { smsNote.textContent = r.configured ? "✓ TurboSMS підключено" : "TurboSMS не підключено: зареєструйтесь на turbosms.ua (Viber + SMS), задайте на сервері MDS_TURBOSMS_TOKEN і MDS_TURBOSMS_SENDER. Поки — клієнтам без Telegram програма покаже, кому подзвонити."; }).catch(() => { smsNote.textContent = ""; });
   return h("div", { class: "card stack" }, h("h3", { class: "row", style: { gap: "8px" } }, icon("lock"), "Захист онлайн-запису"),
-    h("p", { class: "muted small", style: { margin: 0 } }, "Обмеження для записів з Telegram-бота й сайту (персонал записує без обмежень). 0 — без обмеження. Окремого клієнта можна заблокувати в його картці."),
+    h("p", { class: "muted small", style: { margin: 0 } }, "Обмеження для записів з Telegram-бота (персонал записує без обмежень). 0 — без обмеження. Окремого клієнта можна заблокувати в його картці."),
     h("div", { class: "form-grid" }, field("Активних записів на клієнта", f.antispam_max_active), field("Нових записів від клієнта за добу", f.antispam_max_per_day),
-      field("Непідтверджених у черзі (усього)", f.antispam_max_pending_total), field("Записів із сайту за годину", f.antispam_site_per_hour),
+      field("Непідтверджених у черзі (усього)", f.antispam_max_pending_total),
       field("Заявок «передзвоніть» з номера за добу", f.antispam_callbacks_per_day)),
-    h("label", { class: "row" }, site, "Онлайн-запис із сайту відкрито (записи з сайту завжди чекають підтвердження)"),
     field("Номери без обмежень (власниця, персонал) — через кому", wl),
     h("label", { class: "row" }, smsOn, "SMS / Viber клієнтам (напр. «запис зсунуто на 15 хв»)"), smsNote,
     h("button", { class: "btn primary", onclick: async () => {
-      const body = { public_booking_enabled: site.checked, sms_enabled: smsOn.checked,
+      const body = { sms_enabled: smsOn.checked,
         antispam_whitelist: wl.value.split(/[,;\n]/).map((x) => x.trim()).filter(Boolean) };
       for (const [k, el] of Object.entries(f)) body[k] = Math.max(0, parseInt(el.value || "0", 10));
       state.settings = await run(() => api.put("/api/settings", body), "Збережено"); reload();

@@ -216,13 +216,6 @@ def test_bug_report_api(client):
     assert client.post("/api/bug-report", json={"text": "анонімно"}).status_code == 401
 
 
-def test_business_site_is_served(client):
-    r = client.get("/site/")
-    assert r.status_code == 200 and "M&amp;D Beauty Salon" in r.text
-    assert client.get("/shared/config.json").json()["salon"]["name"] == "M&D Beauty Salon"
-    assert client.get("/site", follow_redirects=False).status_code in (307, 302)
-
-
 def test_sync_reports_new_bookings_to_others(client):
     from datetime import datetime
 
