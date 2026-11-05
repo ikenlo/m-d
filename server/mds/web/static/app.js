@@ -532,7 +532,7 @@ const NAV = {
     ["dashboard", "chart", "Огляд", "Огляд"],
     ["calendar", "calendar", "Календар", "Робота"], ["schedule", "calclock", "Графік роботи", "Робота"], ["clients", "users", "Клієнти", "Робота"],
     ["stock", "box", "Склад", "Робота"],
-    ["orders", "receipt", "Замовлення", "Фінанси"], ["shifts", "coins", "Зміни й виплати", "Фінанси"], ["expenses", "wallet", "Витрати", "Фінанси"], ["utilities", "gauge", "Комунальні і генератор", "Фінанси"], ["taxreport", "filetext", "Звіт для податкової", "Фінанси"], ["taxes", "landmark", "Податки і зарплата", "Фінанси"], ["sms", "send", "SMS-розсилки", "Фінанси"],
+    ["orders", "receipt", "Замовлення", "Фінанси"], ["shifts", "coins", "Зміни й виплати", "Фінанси"], ["expenses", "wallet", "Витрати", "Фінанси"], ["utilities", "gauge", "Комунальні платежі", "Фінанси"], ["taxreport", "filetext", "Звіт для податкової", "Фінанси"], ["taxes", "landmark", "Податки і зарплата", "Фінанси"], ["sms", "send", "SMS-розсилки", "Фінанси"],
     ["staff", "usercog", "Персонал", "Салон"], ["catalog", "scissors", "Послуги", "Салон"],
     ["settings", "settings", "Налаштування", "Салон"], ["journal", "book", "Журнал", "Салон"],
     ["profile", "user", "Профіль"],
@@ -1336,7 +1336,7 @@ function quickBook({ master_id = null, date = today(), time = null, client = nul
     h("div", {}, h("div", { class: "qb-label" }, "Час"), tBox, offBox),
     h("div", {}, h("div", { class: "qb-label" }, "Клієнт"), h("div", { class: "form-grid" }, name, phone)), found,
     save,
-    h("button", { type: "button", class: "btn ghost", onclick: () => { closeSheet(); apptForm({ master_id: st.master, date: st.date, time: st.time || "10:00" }, onChange); } }, "Інша послуга з прайсу — повна форма")));
+    ));
   loadTimes();
 }
 
@@ -1531,7 +1531,7 @@ VIEWS.today = async (main) => {
   main.append(topbar(`Добрий день, ${state.user.full_name.split(" ")[0]}`,
     `${WD_LONG[(new Date().getDay() + 6) % 7]}, ${dm(d)} · записів: ${active.length}, залишилось: ${left.length}`,
     left.length ? h("button", { class: "btn", onclick: () => shiftForm(state.user.id, null, reload) }, icon("clock", "sm"), "Запізнююсь") : null,
-    h("button", { class: "btn primary", onclick: () => quickBook({ date: d }) }, icon("plus", "sm"), "Запис")));
+    h("button", { class: "btn primary", onclick: () => apptForm({ date: d }, reload) }, icon("plus", "sm"), "Запис")));
   main.append(h("div", { class: "grid kpi", style: { marginBottom: "16px" } },
     kpi("Мій заробіток сьогодні", my.day.earning, "dark", { ico: "wallet" }),
     kpi("Виручка сьогодні", my.day.revenue, "", { ico: "banknote" }),
@@ -2404,7 +2404,7 @@ function revenueChart(byDay) {
 
 VIEWS.dashboard = async (main) => {
   const body = h("div");
-  main.append(topbar("Огляд", "Фінанси салону: виручка, зарплати майстрів, витрати й прибуток",
+  main.append(topbar("Огляд",
     h("button", { class: "btn", onclick: () => { location.hash = "#/expenses"; } }, icon("plus", "sm"), "Витрата"),
     h("button", { class: "btn primary", onclick: () => { location.hash = "#/calendar"; } }, icon("calendar", "sm"), "Календар")),
     periodPicker((q, kind) => load(q, kind)), body);
@@ -2423,7 +2423,7 @@ VIEWS.dashboard = async (main) => {
     body.replaceChildren(...[
       h("div", { class: "grid kpi" },
         kpi("Виручка салону", s.revenue, "dark", { ico: "banknote", prev: p.revenue, vs, spark: d.by_day.map((x) => x.revenue), onclick: () => revenueSheet(ex) }),
-        kpi("Витрати", opEx, "", { ico: "wallet", prev: p.operating_expenses, sub: "комунальні, генератор, реклама…", onclick: () => expensesSheet(ex) }),
+        kpi("Витрати", opEx, "", { ico: "wallet", prev: p.operating_expenses, onclick: () => expensesSheet(ex) }),
         kpi("Чистий прибуток", s.net_profit, "accent", { ico: "trend", prev: p.net_profit, vs, onclick: () => profitSheet(ex) }),
         kpi("Валовий прибуток", s.gross_profit, "", { ico: "chart", prev: p.gross_profit, spark: d.by_day.map((x) => x.salon_net_from_orders), onclick: () => profitSheet(ex) }),
         kpi("Середній чек", s.average_check, "", { ico: "receipt", prev: p.average_check, sub: `${s.orders_count} замовл. · ${s.clients_count} клієнтів`, onclick: () => checkSheet(ex) })),
@@ -2504,7 +2504,7 @@ function expensesSheet({ s, p, vs, exp, expRows, opEx }) {
       h("div", { class: "sum-line muted small" }, h("span", {}, "Закупівля пального"), h("span", {}, money(exp.fuel_purchases || 0))),
       h("div", { class: "sum-line muted small" }, h("span", {}, "Матеріали, списані в замовленнях"), h("span", {}, money(s.materials)))),
     h("div", { class: "row" }, h("a", { class: "btn", href: "#/expenses" }, icon("wallet", "sm"), "Витрати"),
-      h("a", { class: "btn", href: "#/utilities" }, icon("gauge", "sm"), "Комунальні і генератор"))));
+      h("a", { class: "btn", href: "#/utilities" }, icon("gauge", "sm"), "Комунальні платежі"))));
 }
 function profitSheet({ s, p, vs, opEx, exp }) {
   const parts = [["Майстрам", s.masters_share, "c-masters"], ["Матеріали", s.materials, "c-mat"], ["Витрати", Math.max(0, opEx - (exp.master_charges || 0)), "c-exp"],
@@ -2554,9 +2554,9 @@ function insightsBlock(ins) {
       h("span", { class: "row" }, h("i", { class: "dot booked" }), "Записано наперед: ", h("b", {}, money(f.booked)), ` (${f.booked_count})`)),
     h("div", { class: "sum-line" }, h("span", { class: "muted" }, "За поточним темпом"), h("span", {}, money(f.run_rate))),
     h("div", { class: "sum-line" }, h("span", { class: "muted" }, "Середня виручка за день"), h("span", {}, money(f.daily_average))),
-    h("div", { class: "sum-line" }, h("span", { class: "muted" }, "Комунальні, генератор, реклама, інше"), h("span", {}, "− " + money(f.operating_expenses))),
+    h("div", { class: "sum-line" }, h("span", { class: "muted" }, "Витрати салону"), h("span", {}, "− " + money(f.operating_expenses))),
     h("div", { class: "sum-line total" }, h("span", {}, "Прогноз чистого прибутку"), h("span", { class: f.forecast_net < 0 ? "neg" : "" }, money(f.forecast_net))),
-    h("p", { class: "muted small" }, "Прогноз — більше з двох: «за темпом» або «факт + записи наперед». Прибуток — за структурою цього місяця (частки майстрів і матеріали)."));
+    h("p", { class: "fc-note" }, "Прогноз — більше з двох: «за темпом» або «факт + записи наперед». Прибуток — за структурою цього місяця (частки майстрів і матеріали)."));
 
   const c = ins.compare;
   const maxAvg = Math.max(1, ...ins.masters.map((m) => m.average_check));
@@ -2775,7 +2775,7 @@ VIEWS.utilities = async (main) => {
   const params = new URLSearchParams(location.hash.split("?")[1] || "");
   const month = params.get("m") || today().slice(0, 7) + "-01";
   const go = (m) => { location.hash = "#/utilities?m=" + m; };
-  main.append(topbar("Комунальні і генератор", monthTitle(month),
+  main.append(topbar("Комунальні платежі", monthTitle(month),
     h("button", { class: "btn", "aria-label": "Попередній місяць", onclick: () => go(addMonths(month, -1)) }, icon("left", "sm")),
     h("button", { class: "btn", onclick: () => go(today().slice(0, 7) + "-01") }, "Цей місяць"),
     h("button", { class: "btn", "aria-label": "Наступний місяць", onclick: () => go(addMonths(month, 1)) }, icon("right", "sm"))));
@@ -3539,7 +3539,7 @@ VIEWS.stock = async (main) => {
   let tab = movesFor ? "moves" : "left", cat = "", q = "";
   const body = h("div");
   const refresh = async () => { list = await api.get("/api/stock?all=true"); state.materials = list.filter((m) => m.is_active); closeSheet(); draw(); };
-  main.append(topbar("Склад", "Залишки матеріалів і фарб. Списуються автоматично при закритті замовлення",
+  main.append(topbar("Склад",
     canEdit ? h("button", { class: "btn primary", onclick: () => materialForm(null, list, refresh) }, icon("plus", "sm"), "Матеріал") : null));
   const search = h("input", { type: "search", placeholder: "Пошук: назва або тон", id: "stock-search", oninput: (e) => { q = e.target.value.trim().toLowerCase(); draw(); } });
   const tabs = seg([["left", "Залишки"], ["moves", "Рух складу"]], tab, (v) => { tab = v; if (v === "left") movesFor = null; draw(); });
