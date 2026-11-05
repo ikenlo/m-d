@@ -1131,3 +1131,11 @@ label.row > input[type="checkbox"], label.row > input[type="radio"] { flex: 0 0 
   .daystrip { margin-bottom: 10px; }
   .daystrip button { min-width: 46px; }
 }
+
+.qb-shift { gap: 10px; padding: 10px 12px; background: var(--warn-bg); border-color: transparent; }
+.qb-off { margin-top: 10px; }
+.qb-off > summary { display: flex; align-items: center; gap: 6px; cursor: pointer; list-style: none; padding: 6px 0; font-weight: 600; color: var(--ink-2); }
+.qb-off > summary::-webkit-details-marker { display: none; }
+.qb-off > summary small { margin-left: auto; }
+.qb-time.off { border-style: dashed; color: var(--ink-2); background: var(--warn-bg); }
+.inline-confirm { padding: 12px; background: var(--warn-bg); border-color: transparent; }

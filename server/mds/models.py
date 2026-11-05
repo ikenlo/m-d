@@ -267,6 +267,8 @@ class Order(Base):
     closed_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
     closed_by: Mapped[int] = mapped_column(ForeignKey("users.id"))
     revision: Mapped[int] = mapped_column(Integer, default=1)
+    edited_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+    edited_at: Mapped[datetime | None] = mapped_column(DateTime)
 
     appointment: Mapped[Appointment] = relationship(back_populates="order")
     shift: Mapped[Shift] = relationship(back_populates="orders")
@@ -276,6 +278,8 @@ class Order(Base):
     master: Mapped[User] = relationship(foreign_keys=[master_id])
     client: Mapped[Client] = relationship()
     service: Mapped[Service] = relationship()
+    closer: Mapped[User] = relationship(foreign_keys=[closed_by])
+    editor: Mapped[User | None] = relationship(foreign_keys=[edited_by])
 
 
 class OrderMaterial(Base):

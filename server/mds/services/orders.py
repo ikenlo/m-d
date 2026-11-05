@@ -11,6 +11,7 @@ from ..errors import Conflict, Forbidden, NotFound, ValidationError
 from ..models import (
     Appointment,
     ApptStatus,
+    Client,
     Material,
     Order,
     OrderMaterial,
@@ -26,6 +27,27 @@ from . import notifications
 from .common import Actor, audit, get_or_404, get_setting, ledger
 from .finance import compute_split
 from .users import effective_terms
+
+
+MISSING_LABELS = {"materials": "матеріали", "phone": "телефон клієнта"}
+
+
+def order_missing(o: Order) -> list[str]:
+    out = []
+    if o.service.needs_materials and not o.materials:
+        out.append("materials")
+    if not o.client.phone:
+        out.append("phone")
+    return out
+
+
+def master_can_edit(o: Order) -> bool:
+    return o.shift is not None and o.shift.status == ShiftStatus.OPEN
+
+
+def _touch(o: Order, actor: Actor) -> None:
+    o.edited_by = actor.user_id
+    o.edited_at = clock.now()
 
 
 def order_public(o: Order) -> dict:
@@ -53,6 +75,12 @@ def order_public(o: Order) -> dict:
         "closed_at": o.closed_at.isoformat(),
         "revision": o.revision,
         "needs_materials": bool(o.service.needs_materials) and not o.materials,
+        "client_phone": o.client.phone,
+        "missing": order_missing(o),
+        "shift_open": master_can_edit(o),
+        "closed_by_name": o.closer.full_name if o.closer else None,
+        "edited_by_name": o.editor.full_name if o.editor else None,
+        "edited_at": o.edited_at.isoformat() if o.edited_at else None,
     }
 
 
@@ -212,15 +240,28 @@ def close_order(
     return o
 
 
+def _check_edit(actor: Actor, o: Order) -> None:
+    if actor.is_director:
+        return
+    if actor.is_master:
+        if o.master_id != actor.user_id:
+            raise Forbidden("Можна редагувати лише власні замовлення")
+        if not master_can_edit(o):
+            raise Forbidden("Зміну закрито — замовлення виправляє директор")
+        return
+    if actor.is_staff_manager:
+        if o.closed_at < clock.now() - timedelta(days=14):
+            raise Forbidden("Замовлення старше 14 днів — виправляє директор")
+        return
+    raise Forbidden("Недостатньо прав")
+
+
 def correct_order(s: Session, actor: Actor, order_id: int, data: dict, reason: str) -> Order:
     o: Order = get_or_404(s, Order, order_id, "Замовлення")
     if not actor.is_director:
-        only_materials = set(data) <= {"materials"} and "materials" in data
-        own = actor.is_staff_manager or (actor.is_master and o.master_id == actor.user_id)
-        if not (only_materials and own):
+        if not (set(data) <= {"materials"} and "materials" in data):
             raise Forbidden("Майстер може лише вказати матеріали у своєму замовленні; інше виправляє директор")
-        if o.closed_at < clock.now() - timedelta(days=14):
-            raise Forbidden("Замовлення старше 14 днів — матеріали виправляє директор")
+        _check_edit(actor, o)
         reason = reason or "Вказано використані матеріали"
     if not reason or not reason.strip():
         raise ValidationError("Вкажіть причину виправлення")
@@ -251,6 +292,7 @@ def correct_order(s: Session, actor: Actor, order_id: int, data: dict, reason: s
     o.amount, o.payment_method, o.share_bp, o.materials_mode = amount, payment_method, share_bp, mode
     o.materials_cost, o.master_earning, o.salon_earning = mat_total, split.master, split.salon
     o.revision += 1
+    _touch(o, actor)
     s.flush()
     ledger(
         s, actor, "order_corrected", "order", o.id,
@@ -259,12 +301,60 @@ def correct_order(s: Session, actor: Actor, order_id: int, data: dict, reason: s
         details={"revision": o.revision, "reason": reason, "payment_method": payment_method},
     )
     audit(s, actor, "order", o.id, "correct", before, _order_snapshot(o), reason)
+    if o.master_id == actor.user_id:
+        return o
     notifications.enqueue(
         s, o.master.telegram_chat_id,
         f"✏️ Директор виправив замовлення #{o.id} ({o.service.name}).\n"
         f"Ваш заробіток: {fmt(before['master_earning'])} → {fmt(o.master_earning)}\nПричина: {reason}",
     )
     return o
+
+
+def set_order_phone(s: Session, actor: Actor, order_id: int, phone: str) -> Order:
+    from .catalog import client_public, normalize_phone
+
+    o: Order = get_or_404(s, Order, order_id, "Замовлення")
+    _check_edit(actor, o)
+    phone_n = normalize_phone(phone)
+    client = o.client
+    if client.phone == phone_n:
+        return o
+    if client.phone and not actor.is_staff_manager:
+        raise Forbidden("Телефон клієнта вже вказано — змінює адміністратор у картці клієнта")
+    other = s.scalar(select(Client).where(or_(Client.phone == phone_n, Client.phone2 == phone_n), Client.id != client.id))
+    before = {"client_id": client.id, "client_name": client.name, "phone": client.phone}
+    if other is not None:
+        o.client_id = other.id
+        o.appointment.client_id = other.id
+        s.flush()
+        s.refresh(o, ["client"])
+        reason = f"Номер належить клієнту {other.name} — замовлення перенесено до його картки"
+    else:
+        cb = client_public(client)
+        client.phone = phone_n
+        audit(s, actor, "client", client.id, "update", cb, client_public(client), f"Телефон вказано в замовленні #{o.id}")
+        reason = "Вказано телефон клієнта"
+    _touch(o, actor)
+    s.flush()
+    audit(s, actor, "order", o.id, "set_phone", before,
+          {"client_id": o.client_id, "client_name": o.client.name, "phone": o.client.phone}, reason)
+    return o
+
+
+def order_history(s: Session, actor: Actor, o: Order) -> list[dict]:
+    from ..models import AuditLog
+
+    if not actor.is_director and o.master_id != actor.user_id:
+        raise Forbidden("Немає доступу до цього замовлення")
+    rows = s.scalars(select(AuditLog).where(AuditLog.entity == "order", AuditLog.entity_id == o.id).order_by(AuditLog.id.desc()))
+    names = dict(s.execute(select(User.id, User.full_name)).all())
+    return [{"id": a.id, "ts": a.ts.isoformat(), "actor": names.get(a.user_id) or a.actor, "action": a.action,
+             "before": a.before, "after": a.after, "reason": a.reason} for a in rows]
+
+
+def incomplete_orders(s: Session, sh: Shift) -> list[Order]:
+    return [o for o in s.scalars(select(Order).where(Order.shift_id == sh.id).order_by(Order.closed_at)) if order_missing(o)]
 
 
 def list_orders(
@@ -280,7 +370,8 @@ def list_orders(
     )
     if master_id:
         q = q.where(Order.master_id == master_id)
-    q = q.options(joinedload(Order.master), joinedload(Order.client), joinedload(Order.service), selectinload(Order.materials))
+    q = q.options(joinedload(Order.master), joinedload(Order.client), joinedload(Order.service), selectinload(Order.materials),
+                  joinedload(Order.shift), joinedload(Order.closer), joinedload(Order.editor))
     return list(s.scalars(q.order_by(Order.closed_at.desc())).unique())
 
 
@@ -378,13 +469,17 @@ def shift_public(s: Session, sh: Shift, payouts: dict | None = None) -> dict:
     }
 
 
-def close_shift(s: Session, actor: Actor, master_id: int) -> Shift:
+def close_shift(s: Session, actor: Actor, master_id: int, *, force: bool = False) -> Shift:
     if not (actor.is_director or actor.user_id == master_id):
         raise Forbidden("Можна закрити лише власну зміну")
     s.execute(update(User).where(User.id == master_id).values(booking_lock=User.booking_lock + 1))
     sh = current_shift(s, master_id)
     if sh is None:
         raise Conflict("Немає відкритої зміни")
+    bad = incomplete_orders(s, sh)
+    if bad and not (force and actor.is_director):
+        lines = "; ".join(f"#{o.id} {o.client.name} — {', '.join(MISSING_LABELS[k] for k in order_missing(o))}" for o in bad[:5])
+        raise Conflict(f"Не можна закрити зміну: заповніть замовлення ({lines})", code="incomplete_orders")
     sh.closed_at = clock.now()
     sh.status = ShiftStatus.CLOSED
     s.flush()

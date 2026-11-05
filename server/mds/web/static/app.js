@@ -50,7 +50,10 @@ const api = {
     if (!res.ok) {
       const msg = (data && data.detail) || "Помилка " + res.status;
       if (res.status >= 500 || res.status === 0) pushErr(`${method} ${path} → ${res.status}: ${msg}`);
-      throw new Error(msg);
+      const err = new Error(msg);
+      err.code = data && data.error;
+      err.status = res.status;
+      throw err;
     }
     return data;
   },
@@ -438,6 +441,7 @@ const VIEW_ENTITIES = {
   today: ["appointment", "order", "shift"], calendar: ["appointment", "order", "callback"], dashboard: ["order", "expense", "payout", "appointment"],
   orders: ["order"], shifts: ["shift", "payout", "order"], stock: ["material"], clients: ["client", "appointment"],
   expenses: ["expense"], schedule: ["schedule", "user", "appointment"], earnings: ["order", "payout"], shift: ["shift", "order"],
+  myorders: ["order", "shift"],
 };
 const liveSync = { rev: null, pending: false, busy: false };
 function liveRefresh() {
@@ -490,7 +494,7 @@ function confirmSheet(title, text, okText, onOk, { danger = false, withReason = 
 
 const NAV = {
   master: [
-    ["today", "clock", "Сьогодні"], ["calendar", "calendar", "Календар"], ["earnings", "wallet", "Заробіток"],
+    ["today", "clock", "Сьогодні"], ["calendar", "calendar", "Календар"], ["myorders", "receipt", "Мої замовлення"], ["earnings", "wallet", "Заробіток"],
     ["shift", "check", "Зміна"], ["profile", "user", "Профіль"],
   ],
   admin: [["calendar", "calendar", "Календар", "Робота"], ["schedule", "calclock", "Графік роботи", "Робота"], ["clients", "users", "Клієнти", "Робота"],
@@ -1032,6 +1036,34 @@ function terminalPaySheet(p, onChange) {
   if (p.mode !== "mock") launch();
 }
 
+function inlineConfirm(anchor, text, okText) {
+  return new Promise((resolve) => {
+    const done = (v) => () => { box.remove(); resolve(v); };
+    const box = h("div", { class: "card inline-confirm", role: "alertdialog" },
+      h("div", { class: "row", style: { gap: "8px", alignItems: "flex-start" } }, icon("clock", "sm"), h("p", { style: { margin: 0 } }, text)),
+      h("div", { class: "row", style: { marginTop: "10px" } },
+        h("button", { type: "button", class: "btn grow", onclick: done(false) }, "Ні"),
+        h("button", { type: "button", class: "btn primary grow", onclick: done(true) }, okText)));
+    anchor.before(box);
+    box.scrollIntoView({ behavior: "smooth", block: "center" });
+  });
+}
+async function createAppt(body, anchor, okMsg) {
+  try {
+    const r = await api.post("/api/appointments", body);
+    toast(okMsg);
+    return r;
+  } catch (e) {
+    if (e.code !== "off_hours") { toast(e.message, true); throw e; }
+    if (!(await inlineConfirm(anchor, e.message, "Так, записати"))) throw e;
+    return run(() => api.post("/api/appointments", { ...body, confirm_off_hours: true }), okMsg);
+  }
+}
+async function openMyShift(btn) {
+  if (btn) btn.disabled = true;
+  try { return await run(() => api.post("/api/shifts/open"), "Зміну відкрито"); } finally { if (btn) btn.disabled = false; }
+}
+
 const RECENT_SVC = () => `mds_recent_svc_${state.user?.id}`;
 function rememberService(id) {
   let r = [];
@@ -1068,6 +1100,9 @@ function quickBook({ master_id = null, date = today(), time = null, client = nul
   const dBox = h("div", { class: "qb-chips" });
   const dPick = h("input", { type: "date", value: date, class: "qb-date", "aria-label": "Інша дата" });
   const tBox = h("div", { class: "qb-times" });
+  const offBox = h("div", {});
+  const shiftBox = h("div", {});
+  let offList = [];
   const name = h("input", { placeholder: "Ім'я клієнта *", autocapitalize: "words", "aria-required": "true" });
   const phone = h("input", { type: "tel", inputmode: "tel", placeholder: "Телефон (необов'язково)" });
   const found = h("div", { class: "muted small" });
@@ -1099,15 +1134,25 @@ function quickBook({ master_id = null, date = today(), time = null, client = nul
     if (!st.service || !st.master) { tBox.replaceChildren(h("div", { class: "qb-empty" }, PRESETS.length ? "Оберіть стрижку чи фарбування вгорі" : "Оберіть послугу")); return; }
     const my = ++req;
     tBox.replaceChildren(h("div", { class: "qb-empty" }, "Шукаю вільний час…"));
-    let list = await api.get(`/api/availability?master_id=${st.master}&service_id=${st.service}&day=${st.date}${st.duration ? "&duration_min=" + st.duration : ""}`).catch(() => []);
+    const r = await api.get(`/api/availability/detail?master_id=${st.master}&service_id=${st.service}&day=${st.date}${st.duration ? "&duration_min=" + st.duration : ""}`)
+      .catch(() => ({ slots: [], off_hours: [], working: true, shift_open: null }));
     if (my !== req) return;
-    if (st.date === today()) {
-      const n = new Date(Date.now() - 10 * 60000), cur = `${pad(n.getHours())}:${pad(n.getMinutes())}`;
-      list = list.filter((x) => x >= cur);
-    }
-    if (time && !st.time && list.includes(time)) st.time = time;
-    tBox.replaceChildren(...(list.length ? list.map((x) => h("button", { type: "button", class: "qb-time" + (x === st.time ? " on" : ""), onclick: () => { st.time = x; loadTimes(); } }, x))
-      : [h("div", { class: "qb-empty" }, icon("calendar", "sm"), h("span", {}, "Вільного часу немає — оберіть інший день" + (isMaster ? "" : " або майстра") + ". Перевірте й «Графік роботи»."))]));
+    const list = r.slots;
+    offList = r.off_hours || [];
+    const pick = (x) => { st.time = x; loadTimes(); };
+    if (time && !st.time && (list.includes(time) || offList.includes(time))) st.time = time;
+    const isMe = isMaster || st.master === state.user.id;
+    shiftBox.replaceChildren(...(isMe && r.shift_open === false ? [h("div", { class: "card qb-shift row" },
+      icon("lock", "sm"), h("div", { class: "grow" }, h("b", {}, "Зміна не відкрита"),
+        h("div", { class: "muted small" }, r.working ? "Відкрийте зміну, щоб працювати сьогодні" : "За графіком сьогодні вихідний — відкрийте зміну, і день стане робочим")),
+      h("button", { type: "button", class: "btn primary sm", onclick: async (e) => { await openMyShift(e.currentTarget); loadTimes(); } }, icon("ok", "sm"), "Відкрити зміну"))] : []));
+    tBox.replaceChildren(...(list.length ? list.map((x) => h("button", { type: "button", class: "qb-time" + (x === st.time ? " on" : ""), onclick: () => pick(x) }, x))
+      : [h("div", { class: "qb-empty" }, icon("calendar", "sm"), h("span", {}, r.working ? "У робочий час вільного немає — оберіть інший день" + (isMaster ? "" : " або майстра") + " або час поза графіком нижче."
+        : "За графіком роботи це вихідний. Можна записати на час поза графіком — з підтвердженням."))]));
+    const offOpen = !list.length || offList.includes(st.time);
+    offBox.replaceChildren(...(offList.length ? [h("details", { class: "qb-off", open: offOpen || null },
+      h("summary", {}, icon("clock", "sm"), h("span", {}, r.working ? `Поза графіком (${r.hours[0]}–${r.hours[1]})` : "Неробочий день"), h("small", { class: "muted" }, "з підтвердженням")),
+      h("div", { class: "qb-times" }, offList.map((x) => h("button", { type: "button", class: "qb-time off" + (x === st.time ? " on" : ""), onclick: () => pick(x) }, x))))] : []));
     summary();
   }
   function summary() {
@@ -1133,8 +1178,13 @@ function quickBook({ master_id = null, date = today(), time = null, client = nul
     if (st.clientId) body.client_id = st.clientId;
     else { body.client_phone = phone.value.trim() || null; body.client_name = name.value.trim(); }
     save.disabled = true;
+    if (offList.includes(st.time)) {
+      const ok = await inlineConfirm(save, `${dm(st.date)} о ${st.time} — поза графіком роботи. Записати клієнта на неробочий час?`, "Так, записати");
+      if (!ok) { save.disabled = false; return; }
+      body.confirm_off_hours = true;
+    }
     try {
-      await run(() => api.post("/api/appointments", body), "Записано");
+      await createAppt(body, save, "Записано");
       rememberService(st.service);
       closeSheet(); onChange();
     } catch (_) { save.disabled = false; }
@@ -1144,10 +1194,11 @@ function quickBook({ master_id = null, date = today(), time = null, client = nul
   if (client) { st.clientId = client.id; name.value = client.name; phone.value = client.phone || ""; found.textContent = "Клієнт із бази: " + client.name; }
   drawMasters(); drawPresets(); drawServices(); drawDays();
   openSheet("Швидкий запис", h("div", { class: "stack qb" },
+    shiftBox,
     masters.length > 1 ? h("div", {}, h("div", { class: "qb-label" }, "Майстер"), mBox) : null,
     PRESETS.length ? pBox : h("div", {}, h("div", { class: "qb-label" }, "Послуга"), sBox, sSearch, sFound),
     h("div", {}, h("div", { class: "qb-label" }, "День"), dBox),
-    h("div", {}, h("div", { class: "qb-label" }, "Час"), tBox),
+    h("div", {}, h("div", { class: "qb-label" }, "Час"), tBox, offBox),
     h("div", {}, h("div", { class: "qb-label" }, "Клієнт"), h("div", { class: "form-grid" }, name, phone)), found,
     save,
     h("button", { type: "button", class: "btn ghost", onclick: () => { closeSheet(); apptForm({ master_id: st.master, date: st.date, time: st.time || "10:00" }, onChange); } }, "Інша послуга з прайсу — повна форма")));
@@ -1224,7 +1275,7 @@ function apptForm({ appt = null, master_id = null, date = today(), time = "10:00
           if (!phone.value.trim() && !name.value.trim()) { save.disabled = false; return toast("Вкажіть ім'я клієнта (телефон — необов'язково)", true); }
           body.client_phone = phone.value.trim() || null; body.client_name = name.value;
         }
-        await run(() => api.post("/api/appointments", body), "Запис створено");
+        await createAppt(body, save, "Запис створено");
       }
       closeSheet();
       onChange();
@@ -1321,14 +1372,15 @@ VIEWS.today = async (main) => {
   main.append(topbar(`Добрий день, ${state.user.full_name.split(" ")[0]}`,
     `${WD_LONG[(new Date().getDay() + 6) % 7]}, ${dm(d)} · записів: ${active.length}, залишилось: ${left.length}`,
     left.length ? h("button", { class: "btn", onclick: () => shiftForm(state.user.id, null, reload) }, icon("clock", "sm"), "Запізнююсь") : null,
-    h("button", { class: "btn primary", onclick: () => apptForm({ date: d }, reload) }, icon("plus", "sm"), "Запис")));
+    h("button", { class: "btn primary", onclick: () => quickBook({ date: d }) }, icon("plus", "sm"), "Запис")));
   main.append(h("div", { class: "grid kpi", style: { marginBottom: "16px" } },
     kpi("Мій заробіток сьогодні", my.day.earning, "dark", { ico: "wallet" }),
     kpi("Виручка сьогодні", my.day.revenue, "", { ico: "banknote" }),
     kpi("Цей місяць", my.month.earning, "", { ico: "chart", sub: `${my.month.orders_count} послуг` }),
     h("div", { class: "card kpi-tile" }, h("div", { class: "kpi-top" }, h("span", { class: "kpi-ico" }, icon("check", "sm")), h("span", { class: "kpi-label" }, "Зміна")),
       h("div", { class: "kpi-value", style: { fontSize: "18px" } }, shift ? "Відкрита з " + hm(shift.opened_at) : "Не відкрита"),
-      h("a", { href: "#/shift", class: "small" }, shift ? "Закрити зміну →" : "Деталі →"))));
+      shift ? h("a", { href: "#/shift", class: "small" }, "Закрити зміну →")
+        : h("button", { class: "btn primary sm", style: { alignSelf: "flex-start" }, onclick: async (e) => { await openMyShift(e.currentTarget); reload(); } }, icon("ok", "sm"), "Відкрити зміну"))));
   const pend = await pendingBlock(reload);
   if (pend) main.querySelector(".topbar").after(pend);
   if (!active.length) { main.append(h("div", { class: "card" }, emptyState("На сьогодні записів немає", "calendar"))); return; }
@@ -1362,7 +1414,7 @@ function needsMaterialsBlock(list, onChange) {
       h("span", { class: "muted small" }, "Фарбування закрито без матеріалів — склад і собівартість неправильні")),
     list.map((o) => h("div", { class: "unc-row" },
       h("div", { class: "grow" }, h("b", {}, o.client_name), h("div", { class: "muted small" }, `${dm(o.closed_at)} ${hm(o.closed_at)} · ${o.service_name} · ${money(o.amount)}`)),
-      h("div", { class: "unc-actions" }, h("button", { class: "btn sm primary", onclick: () => orderMaterialsSheet(o, onChange) }, icon("plus", "sm"), "Вказати матеріали")))));
+      h("div", { class: "unc-actions" }, h("button", { class: "btn sm primary", onclick: () => (state.user.role === "master" ? myOrderSheet(o.id, onChange) : orderMaterialsSheet(o, onChange)) }, icon("plus", "sm"), "Вказати матеріали")))));
 }
 async function orderMaterialsSheet(o, onChange) {
   state.materials = await api.get("/api/materials").catch(() => state.materials);
@@ -1785,8 +1837,12 @@ VIEWS.shift = async (main) => {
   const [cur, history] = await Promise.all([api.get("/api/shifts/current"), api.get("/api/shifts")]);
   main.append(topbar("Моя зміна", cur ? `Відкрита з ${dmy(cur.opened_at)} ${hm(cur.opened_at)}` : "Зміна відкривається автоматично з першим закритим замовленням"));
   if (cur) {
+    const bad = (cur.report.orders || []).filter((o) => o.missing && o.missing.length);
+    if (bad.length) main.append(incompleteBlock(bad, reload));
     main.append(shiftReport(cur.report));
-    main.append(h("button", { class: "btn primary big", style: { marginTop: "14px" }, onclick: () => confirmSheet("Закрити зміну?",
+    if (bad.length) {
+      main.append(h("button", { class: "btn big", style: { marginTop: "14px" }, disabled: true }, icon("lock"), "Спершу заповніть замовлення"));
+    } else main.append(h("button", { class: "btn primary big", style: { marginTop: "14px" }, onclick: () => confirmSheet("Закрити зміну?",
       "Буде сформовано звіт, директор отримає його на підтвердження виплати.", "Закрити зміну", async () => {
         const sh = await run(() => api.post("/api/shifts/close"), "Зміну закрито");
         renderApp();
@@ -1794,7 +1850,7 @@ VIEWS.shift = async (main) => {
       }) }, icon("lock"), "Закрити зміну"));
   } else {
     main.append(h("div", { class: "card" }, emptyState("Зараз зміна не відкрита", "clock"),
-      h("div", { style: { textAlign: "center" } }, h("button", { class: "btn", onclick: async () => { await run(() => api.post("/api/shifts/open"), "Зміну відкрито"); reload(); } }, "Відкрити зміну зараз"))));
+      h("div", { style: { textAlign: "center" } }, h("button", { class: "btn primary", onclick: async (e) => { await openMyShift(e.currentTarget); reload(); } }, icon("ok", "sm"), "Відкрити зміну зараз"))));
   }
   const past = history.filter((s) => s.status !== "open");
   if (past.length) {
@@ -2846,6 +2902,7 @@ async function orderSheet(id, onChange) {
     h("div", { class: "stack" },
       h("div", {}, h("b", {}, o.service_name), " · ", o.client_name, " · ", o.master_name),
       h("div", { class: "muted small" }, dmy(o.closed_at), " ", hm(o.closed_at), " · редакція ", o.revision),
+      orderAuthors(o),
       h("div", { class: "card" },
         h("div", { class: "sum-line" }, h("span", {}, "Сума"), h("b", {}, money(o.amount))),
         h("div", { class: "sum-line" }, h("span", {}, "Матеріали"), h("span", {}, money(o.materials_cost))),
@@ -2861,11 +2918,99 @@ async function orderSheet(id, onChange) {
             await run(() => api.patch("/api/orders/" + id, { amount: toKop(amount.value), payment_method: method.value, share_bp: Math.round(parseFloat(share.value) * 100), materials_mode: mode.value, reason: reason.value.trim() }), "Замовлення виправлено");
             closeSheet(); onChange && onChange();
           } }, "Зберегти виправлення"))),
-      h("h3", {}, "Історія змін"),
-      o.history.map((x) => h("div", { class: "small", style: { padding: "6px 0", borderBottom: "1px solid var(--line)" } },
-        h("b", {}, x.action === "close" ? "Закрито" : "Виправлено"), " · ", dmy(x.ts), " ", hm(x.ts), " · ", x.actor,
-        x.reason ? h("div", { class: "muted" }, "Причина: ", x.reason) : null,
-        x.before ? h("div", { class: "muted" }, `Було: ${money(x.before.amount)} / майстру ${money(x.before.master_earning)} → Стало: ${money(x.after.amount)} / майстру ${money(x.after.master_earning)}`) : null))));
+      orderHistory(o)));
+}
+
+const MISSING = { materials: "без матеріалів", phone: "без телефону" };
+function orderAuthors(o) {
+  return h("div", { class: "muted small" }, "Закрив: ", o.closed_by_name || "—",
+    o.edited_by_name ? ` · редагував: ${o.edited_by_name}, ${dm(o.edited_at)} ${hm(o.edited_at)}` : "");
+}
+function orderHistory(o) {
+  const label = { close: "Закрито", correct: "Виправлено", set_phone: "Вказано телефон" };
+  return h("div", {}, h("h3", {}, "Історія змін"),
+    (o.history || []).map((x) => h("div", { class: "small", style: { padding: "6px 0", borderBottom: "1px solid var(--line)" } },
+      h("b", {}, label[x.action] || x.action), " · ", dmy(x.ts), " ", hm(x.ts), " · ", x.actor,
+      x.reason ? h("div", { class: "muted" }, x.action === "correct" ? "Причина: " : "", x.reason) : null,
+      x.action === "correct" && x.before ? h("div", { class: "muted" }, `Було: ${money(x.before.amount)} / майстру ${money(x.before.master_earning)} → Стало: ${money(x.after.amount)} / майстру ${money(x.after.master_earning)}`) : null,
+      x.action === "set_phone" && x.after ? h("div", { class: "muted" }, `${x.after.client_name}: ${x.after.phone}`) : null)));
+}
+function missingChips(o) {
+  return (o.missing || []).map((k) => h("span", { class: "chip st-overdue", style: { marginLeft: "6px" } }, MISSING[k] || k));
+}
+function incompleteBlock(list, onChange) {
+  return h("div", { class: "card unc-card mat-alert" },
+    h("div", { class: "card-head" }, h("h3", { class: "row", style: { gap: "8px" } }, icon("receipt"), `Незаповнені замовлення: ${list.length}`),
+      h("span", { class: "muted small" }, "Поки їх не доповнено, зміну не закрити")),
+    list.map((o) => h("div", { class: "unc-row" },
+      h("div", { class: "grow" }, h("b", {}, o.client_name), ...missingChips(o),
+        h("div", { class: "muted small" }, `${dm(o.closed_at)} ${hm(o.closed_at)} · ${o.service_name} · ${money(o.amount)}`)),
+      h("div", { class: "unc-actions" }, h("button", { class: "btn sm primary", onclick: () => myOrderSheet(o.id, onChange) }, icon("edit", "sm"), "Доповнити")))));
+}
+
+VIEWS.myorders = async (main) => {
+  const body = h("div");
+  let q = "period=day";
+  const load = async () => {
+    body.replaceChildren(h("div", { class: "skeleton" }, h("i"), h("i"), h("i")));
+    const list = await api.get(`/api/orders?${q}`);
+    const bad = list.filter((o) => o.missing.length && o.shift_open);
+    const total = list.reduce((a, o) => a + o.amount, 0);
+    const earn = list.reduce((a, o) => a + o.master_earning, 0);
+    body.replaceChildren(
+      h("div", { class: "grid kpi", style: { marginBottom: "12px" } },
+        kpi("Замовлень", list.length, "", { ico: "receipt", raw: true }), kpi("Виручка", total, "", { ico: "banknote" }), kpi("Мій заробіток", earn, "dark", { ico: "wallet" })),
+      bad.length ? incompleteBlock(bad, load) : h("div"),
+      list.length ? h("div", { class: "card ord-list" }, list.map((o) => h("button", { class: "ord-item" + (o.missing.length ? " no-mat" : ""), onclick: () => myOrderSheet(o.id, load) },
+        h("div", { class: "ord-time" }, dm(o.closed_at), h("br"), hm(o.closed_at)),
+        h("div", { class: "grow ord-main" }, h("b", {}, o.client_name), ...missingChips(o), h("div", { class: "muted small" }, o.service_name),
+          o.edited_by_name ? h("div", { class: "muted small" }, "редагував: ", o.edited_by_name) : null),
+        h("div", { class: "ord-amt" }, h("b", {}, money(o.amount)), h("span", { class: "small muted" }, "мені ", money(o.master_earning))))))
+        : h("div", { class: "card" }, emptyState("Немає закритих замовлень за період", "receipt")));
+  };
+  main.append(topbar("Мої замовлення", "Незаповнені замовлення можна доповнити, поки зміна відкрита"),
+    periodPicker((x) => { q = x; load(); }, "day"), body);
+  await load();
+};
+
+async function myOrderSheet(id, onChange) {
+  const o = await run(() => api.get("/api/orders/" + id));
+  const done = () => { closeSheet(); onChange && onChange(); };
+  const parts = [];
+  if (o.shift_open && o.missing.includes("phone")) {
+    const phone = h("input", { type: "tel", inputmode: "tel", placeholder: "+380…", autocomplete: "off" });
+    parts.push(h("div", { class: "card", style: { padding: "12px" } }, h("div", { class: "row small", style: { marginBottom: "8px" } }, icon("phone", "sm"), h("b", {}, "Телефон клієнта")),
+      h("div", { class: "row" }, h("div", { class: "grow" }, phone), h("button", { class: "btn primary", onclick: async (e) => {
+        if (phone.value.replace(/\D/g, "").length < 9) { phone.focus(); return toast("Вкажіть номер телефону", true); }
+        e.currentTarget.disabled = true;
+        try { await run(() => api.put(`/api/orders/${o.id}/phone`, { phone: phone.value.trim() }), "Телефон збережено"); done(); } catch (_) { e.currentTarget.disabled = false; }
+      } }, "Зберегти"))));
+  }
+  if (o.shift_open) {
+    state.materials = await api.get("/api/materials").catch(() => state.materials);
+    const mats = new Map(), custom = [];
+    for (const m of o.materials || []) if (m.material_id) mats.set(m.material_id, m.qty); else custom.push({ name: m.name, unit_cost: m.unit_cost, qty: 1 });
+    parts.push(materialsPicker(mats, custom, { open: o.missing.includes("materials") }),
+      h("button", { class: "btn" + (o.missing.includes("materials") ? " primary" : ""), onclick: async (e) => {
+        const materials = [...mats.entries()].filter(([, q]) => q > 0).map(([mid, q]) => ({ material_id: mid, qty: q })).concat(custom);
+        if (!materials.length && o.missing.includes("materials")) return toast("Оберіть використані матеріали", true);
+        e.currentTarget.disabled = true;
+        try { await run(() => api.patch(`/api/orders/${o.id}`, { materials, reason: "Вказано використані матеріали" }), "Матеріали записано, склад оновлено"); done(); } catch (_) { e.currentTarget.disabled = false; }
+      } }, icon("ok", "sm"), "Зберегти матеріали"));
+  } else {
+    parts.push(h("div", { class: "muted small" }, icon("lock", "sm"), " Зміну закрито — виправлення робить директор."));
+  }
+  openSheet(`Замовлення #${o.id}`, h("div", { class: "stack" },
+    h("div", {}, h("b", {}, o.service_name), " · ", o.client_name, " · ", o.client_phone || "без номера", ...missingChips(o)),
+    h("div", { class: "muted small" }, dmy(o.closed_at), " ", hm(o.closed_at)),
+    orderAuthors(o),
+    h("div", { class: "card" },
+      h("div", { class: "sum-line" }, h("span", {}, "Сума"), h("b", {}, money(o.amount))),
+      h("div", { class: "sum-line" }, h("span", {}, "Оплата"), h("span", {}, PAY[o.payment_method] || o.payment_method)),
+      h("div", { class: "sum-line" }, h("span", {}, "Матеріали"), h("span", {}, money(o.materials_cost))),
+      o.materials.map((m) => h("div", { class: "sum-line muted small" }, h("span", {}, "· ", m.name, " × ", m.qty), h("span", {}, money(m.total)))),
+      h("div", { class: "sum-line total" }, h("span", {}, "Мій заробіток"), h("span", {}, money(o.master_earning)))),
+    ...parts, orderHistory(o)));
 }
 
 VIEWS.expenses = async (main) => {

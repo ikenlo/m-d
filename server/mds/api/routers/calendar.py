@@ -67,6 +67,14 @@ def availability(master_id: int, service_id: int, day: date, duration_min: int |
     return [t.strftime("%H:%M") for t in bookings.free_slots(s, master_id, service_id, day, duration_min=duration_min)]
 
 
+@router.get("/availability/detail")
+def availability_detail(master_id: int, service_id: int, day: date, duration_min: int | None = None,
+                        actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
+    if duration_min is not None and not (5 <= duration_min <= 12 * 60):
+        duration_min = None
+    return bookings.booking_options(s, actor, master_id, service_id, day, duration_min)
+
+
 @router.post("/appointments", status_code=201)
 def create_appointment(body: AppointmentIn, actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
     data = body.model_dump()
