@@ -311,7 +311,8 @@ tr.click:hover td { background: var(--surface-2); }
 .appt-title { font-weight: 700; font-size: var(--fs-md); }
 .appt.done { opacity: .62; }
 
-.daystrip { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 4px; margin-bottom: 14px; scrollbar-width: thin; }
+.daystrip { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 4px; margin-bottom: 14px; scrollbar-width: none; }
+.daystrip::-webkit-scrollbar { display: none; }
 .daystrip button {
   flex: 0 0 auto; min-width: 58px; border: 1px solid var(--line); background: var(--surface); border-radius: var(--r-md);
   padding: 6px 8px; cursor: pointer; display: flex; flex-direction: column; align-items: center; line-height: 1.15;
@@ -1208,16 +1209,27 @@ label.row > input[type="checkbox"], label.row > input[type="radio"] { flex: 0 0 
 }
 
 .swipe-dots { display: none; }
+.deck-tabs-bar { display: none; }
 @media (max-width: 760px) {
-  .grid.kpi, .grid.kpi.kpi-6, .swipe-deck, .grid.two.swipe-deck {
-    display: flex; grid-template-columns: none; gap: 10px; overflow-x: auto; overflow-y: hidden;
-    scroll-snap-type: x mandatory; scrollbar-width: none; overscroll-behavior-x: contain; -webkit-overflow-scrolling: touch;
-    margin-left: -16px; margin-right: -16px; padding: 2px 16px 4px; scroll-padding: 0 16px;
+  .grid.kpi:not(.few), .grid.kpi.kpi-6:not(.few), .swipe-deck:not(.deck-tabs), .grid.two.swipe-deck:not(.deck-tabs) {
+    display: flex; grid-template-columns: none; gap: 10px; overflow: hidden; touch-action: pan-y;
+    margin-left: -16px; margin-right: -16px; padding: 2px 16px 4px;
   }
-  .grid.kpi::-webkit-scrollbar, .swipe-deck::-webkit-scrollbar { display: none; }
-  .grid.kpi > *, .grid.kpi.kpi-6 > * { flex: 0 0 calc((100% - 10px) / 2); min-width: 0; scroll-snap-align: start; }
-  .swipe-deck { align-items: flex-start; gap: 12px; transition: height var(--dur-2) var(--ease); }
-  .swipe-deck > * { flex: 0 0 100%; min-width: 0; scroll-snap-align: center; scroll-snap-stop: always; margin-top: 0 !important; }
+  .grid.kpi:not(.few) > *, .grid.kpi.kpi-6:not(.few) > * { flex: 0 0 calc((100% - 10px) / 2); min-width: 0; }
+  .swipe-deck:not(.deck-tabs) { align-items: flex-start; gap: 12px; transition: height var(--dur-2) var(--ease); }
+  .swipe-deck:not(.deck-tabs) > * { flex: 0 0 100%; min-width: 0; margin-top: 0 !important; }
+  .grid.kpi.few, .grid.kpi.kpi-6.few { display: grid; grid-template-columns: repeat(var(--n, 3), minmax(0, 1fr)); gap: 8px; }
+  .grid.kpi.few .kpi-tile { padding: 10px 10px; gap: 4px; }
+  .grid.kpi.few .kpi-value { font-size: var(--fs-md); }
+  .grid.kpi.few .kpi-ico { width: 24px; height: 24px; }
+  .grid.kpi.few .kpi-ico svg { width: 14px; height: 14px; }
+  .grid.kpi.few .kpi-label { font-size: var(--fs-2xs); }
+  .grid.kpi.few .spark, .grid.kpi.few .row.small { display: none; }
+  .deck-tabs-bar { display: flex; margin-top: 12px; }
+  .swipe-deck.deck-tabs { display: block; margin-top: 10px !important; }
+  .swipe-deck.deck-tabs .deck-hide { display: none !important; }
+  .swipe-deck.deck-tabs .card { animation: rise-in .25s both; }
+  .swipe-deck.deck-tabs > .stack > .card { margin-top: 0 !important; }
   .swipe-dots { display: flex; justify-content: center; align-items: center; gap: 6px; height: 10px; margin: 8px 0 4px; }
   .swipe-dots:empty { display: none; }
   .swipe-dots i { width: 6px; height: 6px; border-radius: 999px; background: var(--line-strong); transition: width var(--dur-1) var(--ease), background var(--dur-1) var(--ease); }
@@ -1256,3 +1268,4 @@ tbody tr:hover td, table tr:not(:first-child):hover td { background: color-mix(i
 .login-form > .login-btn { margin-top: 20px; }
 .login-form > .login-err, .login-form > .login-hint { margin-top: 12px; }
 .login-foot { max-width: 320px; margin-left: auto; margin-right: auto; text-wrap: balance; line-height: 1.45; }
+.kpi-ico { flex-shrink: 0; }
