@@ -17,7 +17,7 @@ from ..config import Config
 from ..db import Database
 from ..errors import DomainError
 from ..services import backup
-from .routers import auth, calendar, card_terminal, callbacks, catalog, money, public, staff, stock_schedule, system, tax_report, taxes, utilities
+from .routers import auth, calendar, card_terminal, callbacks, catalog, clients, money, public, staff, stock_schedule, system, tax_report, taxes, utilities
 
 log = logging.getLogger("mds")
 STATIC = Path(__file__).resolve().parent.parent / "web" / "static"
@@ -100,7 +100,7 @@ def create_app(
             {"error": "validation", "detail": f"Невірні дані: {field} — {first.get('msg', '')}"}, status_code=422
         )
 
-    for r in (auth, card_terminal, staff, catalog, calendar, callbacks, money, public, stock_schedule, system, tax_report, taxes, utilities):
+    for r in (auth, card_terminal, staff, clients, catalog, calendar, callbacks, money, public, stock_schedule, system, tax_report, taxes, utilities):
         app.include_router(r.router)
 
     app.mount("/static", StaticFiles(directory=STATIC), name="static")

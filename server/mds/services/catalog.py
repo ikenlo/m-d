@@ -232,6 +232,13 @@ def client_public(c: Client) -> dict:
         "telegram_linked": c.telegram_user_id is not None,
         "blocked": bool(c.blocked),
         "blocked_reason": c.blocked_reason,
+        "phone2": c.phone2,
+        "birthday": c.birthday.isoformat() if c.birthday else None,
+        "telegram_username": c.telegram_username,
+        "source": c.source,
+        "wishes": c.wishes,
+        "marketing_consent": bool(c.marketing_consent),
+        "last_contact_at": c.last_contact_at.isoformat() if c.last_contact_at else None,
         "created_at": c.created_at.isoformat(),
     }
 
@@ -253,7 +260,8 @@ def get_or_create_client(
         audit(s, actor, "client", c.id, "create", None, client_public(c))
         return c
     phone_n = normalize_phone(phone)
-    c = s.scalar(select(Client).where(Client.phone == phone_n))
+    # один клієнт — одна картка: шукаємо і за основним, і за додатковим номером
+    c = s.scalar(select(Client).where(Client.phone == phone_n)) or s.scalar(select(Client).where(Client.phone2 == phone_n))
     if c is None:
         if not name.strip():
             raise ValidationError("Вкажіть ім'я клієнта")
@@ -314,7 +322,7 @@ def search_clients(s: Session, q: str, limit: int = 50, master_id: int | None = 
         stmt = stmt.where(Client.id.in_(select(Appointment.client_id).where(Appointment.master_id == master_id)))
     if q:
         digits = re.sub(r"\D", "", q)
-        conds = [Client.name.ilike(f"%{q}%")]
+        conds = [Client.search_name.like(f"%{' '.join(q.lower().split())}%")]
         if digits:
             conds.append(Client.phone.like(f"%{digits}%"))
         stmt = stmt.where(or_(*conds))

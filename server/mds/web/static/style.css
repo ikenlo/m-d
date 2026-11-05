@@ -1022,3 +1022,10 @@ label.row > input[type="checkbox"], label.row > input[type="radio"] { flex: 0 0 
 .sched-actions { display: flex; gap: 6px; flex-wrap: wrap; }
 @media (max-width: 760px) { .sched-actions { flex: 1 1 100%; } .sched-actions .btn { flex: 1; justify-content: center; } }
 @media (prefers-reduced-motion: reduce) { .tab-plus span { animation: none; } }
+
+/* ================================================================ 0.1.40: клієнтська база */
+.cl-item { align-items: center; }
+.cl-item .ord-amt { align-items: flex-end; }
+.chip-n { margin-left: 6px; font-size: 11px; opacity: .7; }
+.card-tabs { width: 100%; overflow-x: auto; flex-wrap: nowrap; }
+.card-tabs button { white-space: nowrap; }
