@@ -1184,3 +1184,29 @@ label.row > input[type="checkbox"], label.row > input[type="radio"] { flex: 0 0 
   .day-sum::-webkit-scrollbar { display: none; }
   .cal-time { padding: 0 4px; font-size: var(--fs-micro); }
 }
+
+/* «Календар» на телефоні — порядок як у календарі iPhone: місяць і дії → стрічка днів → дата й підсумок → сітка */
+.cal-mhead { display: none; }
+.now-pill { display: none; }
+@media (max-width: 760px) {
+  .cal-mhead { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 2px 0 10px; }
+  .cal-month { position: relative; display: inline-flex; align-items: center; gap: 4px; font-size: var(--fs-lg); color: var(--ink); cursor: pointer; }
+  .cal-month b { font-weight: 800; letter-spacing: -.01em; }
+  .cal-month .i { color: var(--ink-3); }
+  .cal-month input { position: absolute; inset: 0; opacity: 0; width: 100%; min-height: 0; cursor: pointer; }
+  .cal-acts { display: inline-flex; align-items: center; gap: 2px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-pill); padding: 2px; box-shadow: var(--shadow-sm); }
+  .cal-act { border: 0; background: transparent; color: var(--ink); height: 36px; min-width: 40px; padding: 0 10px; border-radius: var(--r-pill); display: inline-grid; place-items: center; cursor: pointer; font: inherit; font-weight: 700; font-size: var(--fs-sm); }
+  .cal-act:active { background: var(--surface-3); }
+  .cal-act .i { width: 20px; height: 20px; }
+  :root[data-theme="dark"] .cal-act { color: var(--ink); }
+  .day-sum .ds-date { color: var(--ink); font-weight: 800; }
+  /* колонка годин — вузька, без фону й рамки; лінії йдуть через увесь день */
+  .cal-corner { border-bottom-color: transparent; }
+  .cal-time { padding: 0 6px 0 0; background: transparent; font-size: var(--fs-micro); font-weight: 600; }
+  .cal-grid > .cal-cell.c0 { border-left-color: transparent; }
+  .now-pill { display: block; position: absolute; left: 0; z-index: 3; transform: translateY(-50%); text-align: center; pointer-events: none;
+    background: var(--danger); color: #fff; font-size: var(--fs-micro); font-weight: 800; border-radius: var(--r-pill); padding: 2px 0; font-variant-numeric: tabular-nums; }
+  .now-line::before { display: none; }
+  .daystrip { margin-bottom: 10px; }
+  .daystrip button { min-width: 46px; }
+}

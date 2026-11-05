@@ -200,6 +200,7 @@ const ICONS = {
   phone: '<path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.3 1.8.6 2.7a2 2 0 0 1-.5 2.1L8 9.8a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.5 2.7.6a2 2 0 0 1 1.7 2z"/>',
   x: '<path d="M18 6L6 18M6 6l12 12"/>',
   search: '<circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/>',
+  down: '<path d="M6 9l6 6 6-6"/>',
   sliders: '<path d="M4 6h9M17 6h3M4 12h3M11 12h9M4 18h11M19 18h1"/><circle cx="15" cy="6" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="17" cy="18" r="2"/>',
   more: '<circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/>',
   trend: '<path d="M23 6l-9.5 9.5-5-5L1 18"/><path d="M17 6h6v6"/>',
@@ -1559,9 +1560,20 @@ VIEWS.calendar = async (main) => {
       h("button", { class: mode === "grid" ? "on" : "", title: "Сітка по майстрах", "aria-label": "Сітка", onclick: () => setMode("grid") }, icon("grid", "sm"), h("span", {}, "Сітка")),
       h("button", { class: mode === "list" ? "on" : "", title: "Список записів", "aria-label": "Список", onclick: () => setMode("list") }, icon("rows", "sm"), h("span", {}, "Список"))),
     h("button", { class: "btn primary", onclick: () => quickBook({ date: day }) }, icon("plus", "sm"), "Новий запис"));
-  // телефон: усе керування — один рядок (дата видно в стрічці днів, «Новий запис» — кнопка «+» унизу)
   calTop.classList.add("cal-top");
-  main.append(calTop);
+  if (narrow) {
+    // телефон — як у календарі iPhone: зліва місяць (натиснути — обрати дату), справа дії; далі стрічка днів,
+    // рядок із датою й підсумком, сітка
+    const other = mode === "grid" ? "list" : "grid";
+    main.append(h("div", { class: "cal-mhead" },
+      h("span", { class: "cal-month", title: "Обрати дату" }, h("b", {}, monthTitle(day)), icon("down", "sm"),
+        h("input", { type: "date", value: day, "aria-label": "Обрати дату", onchange: (e) => e.target.value && go(e.target.value) })),
+      h("div", { class: "cal-acts" },
+        day !== today() ? h("button", { class: "cal-act txt", type: "button", onclick: () => go(today()) }, "Сьогодні") : null,
+        h("button", { class: "cal-act", type: "button", title: other === "grid" ? "Сітка по майстрах" : "Список записів",
+          "aria-label": other === "grid" ? "Показати сіткою" : "Показати списком", onclick: () => setMode(other) }, icon(other === "grid" ? "grid" : "rows")),
+        h("button", { class: "cal-act", type: "button", "aria-label": "Новий запис", onclick: () => quickBook({ date: day }) }, icon("plus")))));
+  } else main.append(calTop);
 
   // стрічка днів (тиждень довкола) з кількістю записів — одним запитом на весь діапазон
   const wdIdx = (iso) => String((new Date(iso + "T12:00").getDay() + 6) % 7);
@@ -1644,7 +1656,9 @@ VIEWS.calendar = async (main) => {
   const waiting = activeList.filter((a) => a.status === "pending").length;
   const planned = activeList.reduce((s, a) => s + (a.price || 0), 0);
   const working = masters.filter((m) => spanOf(m)).length;
-  main.append(h("div", { class: "day-sum" }, pendChip,
+  main.append(h("div", { class: "day-sum" },
+    narrow ? h("b", { class: "ds-date" }, `${WD_LONG[(new Date(day + "T12:00").getDay() + 6) % 7]}, ${+day.slice(8, 10)} ${MONTHS_GEN[+day.slice(5, 7) - 1]}`) : null,
+    pendChip,
     h("span", {}, icon("calendar", "sm"), h("b", {}, activeList.length), " ", plural(activeList.length, "запис", "записи", "записів")),
     waiting && !pendChip ? h("span", { class: "warn" }, icon("alert", "sm"), "очікують: ", h("b", {}, waiting)) : null,
     !isMaster ? h("span", {}, icon("users", "sm"), working ? (narrow ? `${working} з ${masters.length}` : `працюють: ${working} з ${masters.length}`) : "усі вихідні") : null,
@@ -1675,7 +1689,7 @@ VIEWS.calendar = async (main) => {
     main.append(agenda);
   } else {
     // 30 хв = 46 px: у найкоротшому записі вміщаються два рядки (час+клієнт, послуга+ціна)
-    const STEP = 30, ROW = 46, HEAD = 60, TIMEW = narrow ? 40 : 52, GAP = 30;
+    const STEP = 30, ROW = 46, HEAD = 60, TIMEW = narrow ? 36 : 52, GAP = 30;
     const fmt = (x) => `${pad(Math.floor(x / 60))}:${pad(x % 60)}`;
     // показуємо лише години графіка та години з записами; порожні проміжки між ними згортаються в тонкий рядок
     const hrs = new Set();
@@ -1723,10 +1737,10 @@ VIEWS.calendar = async (main) => {
       const min = row.min;
       const time = fmt(min);
       grid.append(h("div", { class: "cal-time" + (r === 0 || rowsDef[r - 1].gap ? " first" : "") }, min % 60 === 0 ? time : ""));
-      masters.forEach((m) => {
+      masters.forEach((m, mi) => {
         const sp = spanOf(m);
         const off = !sp || min < toMin(sp[0]) || min >= toMin(sp[1]);
-        grid.append(h("div", { class: "cal-cell" + (off ? " off" : "") + (min % 60 ? " half" : ""), title: off ? "Неробочий час" : `Новий запис · ${m.full_name} · ${time}`,
+        grid.append(h("div", { class: "cal-cell" + (mi ? "" : " c0") + (off ? " off" : "") + (min % 60 ? " half" : ""), title: off ? "Неробочий час" : `Новий запис · ${m.full_name} · ${time}`,
           onclick: off ? null : () => quickBook({ master_id: m.id, date: day, time }) }, off ? null : h("span", { class: "cell-add" }, "+ ", time)));
       });
     });
@@ -1781,7 +1795,8 @@ VIEWS.calendar = async (main) => {
         const now = new Date();
         const nm = now.getHours() * 60 + now.getMinutes();
         if (nm >= startMin && nm <= endMin) {
-          grid.append(h("div", { class: "now-line", style: { top: yOf(nm) + "px", left: TIMEW + "px", right: "0" } }));
+          grid.append(h("div", { class: "now-line", style: { top: yOf(nm) + "px", left: TIMEW + "px", right: "0" } }),
+            h("span", { class: "now-pill", style: { top: yOf(nm) + "px", width: TIMEW + "px" } }, `${pad(Math.floor(nm / 60))}:${pad(nm % 60)}`));
           if (params.get("d") === null) wrap.scrollTop = Math.max(0, yOf(nm) - HEAD - 120);
         }
       }
