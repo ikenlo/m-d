@@ -60,10 +60,12 @@ alembic revision --autogenerate -m "опис"   # після зміни models.p
 - Ключ підпису Android — лише в секретах GitHub, ніколи не комітити `.jks`.
 ## Версії
 
-- Кожне оновлення (PR у `main`) — нова версія `0.1.N`: підняти `__version__` у `server/mds/__init__.py`
-  і `version` у `server/pyproject.toml`, додати зверху `CHANGELOG.md` розділ `## [0.1.N] — дата`.
+- Оновлення випускаються пакетами: коли директор каже «оновити» або після помітного набору змін (щоб було куди
+  відкотитися). Поточна гілка версій — `0.2.N`; `1.0.0` — реліз із TurboSMS і даними ФОП (docs/ROADMAP.md).
+  Підняти `__version__` у `server/mds/__init__.py` і `version` у `server/pyproject.toml`, додати зверху
+  `CHANGELOG.md` розділ `## [X.Y.Z] — дата`.
   Тест `test_version.py` перевіряє узгодженість.
-- Після злиття `.github/workflows/release.yml` сам створює тег `v0.1.N` і GitHub Release (архів версії).
+- Після злиття `.github/workflows/release.yml` сам створює тег `vX.Y.Z` і GitHub Release (архів версії).
 
 ## Оплата карткою — «Термінал» ПриватБанку (docs/TERMINAL.md)
 
