@@ -7,10 +7,10 @@ from sqlalchemy.orm import Session
 
 from ...errors import Forbidden
 from ...models import Order, Role
-from ...services import analytics, expenses, journal, orders
+from ...services import analytics, expenses, orders
 from ...services.common import Actor, get_or_404
 from ..deps import get_actor, get_session
-from ..schemas import ExpenseIn, ExpensePatch, OrderCorrectionIn, PayoutIn
+from ..schemas import ExpenseIn, ExpensePatch, OrderCorrectionIn, OrderPhoneIn, PayoutIn
 
 router = APIRouter(prefix="/api", tags=["finance"])
 
@@ -38,10 +38,12 @@ def get_order(order_id: int, actor: Actor = Depends(get_actor), s: Session = Dep
     o = get_or_404(s, Order, order_id, "Замовлення")
     if not actor.is_director and o.master_id != actor.user_id:
         raise Forbidden("Немає доступу до цього замовлення")
-    out = orders.order_public(o)
-    if actor.is_director:
-        out["history"] = journal.audit_list(s, actor, entity="order", entity_id=o.id)
-    return out
+    return orders.order_public(o) | {"history": orders.order_history(s, actor, o)}
+
+
+@router.put("/orders/{order_id}/phone")
+def set_order_phone(order_id: int, body: OrderPhoneIn, actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
+    return orders.order_public(orders.set_order_phone(s, actor, order_id, body.phone))
 
 
 @router.patch("/orders/{order_id}")
@@ -65,8 +67,9 @@ def open_shift(master_id: int | None = None, actor: Actor = Depends(get_actor), 
 
 
 @router.post("/shifts/close")
-def close_shift(master_id: int | None = None, actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
-    return orders.shift_public(s, orders.close_shift(s, actor, master_id or actor.user_id))
+def close_shift(master_id: int | None = None, force: bool = False, actor: Actor = Depends(get_actor),
+                s: Session = Depends(get_session)):
+    return orders.shift_public(s, orders.close_shift(s, actor, master_id or actor.user_id, force=force))
 
 
 @router.get("/shifts")

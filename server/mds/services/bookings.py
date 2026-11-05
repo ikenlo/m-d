@@ -60,6 +60,62 @@ def working_hours(s: Session, master: User, day: date) -> tuple[datetime, dateti
     return datetime.combine(day, _parse_hm(start)), datetime.combine(day, _parse_hm(end))
 
 
+EXTENDED_DAY = ("08:00", "21:00")
+
+
+def staff_hours(s: Session, master: User, day: date) -> tuple[datetime, datetime] | None:
+    hours = working_hours(s, master, day)
+    if hours is None and day == clock.now().date():
+        from .orders import current_shift
+        from .schedule import _usual_hours
+
+        if current_shift(s, master.id) is not None:
+            start, end = _usual_hours(s, master)
+            hours = datetime.combine(day, _parse_hm(start)), datetime.combine(day, _parse_hm(end))
+    return hours
+
+
+def is_off_hours(s: Session, master: User, start: datetime, end: datetime) -> bool:
+    hours = staff_hours(s, master, start.date())
+    return hours is None or start < hours[0] or end > hours[1]
+
+
+def booking_options(s: Session, actor: Actor, master_id: int, service_id: int, day: date,
+                    duration_min: int | None = None) -> dict:
+    if actor.role == "client":
+        raise Forbidden("Недостатньо прав")
+    _check_access(actor, master_id)
+    from .orders import current_shift
+
+    master: User = get_or_404(s, User, master_id, "Майстра")
+    service: Service = get_or_404(s, Service, service_id, "Послугу")
+    hours = staff_hours(s, master, day)
+    dur = timedelta(minutes=duration_min or service.duration_min)
+    step = timedelta(minutes=int(get_setting(s, "slot_step_min")))
+    ext = [datetime.combine(day, _parse_hm(x)) for x in EXTENDED_DAY]
+    lo, hi = (min(ext[0], hours[0]), max(ext[1], hours[1])) if hours else ext
+    busy = list(s.scalars(select(Appointment).where(
+        Appointment.master_id == master_id, Appointment.status.in_(ApptStatus.OCCUPYING),
+        Appointment.starts_at < hi, Appointment.ends_at > lo)))
+    earliest = clock.now() - timedelta(minutes=10)
+    slots, off = [], []
+    t = lo
+    while t + dur <= hi:
+        if t >= earliest and not any(b.starts_at < t + dur and b.ends_at > t for b in busy):
+            inside = hours is not None and t >= hours[0] and t + dur <= hours[1]
+            (slots if inside else off).append(t.strftime("%H:%M"))
+        t += step
+    if not master.is_active:
+        slots, off = [], []
+    return {
+        "slots": slots,
+        "off_hours": off,
+        "working": hours is not None,
+        "hours": [hours[0].strftime("%H:%M"), hours[1].strftime("%H:%M")] if hours else None,
+        "shift_open": current_shift(s, master_id) is not None if day == clock.now().date() else None,
+    }
+
+
 def _overlapping(
     s: Session, master_id: int, start: datetime, end: datetime, exclude_id: int | None = None
 ) -> Appointment | None:
@@ -149,6 +205,7 @@ def create_appointment(
     price: int | None = None,
     comment: str | None = None,
     status: str | None = None,
+    confirm_off_hours: bool = False,
 ) -> Appointment:
     if actor.role != "client":
         _check_access(actor, master_id)
@@ -180,6 +237,8 @@ def create_appointment(
     if price is not None and price < 0:
         raise ValidationError("Ціна не може бути від'ємною")
     ends_at = starts_at + timedelta(minutes=dur)
+    if actor.is_master and not confirm_off_hours and is_off_hours(s, master, starts_at, ends_at):
+        raise Conflict("Цей час поза графіком роботи. Підтвердіть запис у неробочий час", code="off_hours")
     _check_slot(s, master, starts_at, ends_at, None, strict_hours=from_bot)
 
     if status is None:

@@ -145,6 +145,7 @@ class AppointmentIn(BaseModel):
     price: int | None = None
     comment: str | None = None
     status: str | None = None
+    confirm_off_hours: bool = False
 
 
 class AppointmentPatch(BaseModel):
@@ -183,6 +184,10 @@ class OrderCorrectionIn(BaseModel):
     share_bp: int | None = None
     materials_mode: str | None = None
     materials: list[MaterialLine] | None = None
+
+
+class OrderPhoneIn(BaseModel):
+    phone: str = Field(max_length=32)
 
 
 class PayoutIn(BaseModel):

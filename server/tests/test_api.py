@@ -269,3 +269,41 @@ def test_static_cache_gzip_and_perf_monitoring(client):
     snap = client.get("/api/perf", headers=d).json()
     assert {x["name"] for x in snap["client"]} == {"view:today", "nav:fcp"}
     assert any(x["name"] == "GET /api/settings" for x in snap["server"])
+
+
+def test_master_quick_booking_and_own_incomplete_orders_api(client):
+    from mds import clock
+
+    ids = client.ids
+    m1 = login(client, "olena", "Master123")
+    m2 = login(client, "iryna", "Master123")
+    d = login(client, "director", "Director123")
+    q = f"/api/availability/detail?master_id={ids['m1']}&service_id={ids['haircut']}&day=2026-11-02"
+    r = client.get(q, headers=m1).json()
+    assert r["working"] and r["shift_open"] is False and "09:00" in r["slots"] and "20:00" in r["off_hours"]
+    assert client.get(q, headers=m2).status_code == 403
+    assert client.post("/api/shifts/open", headers=m1).status_code == 200
+    assert client.get(q, headers=m1).json()["shift_open"] is True
+
+    body = {"master_id": ids["m1"], "service_id": ids["haircut"], "starts_at": "2026-11-02T20:00", "client_name": "Пізній"}
+    r = client.post("/api/appointments", headers=m1, json=body)
+    assert r.status_code == 409 and r.json()["error"] == "off_hours"
+    r = client.post("/api/appointments", headers=m1, json={**body, "confirm_off_hours": True})
+    assert r.status_code == 201, r.text
+    appt = client.post("/api/appointments", headers=m1, json={**body, "starts_at": "2026-11-02T09:00"}).json()
+
+    clock.set_now(datetime(2026, 11, 2, 10, 5))
+    o = client.post(f"/api/appointments/{appt['id']}/close", headers=m1, json={"amount": 50000, "payment_method": "cash"}).json()
+    assert o["missing"] == ["phone"] and o["shift_open"] and o["closed_by_name"] == "Олена"
+    assert [x["id"] for x in client.get("/api/orders?period=month", headers=m1).json()] == [o["id"]]
+    r = client.post("/api/shifts/close", headers=m1)
+    assert r.status_code == 409 and r.json()["error"] == "incomplete_orders"
+    assert client.put(f"/api/orders/{o['id']}/phone", headers=m2, json={"phone": "0671234567"}).status_code == 403
+    r = client.put(f"/api/orders/{o['id']}/phone", headers=m1, json={"phone": "0671234567"})
+    assert r.status_code == 200 and r.json()["missing"] == [] and r.json()["edited_by_name"] == "Олена"
+    full = client.get(f"/api/orders/{o['id']}", headers=m1).json()
+    assert [h["action"] for h in full["history"]] == ["set_phone", "close"]
+    assert client.post("/api/shifts/close", headers=m1).status_code == 200
+    r = client.put(f"/api/orders/{o['id']}/phone", headers=m1, json={"phone": "0671234568"})
+    assert r.status_code == 403
+    assert client.get(f"/api/orders/{o['id']}", headers=d).json()["shift_open"] is False

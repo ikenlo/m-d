@@ -23,12 +23,14 @@
 | `POST /api/clients`, `PATCH /api/clients/{id}` | директор, адміністратор | Додати / змінити клієнта (із записом у журнал) |
 | `GET /api/appointments?date_from&date_to&master_id` | персонал (майстер — лише свої) | Календар |
 | `GET /api/availability?master_id&service_id&day` | персонал | Вільні слоти |
-| `POST /api/appointments`, `PATCH /api/appointments/{id}` | персонал | Створення / перенесення / зміна |
+| `GET /api/availability/detail?master_id&service_id&day` | персонал (майстер — свій) | Швидкий запис: `slots` (у графіку), `off_hours` (08:00–21:00 поза графіком), `working`, `hours`, `shift_open` |
+| `POST /api/appointments`, `PATCH /api/appointments/{id}` | персонал | Створення / перенесення / зміна. Майстер поза графіком — 409 `off_hours`, повтор із `confirm_off_hours: true` |
 | `POST /api/appointments/{id}/status` | персонал | `confirmed`, `in_progress`, `cancelled`, `no_show` |
 | `POST /api/appointments/{id}/close` | майстер (свої), адмін, директор | **Закрити замовлення** |
-| `GET /api/orders`, `GET /api/orders/{id}` | директор; майстер — свої | Замовлення |
-| `PATCH /api/orders/{id}` | директор | Виправлення з причиною |
-| `GET /api/shifts/current`, `POST /api/shifts/open`, `POST /api/shifts/close` | майстер | Зміна |
+| `GET /api/orders`, `GET /api/orders/{id}` | директор; майстер — свої | Замовлення: `missing` (`materials`, `phone`), `shift_open`, `closed_by_name`, `edited_by_name`, `edited_at`, `history` |
+| `PATCH /api/orders/{id}` | директор; майстер — лише матеріали у своєму замовленні, поки зміна відкрита | Виправлення з причиною |
+| `PUT /api/orders/{id}/phone` | директор, адмін; майстер — свої, поки зміна відкрита і телефону ще немає | Вказати телефон клієнта (номер іншого клієнта — замовлення переноситься до його картки) |
+| `GET /api/shifts/current`, `POST /api/shifts/open`, `POST /api/shifts/close` | майстер | Зміна. Закриття з незаповненими замовленнями — 409 `incomplete_orders` (директор може `?force=true`) |
 | `GET /api/shifts`, `GET /api/shifts/{id}` | директор; майстер — свої | Звіти змін |
 | `GET/POST /api/payouts` | директор; майстер — перегляд своїх | Виплати |
 | `GET /api/finance/dashboard?period=day\|week\|month\|year` або `date_from&date_to` | директор | Панель + розрізи по майстрах/послугах/днях |
