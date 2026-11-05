@@ -184,6 +184,9 @@ const ICONS = {
   rows: '<rect x="3" y="4" width="18" height="6" rx="1.5"/><rect x="3" y="14" width="18" height="6" rx="1.5"/>',
   eye: '<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>',
   eyeoff: '<path d="M17.9 17.9A10.4 10.4 0 0 1 12 19c-6.5 0-10-7-10-7a18.4 18.4 0 0 1 5.1-5.9M9.9 5.2A9.6 9.6 0 0 1 12 5c6.5 0 10 7 10 7a18.5 18.5 0 0 1-2.2 3.2M14.1 14.1a3 3 0 1 1-4.2-4.2M2 2l20 20"/>',
+  man: '<circle cx="12" cy="5" r="2.6"/><path d="M8.5 21v-6.5H7v-4a3 3 0 0 1 3-3h4a3 3 0 0 1 3 3v4h-1.5V21"/><path d="M12 14.5V21"/>',
+  woman: '<circle cx="12" cy="5" r="2.6"/><path d="M9.5 21v-4H6.8L9.5 10a2.5 2.5 0 0 1 2.4-1.8h.2A2.5 2.5 0 0 1 14.5 10l2.7 7h-2.7v4"/>',
+  dye: '<path d="M14.5 3.5l6 6-7.8 7.8a3 3 0 0 1-2.1.9H8.4l-2.6 2.6-2.1-2.1 2.6-2.6v-2.2a3 3 0 0 1 .9-2.1z"/><path d="M11 7l6 6"/><path d="M5 4.5c1.3 1.6 2 2.7 2 3.6a2 2 0 0 1-4 0c0-.9.7-2 2-3.6z"/>',
   gauge: '<path d="M12 14l4-4"/><path d="M3.3 19a10 10 0 1 1 17.4 0"/>',
 };
 function icon(name, cls = "") {
@@ -300,6 +303,8 @@ function labelTables(root) {
         const span = Number(td.getAttribute("colspan") || 1);
         if (heads[i] && span === 1) td.setAttribute("data-label", heads[i]);
         if (hide[i] && span === 1) td.classList.add("m-hide");
+        // на телефоні порожні рядки картки («Вид», «Telegram» без значення) не показуємо
+        if (!(td.textContent || "").trim() && !td.querySelector("button, input, select, a, svg, img")) td.classList.add("m-empty");
         i += span;
       });
     });
@@ -491,8 +496,9 @@ const NAV = {
     ["profile", "user", "Профіль"],
   ],
 };
-const MOBILE_TABS = { director: ["dashboard", "calendar", "orders", "stock", "more"], admin: ["calendar", "schedule", "stock", "clients", "more"],
-  master: ["today", "calendar", "earnings", "shift", "more"] };
+// по 2 пункти з кожного боку — кругла «+» точно по центру (решта — у «Ще»)
+const MOBILE_TABS = { director: ["dashboard", "calendar", "orders", "more"], admin: ["calendar", "schedule", "clients", "more"],
+  master: ["today", "calendar", "earnings", "more"] };
 
 function currentRoute() { return (location.hash.replace(/^#\/?/, "") || "").split("?")[0]; }
 
@@ -1047,11 +1053,11 @@ function quickBook({ master_id = null, date = today(), time = null } = {}, onCha
   // шаблони: типова послуга й тривалість одним дотиком (послуга — найближча за тривалістю у відповідному розділі)
   const PRESETS = [
     // розділ «Чоловічі/Жіночі» може бути не заповнений — тоді за категорією й назвою
-    { key: "men", label: "Чоловіча стрижка", min: 30, ico: "scissors", match: (s) => /стриж/i.test(`${s.category} ${s.name}`)
+    { key: "men", label: "Чоловіча стрижка", min: 30, ico: "man", match: (s) => /стриж/i.test(`${s.category} ${s.name}`)
       && (/чолов/i.test(`${s.section} ${s.category} ${s.name}`) || /стрижки та послуги/i.test(s.category || "") || /машинк|насадк|модельн/i.test(s.name)) },
-    { key: "women", label: "Жіноча стрижка", min: 60, ico: "scissors", match: (s) => !/чолов/i.test(`${s.section} ${s.category}`)
+    { key: "women", label: "Жіноча стрижка", min: 60, ico: "woman", match: (s) => !/чолов/i.test(`${s.section} ${s.category}`)
       && (/жіноч/i.test(s.section || "") ? /стриж/i.test(`${s.category} ${s.name}`) : /^стрижка$/i.test((s.category || "").trim())) },
-    { key: "color", label: "Фарбування", min: 120, ico: "zap", match: (s) => s.needs_materials || /фарб/i.test(`${s.category} ${s.subcategory} ${s.name}`) },
+    { key: "color", label: "Фарбування", min: 120, ico: "dye", match: (s) => s.needs_materials || /фарб/i.test(`${s.category} ${s.subcategory} ${s.name}`) },
   ].map((p) => ({ ...p, service: services.filter(p.match).sort((a, b) => Math.abs(a.duration_min - p.min) - Math.abs(b.duration_min - p.min))[0] }))
     .filter((p) => p.service);
   if (!PRESETS.length) st.service = services.find((s) => s.id === recent[0])?.id || null;
@@ -1097,9 +1103,9 @@ function quickBook({ master_id = null, date = today(), time = null } = {}, onCha
   let req = 0;
   async function loadTimes() {
     summary();
-    if (!st.service || !st.master) { tBox.replaceChildren(h("span", { class: "muted small" }, PRESETS.length ? "Оберіть стрижку чи фарбування вгорі" : "Оберіть послугу")); return; }
+    if (!st.service || !st.master) { tBox.replaceChildren(h("div", { class: "qb-empty" }, PRESETS.length ? "Оберіть стрижку чи фарбування вгорі" : "Оберіть послугу")); return; }
     const my = ++req;
-    tBox.replaceChildren(h("span", { class: "muted small" }, "Шукаю вільний час…"));
+    tBox.replaceChildren(h("div", { class: "qb-empty" }, "Шукаю вільний час…"));
     let list = await api.get(`/api/availability?master_id=${st.master}&service_id=${st.service}&day=${st.date}${st.duration ? "&duration_min=" + st.duration : ""}`).catch(() => []);
     if (my !== req) return;
     if (st.date === today()) { // сьогодні — лише час, що ще не минув (з запасом 10 хв для «зараз»)
@@ -1108,7 +1114,7 @@ function quickBook({ master_id = null, date = today(), time = null } = {}, onCha
     }
     if (time && !st.time && list.includes(time)) st.time = time;
     tBox.replaceChildren(...(list.length ? list.map((x) => h("button", { type: "button", class: "qb-time" + (x === st.time ? " on" : ""), onclick: () => { st.time = x; loadTimes(); } }, x))
-      : [h("span", { class: "muted small" }, "Вільного часу немає — оберіть інший день" + (isMaster ? "" : " або майстра"))]));
+      : [h("div", { class: "qb-empty" }, icon("calendar", "sm"), h("span", {}, "Вільного часу немає — оберіть інший день" + (isMaster ? "" : " або майстра") + ". Перевірте й «Графік роботи»."))]));
     summary();
   }
   function summary() {
@@ -1355,7 +1361,7 @@ VIEWS.today = async (main) => {
   main.append(topbar(`Добрий день, ${state.user.full_name.split(" ")[0]}`,
     `${WD_LONG[(new Date().getDay() + 6) % 7]}, ${dm(d)} · записів: ${active.length}, залишилось: ${left.length}`,
     left.length ? h("button", { class: "btn", onclick: () => shiftForm(state.user.id, null, reload) }, icon("clock", "sm"), "Запізнююсь") : null,
-    h("button", { class: "btn primary", onclick: () => quickBook({ date: d }) }, icon("plus", "sm"), "Запис")));
+    h("button", { class: "btn primary", onclick: () => apptForm({ date: d }, reload) }, icon("plus", "sm"), "Запис")));
   main.append(h("div", { class: "grid kpi", style: { marginBottom: "16px" } },
     kpi("Мій заробіток сьогодні", my.day.earning, "dark", { ico: "wallet" }),
     kpi("Виручка сьогодні", my.day.revenue, "", { ico: "banknote" }),
@@ -3070,10 +3076,11 @@ VIEWS.schedule = async (main) => {
     const usual = m.usual_hours;
     const work = g.days.filter((d) => !cells[d].off).length;
     return h("div", { class: "card stack" },
-      h("div", { class: "row" }, avatar(m.full_name, "sm"),
+      h("div", { class: "row sched-head" }, avatar(m.full_name, "sm"),
         h("div", { class: "grow" }, h("b", {}, m.full_name),
           h("div", { class: "muted small" }, `робочих днів: ${work} · зазвичай ${short(usual[0])}–${short(usual[1])}`)),
-        canEdit ? h("button", { class: "btn sm ghost", onclick: () => copyForm(m) }, "Копіювати тиждень…") : null),
+        canEdit ? h("div", { class: "sched-actions" }, h("button", { class: "btn sm", onclick: () => parityForm(m) }, "Парні / непарні…"),
+          h("button", { class: "btn sm ghost", onclick: () => copyForm(m) }, "Копіювати тиждень…")) : null),
       h("div", { class: "sched-grid" },
         ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Нд"].map((w) => h("div", { class: "sched-wd" }, w)),
         g.days.map((d) => {
@@ -3140,6 +3147,24 @@ VIEWS.schedule = async (main) => {
         await run(() => api.del(`/api/schedule/${m.id}/${d}`), "Повернуто до шаблону"); closeSheet(); reload();
       } }, "Як у шаблоні (скасувати зміну)") : null,
       h("p", { class: "muted small" }, "Записи, що вже є на цей день, не скасовуються автоматично — перевірте календар.")));
+  }
+  function parityForm(m) {
+    let parity = "even";
+    const from = h("input", { type: "date", value: start });
+    const to = h("input", { type: "date", value: end });
+    const s1 = h("input", { type: "time", value: m.usual_hours[0] });
+    const e1 = h("input", { type: "time", value: m.usual_hours[1] });
+    const monthEnd = () => { const d = new Date(today() + "T12:00"); return isoDate(new Date(d.getFullYear(), d.getMonth() + 2, 0, 12)); };
+    openSheet(`Парні / непарні дні: ${m.full_name}`, h("div", { class: "stack" },
+      seg([["even", "Парні дати (2, 4, 6…)"], ["odd", "Непарні (1, 3, 5…)"]], parity, (v) => { parity = v; }),
+      h("div", { class: "form-grid" }, field("З", from), field("По", to)),
+      h("button", { class: "btn sm ghost", type: "button", onclick: () => { from.value = today(); to.value = monthEnd(); } }, "З сьогодні до кінця наступного місяця"),
+      h("div", { class: "form-grid" }, field("Початок дня", s1), field("Кінець дня", e1)),
+      h("p", { class: "muted small", style: { margin: 0 } }, "Обрані дати стануть робочими, решта — вихідними. Записи, що вже є, не скасовуються — перевірте календар."),
+      h("button", { class: "btn primary big", onclick: async () => {
+        const r = await run(() => api.post(`/api/schedule/${m.id}/parity`, { parity, date_from: from.value, date_to: to.value, start: s1.value, end: e1.value }), "Графік оновлено");
+        if (r) { closeSheet(); reload(); }
+      } }, "Застосувати")));
   }
   function copyForm(m) {
     const weeks = select([[1, "на 1 тиждень"], [2, "на 2 тижні"], [4, "на 4 тижні"], [8, "на 8 тижнів"]], 4);

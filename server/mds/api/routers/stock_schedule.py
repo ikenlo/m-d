@@ -89,6 +89,20 @@ def schedule_reset(master_id: int, day: date, actor: Actor = Depends(get_actor),
     return {"ok": True}
 
 
+class ParityIn(BaseModel):
+    parity: str  # even | odd
+    date_from: date
+    date_to: date
+    start: str | None = None
+    end: str | None = None
+
+
+@router.post("/schedule/{master_id}/parity")
+def schedule_parity(master_id: int, body: ParityIn, actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
+    """Графік за парними / непарними датами."""
+    return {"days": schedule.parity_pattern(s, actor, master_id, body.parity, body.date_from, body.date_to, body.start, body.end)}
+
+
 @router.post("/schedule/{master_id}/copy-week")
 def schedule_copy(master_id: int, body: CopyWeekIn, actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
     return {"days": schedule.copy_week(s, actor, master_id, body.from_monday, body.weeks)}

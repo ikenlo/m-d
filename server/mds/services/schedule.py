@@ -94,6 +94,27 @@ def copy_week(s: Session, actor: Actor, master_id: int, from_monday: date, weeks
     return n
 
 
+def parity_pattern(s: Session, actor: Actor, master_id: int, parity: str, date_from: date, date_to: date,
+                   start: str | None = None, end: str | None = None) -> int:
+    """Графік «парні / непарні дні»: робочі — дати з потрібною парністю (2, 4, 6… або 1, 3, 5…), решта — вихідні.
+    Години — вказані або звичайні години майстра."""
+    actor.require(Role.DIRECTOR, Role.ADMIN)
+    if parity not in ("even", "odd"):
+        raise ValidationError("Оберіть «парні» або «непарні» дні")
+    if date_to < date_from or (date_to - date_from).days > 92:
+        raise ValidationError("Період — до 3 місяців")
+    master: User = get_or_404(s, User, master_id, "Майстра")
+    if not (start and end):
+        start, end = _usual_hours(s, master)
+    n, d = 0, date_from
+    while d <= date_to:
+        work = (d.day % 2 == 0) == (parity == "even")
+        set_day(s, actor, master_id, d, off=not work, start=start, end=end)
+        n += 1
+        d += timedelta(days=1)
+    return n
+
+
 def grid(s: Session, actor: Actor, date_from: date, date_to: date) -> dict:
     if date_to < date_from or (date_to - date_from).days > MAX_RANGE_DAYS:
         raise ValidationError("Невірний період графіка")
