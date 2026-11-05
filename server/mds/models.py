@@ -8,6 +8,7 @@ from __future__ import annotations
 from datetime import date, datetime
 
 from sqlalchemy import (
+    event,
     JSON,
     LargeBinary,
     Boolean,
@@ -218,6 +219,16 @@ class Client(Base):
     # захист від спаму: заблокований клієнт не може записатися з бота/сайту (лише через адміністратора)
     blocked: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
     blocked_reason: Mapped[str | None] = mapped_column(Text)
+    # картка клієнта (клієнтська база): необов'язкові поля не блокують створення
+    phone2: Mapped[str | None] = mapped_column(String(32))  # додатковий номер
+    birthday: Mapped[date | None] = mapped_column(Date)
+    telegram_username: Mapped[str | None] = mapped_column(String(64))
+    source: Mapped[str | None] = mapped_column(String(32))  # джерело: instagram, рекомендація, сайт, бот…
+    wishes: Mapped[str | None] = mapped_column(Text)  # побажання клієнта
+    marketing_consent: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")  # згода на рекламу
+    last_contact_at: Mapped[datetime | None] = mapped_column(DateTime)
+    # ім'я в нижньому регістрі для пошуку (SQLite не вміє ilike для кирилиці)
+    search_name: Mapped[str | None] = mapped_column(String(160), index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
 
 
@@ -715,3 +726,9 @@ class TrustedDevice(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
     last_used_at: Mapped[datetime | None] = mapped_column(DateTime)
     expires_at: Mapped[datetime] = mapped_column(DateTime)
+
+
+@event.listens_for(Client, "before_insert")
+@event.listens_for(Client, "before_update")
+def _client_search_name(_mapper, _conn, c: Client) -> None:
+    c.search_name = " ".join((c.name or "").lower().split()) or None

@@ -1043,7 +1043,7 @@ function rememberService(id) {
   try { r = JSON.parse(store.get(RECENT_SVC()) || "[]"); } catch (_) { r = []; }
   store.set(RECENT_SVC(), JSON.stringify([id, ...r.filter((x) => x !== id)].slice(0, 8)));
 }
-function quickBook({ master_id = null, date = today(), time = null } = {}, onChange = reload) {
+function quickBook({ master_id = null, date = today(), time = null, client = null } = {}, onChange = reload) {
   const isMaster = state.user.role === "master";
   const masters = isMaster ? [{ id: state.user.id, full_name: state.user.full_name }] : state.masters;
   const services = state.services.filter((s) => s.is_active);
@@ -1148,6 +1148,7 @@ function quickBook({ master_id = null, date = today(), time = null } = {}, onCha
   });
 
   name.addEventListener("input", () => name.classList.remove("invalid"));
+  if (client) { st.clientId = client.id; name.value = client.name; phone.value = client.phone || ""; found.textContent = "Клієнт із бази: " + client.name; }
   drawMasters(); drawPresets(); drawServices(); drawDays();
   openSheet("Швидкий запис", h("div", { class: "stack qb" },
     masters.length > 1 ? h("div", {}, h("div", { class: "qb-label" }, "Майстер"), mBox) : null,
@@ -1252,37 +1253,6 @@ function apptForm({ appt = null, master_id = null, date = today(), time = "10:00
   loadSlots();
 }
 
-async function clientSheet(id) {
-  const c = await run(() => api.get(`/api/clients/${id}`));
-  const isMgr = state.user.role !== "master";
-  const visits = c.history.filter((a) => a.status === "completed").length;
-  const name = h("input", { value: c.name });
-  const phone = h("input", { value: c.phone || "", placeholder: "без номера" });
-  const notes = h("textarea", { rows: 2 }, c.notes || "");
-  openSheet(c.name,
-    h("div", { class: "stack" },
-      h("div", {}, phoneLink(c.phone), c.telegram_linked ? h("span", { class: "chip", style: { marginLeft: "8px" } }, "Telegram") : null,
-        c.blocked ? h("span", { class: "chip st-overdue", style: { marginLeft: "8px" } }, "онлайн-запис заблоковано") : null),
-      c.blocked && c.blocked_reason ? h("div", { class: "muted small" }, "Причина: ", c.blocked_reason) : null,
-      h("div", { class: "muted" }, `Візитів: ${visits} · записів усього: ${c.history.length}`),
-      c.favorite_master ? h("div", { class: "info-row" }, icon("user"), "⭐ Улюблений майстер: ", h("b", {}, c.favorite_master.full_name), ` (${c.favorite_master.visits} візитів)`) : null,
-      isMgr ? h("details", {}, h("summary", { class: "muted", style: { cursor: "pointer" } }, "Редагувати"),
-        h("div", { class: "stack", style: { marginTop: "8px" } }, field("Ім'я", name), field("Телефон", phone), field("Нотатки", notes),
-          h("button", { class: "btn gold", onclick: async () => {
-            await run(() => api.patch(`/api/clients/${id}`, { name: name.value, phone: phone.value, notes: notes.value }), "Збережено");
-            clientSheet(id);
-          } }, "Зберегти"))) : (c.notes ? h("div", { class: "muted" }, c.notes) : null),
-      isMgr ? (c.blocked
-        ? h("button", { class: "btn", onclick: async () => { await run(() => api.patch(`/api/clients/${id}`, { blocked: false }), "Онлайн-запис дозволено"); clientSheet(id); } }, icon("ok", "sm"), "Дозволити онлайн-запис")
-        : h("button", { class: "btn danger", onclick: () => confirmSheet("Заблокувати онлайн-запис?", `${c.name} не зможе записатися через Telegram-бот і сайт (записати можна через адміністратора).`, "Заблокувати",
-          async (reason) => { await run(() => api.patch(`/api/clients/${id}`, { blocked: true, blocked_reason: reason || null }), "Заблоковано"); clientSheet(id); }, { danger: true, withReason: true }) },
-          icon("lock", "sm"), "Заблокувати онлайн-запис")) : null,
-      h("h3", {}, "Історія відвідувань"),
-      c.history.length ? h("div", { class: "table-wrap" }, h("table", {},
-        h("tr", {}, h("th", {}, "Дата"), h("th", {}, "Послуга"), h("th", {}, "Майстер"), h("th", {}, "Статус")),
-        c.history.map((a) => h("tr", {}, h("td", {}, dmy(a.starts_at), " ", hm(a.starts_at)), h("td", {}, a.service_name),
-          h("td", {}, a.master_name), h("td", {}, chip(a.status)))))) : emptyState("Ще немає візитів")));
-}
 
 // ============================================================ екрани
 const VIEWS = {};
@@ -1851,35 +1821,188 @@ async function devicesCard(u) {
 }
 
 // ---------- Клієнти
+// ---------- Картка клієнта (клієнтська база): вкладки, статистика з замовлень, примітки
+const SEG_CHIP = { new: "st-confirmed", regular: "st-completed", vip: "st-in_progress", lapsed: "st-pending", inactive: "st-cancelled" };
+const SOURCES = ["instagram", "рекомендація", "сайт", "telegram-бот", "проходили повз", "google", "інше"];
+async function clientSheet(id, onChange) {
+  const isMgr = state.user.role !== "master", isDir = state.user.role === "director";
+  let c, hist;
+  try { [c, hist] = await Promise.all([api.get(`/api/clients/${id}/card`), api.get(`/api/clients/${id}`)]); } catch (e) { return toast(e.message, true); }
+  const reopen = () => { clientSheet(id, onChange); onChange && onChange(); };
+  const body = h("div", { class: "stack" });
+  const ago = (iso) => (iso ? dmy(iso) : "—");
+  const stat = (label, value) => h("div", {}, h("span", {}, label), h("b", {}, value));
+  const tabs = [["info", "Загальне"], ["visits", "Візити"], ...(isMgr ? [["money", "Фінанси"]] : []), ["svc", "Послуги й майстри"], ["msg", "Повідомлення"], ["notes", "Примітки"]];
+  const draw = (tab) => {
+    if (tab === "info") {
+      body.replaceChildren(
+        h("div", { class: "row", style: { gap: "12px", alignItems: "center" } }, avatar(c.name, "lg"),
+          h("div", { class: "grow" }, h("div", { class: "row", style: { gap: "8px" } }, h("b", { style: { fontSize: "17px" } }, c.name), h("span", { class: "chip " + (SEG_CHIP[c.segment] || "") }, c.segment_label)),
+            h("div", { class: "muted small" }, phoneLink(c.phone), c.phone2 ? [" · ", phoneLink(c.phone2)] : null))),
+        h("div", { class: "mini-stats" }, stat("Візитів", String(c.visits)), c.spent !== undefined ? stat("Витрачено", money(c.spent)) : null,
+          c.average_check !== undefined ? stat("Середній чек", money(c.average_check)) : null, stat("Останній візит", ago(c.last_visit)),
+          stat("Інтервал", c.avg_interval_days ? `${c.avg_interval_days} дн.` : "—"), stat("Скасувань / неявок", `${c.cancelled} / ${c.no_show}`)),
+        c.next_visit_hint ? h("div", { class: "callout", style: { margin: 0 } }, icon("calendar"), h("div", { class: "small" }, "Рекомендований наступний візит — близько ", h("b", {}, dmy(c.next_visit_hint)), " (за звичним інтервалом).")) : null,
+        h("div", { class: "info-list" },
+          h("div", { class: "info-row" }, icon("calendar"), "День народження: ", h("b", {}, c.birthday ? dmy(c.birthday) : "—")),
+          h("div", { class: "info-row" }, icon("send"), "Telegram: ", h("b", {}, c.telegram_linked ? "підключено" : "ні"), c.telegram_username ? ` · @${c.telegram_username}` : ""),
+          h("div", { class: "info-row" }, icon("trend"), "Джерело: ", h("b", {}, c.source || "—")),
+          h("div", { class: "info-row" }, icon("megaphone"), "Згода на рекламу: ", h("b", {}, c.marketing_consent ? "так" : "ні")),
+          h("div", { class: "info-row" }, icon("user"), "Картка з ", dmy(c.created_at), c.first_visit ? ` · перший візит ${dmy(c.first_visit)}` : ""),
+          c.blocked ? h("div", { class: "info-row neg" }, icon("lock"), "Онлайн-запис заблоковано", c.blocked_reason ? ` · ${c.blocked_reason}` : "") : null),
+        isMgr ? h("div", { class: "grid", style: { gridTemplateColumns: "1fr 1fr", gap: "8px" } },
+          h("button", { class: "btn", onclick: () => editForm() }, icon("edit", "sm"), "Редагувати"),
+          h("button", { class: "btn", onclick: () => quickBook({ client: c }) }, icon("plus", "sm"), "Записати"),
+          c.blocked ? h("button", { class: "btn", onclick: async () => { await run(() => api.patch(`/api/clients/${id}/card`, { blocked: false }), "Онлайн-запис дозволено"); reopen(); } }, icon("ok", "sm"), "Дозволити онлайн-запис")
+            : h("button", { class: "btn", onclick: () => confirmSheet("Заблокувати онлайн-запис?", `${c.name} не зможе записатися через бот і сайт.`, "Заблокувати",
+              async (reason) => { await run(() => api.patch(`/api/clients/${id}/card`, { blocked: true, blocked_reason: reason || null }), "Заблоковано"); reopen(); }, { danger: true, withReason: true }) }, icon("lock", "sm"), "Заблокувати"),
+          isDir ? h("button", { class: "btn danger", onclick: () => confirmSheet("Знеособити клієнта?", "Ім'я, телефони, дата народження, Telegram і примітки буде стерто назавжди. Візити й суми лишаться у звітах.", "Знеособити",
+            async (reason) => { await run(() => api.post(`/api/clients/${id}/anonymize`, { reason }), "Дані знеособлено"); reopen(); }, { danger: true, withReason: true }) }, icon("trash", "sm"), "Знеособити") : null) : null);
+    } else if (tab === "visits") {
+      const list = [...hist.history].sort((a, b) => b.starts_at.localeCompare(a.starts_at));
+      body.replaceChildren(list.length ? h("div", { class: "card ord-list" }, list.map((a) => h("div", { class: "ord-item" },
+        h("div", { class: "ord-time" }, dm(a.starts_at)), h("div", { class: "grow ord-main" }, h("b", {}, a.service_name), h("div", { class: "muted small" }, `${hm(a.starts_at)} · ${a.master_name}`)),
+        h("div", { class: "ord-amt" }, chip(a.status), h("span", { class: "small muted" }, money(a.price)))))) : emptyState("Ще немає візитів", "calendar"));
+    } else if (tab === "money") {
+      const f = c.finance || { spent: 0, orders: 0, by_month: [], materials: 0 };
+      const max = Math.max(1, ...f.by_month.map((x) => x.amount));
+      body.replaceChildren(h("div", { class: "mini-stats" }, stat("Оплачено", money(f.spent)), stat("Замовлень", String(f.orders)),
+        stat("Середній чек", money(c.average_check || 0)), stat("Матеріали", money(f.materials))),
+        f.by_month.length ? h("div", {}, h("h3", {}, "По місяцях"), barList(f.by_month.map((x) => [MONTHS_UA[+x.month.slice(5) - 1] + " " + x.month.slice(0, 4), x.amount]), max)) : emptyState("Оплачених замовлень ще немає", "receipt"),
+        h("p", { class: "muted small", style: { margin: 0 } }, "Лише закриті (оплачені) замовлення — та сама сума, що у «Замовленнях» і звітах."));
+    } else if (tab === "svc") {
+      body.replaceChildren(h("h3", {}, "Найчастіші послуги"),
+        c.top_services.length ? barList(c.top_services.map((x) => [x.name, x.count * 100, `${x.count} раз`]), c.top_services[0].count * 100) : emptyState("Ще немає", "scissors"),
+        h("h3", {}, "Майстри"), c.top_masters.length ? h("div", { class: "stack" }, c.top_masters.map((m) => h("div", { class: "row" }, avatar(m.name, "sm"), h("span", { class: "grow" }, m.name), h("b", {}, `${m.count} візитів`)))) : emptyState("Ще немає", "user"));
+    } else if (tab === "msg") {
+      body.replaceChildren(h("div", { class: "info-list" },
+        h("div", { class: "info-row" }, icon("send"), "Telegram: ", h("b", {}, c.telegram_linked ? "підключено — нагадування й сервісні повідомлення приходять у бот" : "не підключено")),
+        h("div", { class: "info-row" }, icon("megaphone"), "Реклама: ", h("b", {}, c.marketing_consent ? "дозволено" : "не надсилати (немає згоди)")),
+        h("div", { class: "info-row" }, icon("history"), "Останній контакт: ", h("b", {}, c.last_contact_at ? `${dmy(c.last_contact_at)} ${hm(c.last_contact_at)}` : "—"))),
+        h("p", { class: "muted small" }, "Історія SMS / Viber зі статусами доставки з'явиться тут після підключення TurboSMS (розділ «SMS-розсилки»)."));
+    } else {
+      const notes = h("textarea", { rows: 4, placeholder: "Примітки адміністратора (бачить персонал)" }, c.notes || "");
+      const wishes = h("textarea", { rows: 3, placeholder: "Побажання клієнта: улюблений майстер, напій, алергії, формула фарби…" }, c.wishes || "");
+      body.replaceChildren(field("Побажання клієнта", wishes), field("Примітки", notes),
+        isMgr ? h("button", { class: "btn primary", onclick: async () => { await run(() => api.patch(`/api/clients/${id}/card`, { notes: notes.value, wishes: wishes.value }), "Збережено"); reopen(); } }, "Зберегти") : null);
+      if (!isMgr) { notes.disabled = true; wishes.disabled = true; }
+    }
+  };
+  function editForm() {
+    const f = { name: h("input", { value: c.name }), phone: h("input", { type: "tel", value: c.phone || "", placeholder: "+380…" }), phone2: h("input", { type: "tel", value: c.phone2 || "", placeholder: "додатковий" }),
+      birthday: h("input", { type: "date", value: c.birthday || "" }), telegram_username: h("input", { value: c.telegram_username || "", placeholder: "@username" }),
+      source: select([["", "—"], ...SOURCES.map((x) => [x, x])], c.source || "") };
+    const consent = h("input", { type: "checkbox", checked: !!c.marketing_consent });
+    openSheet(`Редагувати: ${c.name}`, h("div", { class: "stack" }, field("Ім'я та прізвище", f.name),
+      h("div", { class: "form-grid" }, field("Телефон", f.phone), field("Додатковий телефон", f.phone2)),
+      h("div", { class: "form-grid" }, field("Дата народження", f.birthday), field("Telegram", f.telegram_username)),
+      field("Звідки дізнався", f.source), h("label", { class: "row" }, consent, "Згода на рекламні повідомлення"),
+      h("button", { class: "btn primary big", onclick: async () => {
+        const b = Object.fromEntries(Object.entries(f).map(([k, el]) => [k, el.value.trim() || null]));
+        b.name = f.name.value.trim(); b.marketing_consent = consent.checked;
+        if (await run(() => api.patch(`/api/clients/${id}/card`, b), "Картку збережено")) reopen();
+      } }, "Зберегти")));
+  }
+  const tabBar = seg(tabs, "info", (v) => draw(v));
+  tabBar.classList.add("card-tabs");
+  openSheet(c.name, h("div", { class: "stack" }, tabBar, body));
+  draw("info");
+}
+
+// ---------- Клієнти: база з аналітикою, сегментами, пошуком, сортуванням і сторінками
 VIEWS.clients = async (main) => {
-  const isDir = state.user.role === "director";
-  // прибрати клієнтів без телефону (швидкі записи): без історії — видалити, з історією — в одну картку
+  const role = state.user.role, isDir = role === "director";
+  if (role === "master") return clientsSimple(main);
+  const st = { q: "", segment: "", sort: "name", page: 1, birthdays: false };
   const purge = async () => {
     const r = await run(() => api.post("/api/clients/purge-no-phone?dry_run=true"));
     const total = r.deleted + r.merged;
     if (!total) return toast(r.kept_future ? `Клієнти без номера мають майбутні записи (${r.kept_future}) — їх не чіпаємо` : "Клієнтів без номера немає");
-    confirmSheet("Видалити клієнтів без номера?",
-      `Буде прибрано: ${total}. ${r.merged ? `Візити ${r.merged} з них (виручка, замовлення) збережуться в картці «Клієнти без номера». ` : ""}` +
-      `${r.kept_future ? `Не чіпаємо ${r.kept_future} — у них є майбутній запис.` : ""}`, "Видалити",
-      async () => { const x = await run(() => api.post("/api/clients/purge-no-phone"), "Готово"); toast(`Прибрано клієнтів: ${x.deleted + x.merged}`); reload(); },
-      { danger: true });
+    confirmSheet("Видалити клієнтів без номера?", `Буде прибрано: ${total}. ${r.merged ? `Візити ${r.merged} з них збережуться в картці «Клієнти без номера». ` : ""}`, "Видалити",
+      async () => { await run(() => api.post("/api/clients/purge-no-phone"), "Готово"); reload(); }, { danger: true });
   };
-  main.append(topbar("Клієнти", "Пошук, картка клієнта та історія відвідувань",
-    isDir ? h("button", { class: "btn danger", onclick: purge }, icon("trash", "sm"), "Видалити клієнтів без номера") : null));
+  main.append(topbar("Клієнти", "Єдина база: картка, візити, витрати, сегменти",
+    isDir ? h("button", { class: "btn", onclick: () => run(() => downloadFile("/api/clients/export.csv", "klienty.csv")) }, icon("filetext", "sm"), "Експорт") : null,
+    h("button", { class: "btn", onclick: dupSheet }, icon("users", "sm"), "Дублікати"),
+    isDir ? h("button", { class: "btn ghost", onclick: purge }, icon("trash", "sm"), "Без номера") : null));
+  // аналітика бази (директор)
+  if (isDir) {
+    const box = h("div");
+    const loadA = async (days) => {
+      const to = today(), from = addDays(to, -days + 1);
+      const a = await api.get(`/api/clients/analytics?date_from=${from}&date_to=${to}`).catch(() => null);
+      if (!a) return;
+      box.replaceChildren(h("div", { class: "grid kpi kpi-6" },
+        kpi("Усього клієнтів", a.total_clients, "", { ico: "users", raw: true }),
+        kpi("Нові", a.new_clients, "", { ico: "plus", raw: true }),
+        kpi("Активні", a.active_clients, "", { ico: "check", raw: true, sub: `${a.visits} візитів` }),
+        kpi("Повторні візити", `${Math.round(a.repeat_share_bp / 100)}%`, "", { ico: "history", raw: true }),
+        kpi("Середній чек", a.average_check, "accent", { ico: "receipt" }),
+        kpi("Перестали ходити", a.stopped, a.stopped ? "" : "", { ico: "alert", raw: true })),
+        a.top_clients.length ? h("details", { class: "card", style: { marginBottom: "12px" } }, h("summary", { class: "row", style: { cursor: "pointer" } }, icon("trend", "sm"), h("b", {}, "Найприбутковіші клієнти за період")),
+          h("div", { style: { marginTop: "10px" } }, barList(a.top_clients.map((x) => [x.name, x.spent, `${x.visits} віз.`]), a.top_clients[0].spent))) : null);
+    };
+    main.append(h("div", { class: "filters" }, seg([[30, "30 днів"], [90, "90 днів"], [365, "Рік"]], 30, (v) => loadA(Number(v)))), box);
+    loadA(30);
+  }
+  const search = h("input", { type: "search", placeholder: "Пошук: ім'я, прізвище або телефон", id: "client-search" });
+  const sort = select([["name", "За ім'ям"], ["visits", "За візитами"], ...(isDir ? [["spent", "За витратами"]] : []), ["last_visit", "Нещодавні візити"], ["created", "Нові картки"]], "name", { style: { width: "auto" } });
+  const chips = h("div", { class: "chips-row" });
+  const list = h("div");
+  const more = h("button", { class: "btn", style: { width: "100%", marginTop: "10px" } }, "Показати ще");
+  main.append(h("div", { class: "row filters-2", style: { marginBottom: "10px" } }, h("div", { class: "search-box grow" }, icon("search", "sm"), search), sort), chips, list, more);
+  let req = 0, items = [];
+  async function load(append = false) {
+    const my = ++req;
+    if (!append) { st.page = 1; list.replaceChildren(h("div", { class: "skeleton" }, h("i"), h("i"), h("i"))); }
+    const qs = new URLSearchParams({ q: st.q, segment: st.segment, sort: st.sort, page: st.page, per_page: 40 });
+    if (st.birthdays) qs.set("birthdays", 14);
+    const r = await api.get("/api/clients/base?" + qs).catch((e) => { toast(e.message, true); return null; });
+    if (!r || my !== req) return;
+    items = append ? items.concat(r.items) : r.items;
+    const total = Object.values(r.segments).reduce((x, y) => x + y, 0);
+    const chip = (key, label, n) => h("button", { class: "chip-btn" + ((key === "bday" ? st.birthdays : !st.birthdays && st.segment === key) ? " on" : ""),
+      onclick: () => { st.birthdays = key === "bday"; st.segment = key === "bday" ? "" : key; load(); } }, label, n !== null ? h("span", { class: "chip-n" }, String(n)) : null);
+    chips.replaceChildren(chip("", "Усі", total), ...Object.entries(r.segment_labels).map(([k, l]) => chip(k, l, r.segments[k])), chip("bday", "🎂 Дні народження", null));
+    list.replaceChildren(items.length ? h("div", { class: "card ord-list anim-in" }, items.map((c) => h("button", { class: "ord-item cl-item", onclick: () => clientSheet(c.id, () => load()) },
+      avatar(c.name, "sm"),
+      h("div", { class: "grow ord-main" }, h("b", {}, c.name), h("div", { class: "muted small" }, c.phone || "без номера", c.birthday && st.birthdays ? ` · 🎂 ${dm(c.birthday)}` : "")),
+      h("div", { class: "ord-amt" }, h("span", { class: "chip " + (SEG_CHIP[c.segment] || "") }, c.segment_label),
+        h("span", { class: "small muted" }, `${c.visits} віз.${c.spent !== undefined ? " · " + money(c.spent) : ""}`))))) : h("div", { class: "card" }, emptyState(st.q ? "Нікого не знайдено" : "Клієнтів у цій категорії немає", "users")));
+    more.hidden = items.length >= r.total;
+    more.textContent = `Показати ще (${r.total - items.length})`;
+  }
+  let t;
+  search.addEventListener("input", () => { clearTimeout(t); t = setTimeout(() => { st.q = search.value.trim(); load(); }, 300); });
+  sort.addEventListener("change", () => { st.sort = sort.value; load(); });
+  more.addEventListener("click", () => { st.page += 1; load(true); });
+  async function dupSheet() {
+    const groups = await run(() => api.get("/api/clients/duplicates"));
+    openSheet("Можливі дублікати", h("div", { class: "stack" },
+      h("p", { class: "muted small", style: { margin: 0 } }, "Однакове ім'я або додатковий номер збігається з основним. Об'єднання переносить усі візити й замовлення в першу картку."),
+      groups.length ? groups.map((g) => h("div", { class: "card stack", style: { boxShadow: "none" } },
+        g.map((c, i) => h("div", { class: "row" }, h("span", { class: "grow" }, h("b", {}, c.name), h("span", { class: "muted small" }, " · ", c.phone || "без номера", ` · #${c.id}`),
+          i ? (isDir ? h("button", { class: "btn sm", onclick: () => confirmSheet("Об'єднати клієнтів?", `«${c.name}» (#${c.id}) буде об'єднано в «${g[0].name}» (#${g[0].id}). Візити й замовлення переносяться.`, "Об'єднати",
+            async () => { await run(() => api.post(`/api/clients/${g[0].id}/merge`, { duplicate_id: c.id }), "Об'єднано"); dupSheet(); load(); }) }, "Об'єднати в першу") : null)
+            : h("span", { class: "chip plain" }, "основна")))))) : emptyState("Дублікатів не знайдено", "check")));
+  }
+  load();
+};
+// майстер: пошук лише своїх клієнтів
+async function clientsSimple(main) {
+  main.append(topbar("Клієнти", "Ваші клієнти та їхні візити"));
   const q = h("input", { placeholder: "Пошук за ім'ям або телефоном", type: "search", id: "client-search" });
-  const box = h("div", { class: "card table-wrap", style: { marginTop: "12px" } });
-  main.append(h("div", { class: "search" }, icon("search", "sm"), q), box);
+  const box = h("div", { class: "card ord-list", style: { marginTop: "12px" } });
+  main.append(h("div", { class: "search-box" }, icon("search", "sm"), q), box);
   let timer;
   const load = async () => {
     const list = await api.get("/api/clients?q=" + encodeURIComponent(q.value.trim()));
-    box.replaceChildren(list.length ? h("table", {}, h("tr", {}, h("th", {}, "Клієнт"), h("th", {}, "Телефон"), h("th", {}, "")),
-      list.map((c) => h("tr", { class: "click", onclick: () => clientSheet(c.id) },
-        h("td", {}, h("div", { class: "row" }, avatar(c.name, "sm"), h("b", {}, c.name))), h("td", {}, c.phone || h("span", { class: "muted" }, "без номера")),
-        h("td", { class: "right" }, c.telegram_linked ? h("span", { class: "chip st-confirmed" }, "Telegram") : "")))) : emptyState("Нікого не знайдено", "search"));
+    box.replaceChildren(...(list.length ? list.map((c) => h("button", { class: "ord-item cl-item", onclick: () => clientSheet(c.id) }, avatar(c.name, "sm"),
+      h("div", { class: "grow ord-main" }, h("b", {}, c.name), h("div", { class: "muted small" }, c.phone || "без номера")))) : [emptyState("Нікого не знайдено", "search")]));
   };
   q.addEventListener("input", () => { clearTimeout(timer); timer = setTimeout(load, 300); });
   await load();
-};
+}
 
 // ---------- Панель директора
 function periodPicker(onChange, initial = "month") {
