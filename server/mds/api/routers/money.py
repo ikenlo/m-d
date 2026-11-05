@@ -75,7 +75,9 @@ def close_shift(master_id: int | None = None, actor: Actor = Depends(get_actor),
 @router.get("/shifts")
 def list_shifts(status: str | None = None, master_id: int | None = None,
                 actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
-    return [orders.shift_public(s, sh) for sh in orders.list_shifts(s, actor, status=status, master_id=master_id)]
+    shifts = orders.list_shifts(s, actor, status=status, master_id=master_id)
+    payouts = orders.shift_payouts(s, [sh.id for sh in shifts])
+    return [orders.shift_public(s, sh, payouts) for sh in shifts]
 
 
 @router.get("/shifts/{shift_id}")

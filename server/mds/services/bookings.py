@@ -12,7 +12,7 @@ from __future__ import annotations
 from datetime import date, datetime, time, timedelta
 
 from sqlalchemy import select, update
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session, joinedload, selectinload
 
 from .. import clock
 from ..errors import Conflict, Forbidden, NotFound, ValidationError
@@ -364,7 +364,8 @@ def list_appointments(
         raise Forbidden("Недостатньо прав")
     q = (
         select(Appointment)
-        .options(joinedload(Appointment.client), joinedload(Appointment.master), joinedload(Appointment.service))
+        .options(joinedload(Appointment.client), joinedload(Appointment.master), joinedload(Appointment.service),
+                 selectinload(Appointment.order))
         .where(
             Appointment.starts_at >= datetime.combine(date_from, time.min),
             Appointment.starts_at < datetime.combine(date_to + timedelta(days=1), time.min),

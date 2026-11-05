@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from datetime import date, datetime, time, timedelta
 
-from sqlalchemy import func, select, update
+from sqlalchemy import func, or_, select, update
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload, selectinload
 
 from .. import clock
 from ..errors import Conflict, Forbidden, NotFound, ValidationError
@@ -308,7 +308,8 @@ def list_orders(
     )
     if master_id:
         q = q.where(Order.master_id == master_id)
-    return list(s.scalars(q.order_by(Order.closed_at.desc())))
+    q = q.options(joinedload(Order.master), joinedload(Order.client), joinedload(Order.service), selectinload(Order.materials))
+    return list(s.scalars(q.order_by(Order.closed_at.desc())).unique())
 
 
 # ------------------------------------------------------------ звіт зміни
@@ -377,9 +378,25 @@ def shift_report(s: Session, sh: Shift, charge: int | None = None) -> dict:
     }
 
 
-def shift_public(s: Session, sh: Shift) -> dict:
-    payout = s.scalar(select(Payout).where(Payout.shift_id == sh.id))
-    cash_payout = s.scalar(select(Payout).where(Payout.cash_shift_id == sh.id))
+def shift_payouts(s: Session, shift_ids: list[int]) -> dict:
+    """Виплати для кількох змін одним запитом: {("shift"|"cash", shift_id): Payout} — без N+1 у списку змін."""
+    out: dict = {}
+    if not shift_ids:
+        return out
+    rows = s.scalars(select(Payout).where(or_(Payout.shift_id.in_(shift_ids), Payout.cash_shift_id.in_(shift_ids))))
+    for p in rows:
+        if p.shift_id in shift_ids:
+            out.setdefault(("shift", p.shift_id), p)
+        if p.cash_shift_id in shift_ids:
+            out.setdefault(("cash", p.cash_shift_id), p)
+    return out
+
+
+def shift_public(s: Session, sh: Shift, payouts: dict | None = None) -> dict:
+    if payouts is None:
+        payouts = shift_payouts(s, [sh.id])
+    payout = payouts.get(("shift", sh.id))
+    cash_payout = payouts.get(("cash", sh.id))
     report = sh.report if sh.status != ShiftStatus.OPEN and sh.report else shift_report(s, sh)
     return {
         "id": sh.id,
@@ -453,6 +470,7 @@ def list_shifts(s: Session, actor: Actor, *, status: str | None = None, master_i
         q = q.where(Shift.status == status)
     if master_id:
         q = q.where(Shift.master_id == master_id)
+    q = q.options(joinedload(Shift.master))
     return list(s.scalars(q.order_by(Shift.opened_at.desc()).limit(limit)))
 
 
