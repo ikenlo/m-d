@@ -1206,3 +1206,23 @@ label.row > input[type="checkbox"], label.row > input[type="radio"] { flex: 0 0 
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
   .tabbar { background: var(--surface) !important; }
 }
+
+.swipe-dots { display: none; }
+@media (max-width: 760px) {
+  .grid.kpi, .grid.kpi.kpi-6, .swipe-deck, .grid.two.swipe-deck {
+    display: flex; grid-template-columns: none; gap: 10px; overflow-x: auto; overflow-y: hidden;
+    scroll-snap-type: x mandatory; scrollbar-width: none; overscroll-behavior-x: contain; -webkit-overflow-scrolling: touch;
+    margin-left: -16px; margin-right: -16px; padding: 2px 16px 4px; scroll-padding: 0 16px;
+  }
+  .grid.kpi::-webkit-scrollbar, .swipe-deck::-webkit-scrollbar { display: none; }
+  .grid.kpi > *, .grid.kpi.kpi-6 > * { flex: 0 0 calc((100% - 10px) / 2); min-width: 0; scroll-snap-align: start; }
+  .swipe-deck { align-items: flex-start; gap: 12px; transition: height var(--dur-2) var(--ease); }
+  .swipe-deck > * { flex: 0 0 100%; min-width: 0; scroll-snap-align: center; scroll-snap-stop: always; margin-top: 0 !important; }
+  .swipe-dots { display: flex; justify-content: center; align-items: center; gap: 6px; height: 10px; margin: 8px 0 4px; }
+  .swipe-dots:empty { display: none; }
+  .swipe-dots i { width: 6px; height: 6px; border-radius: 999px; background: var(--line-strong); transition: width var(--dur-1) var(--ease), background var(--dur-1) var(--ease); }
+  .swipe-dots i.on { width: 18px; background: var(--brand); }
+  :root[data-theme="dark"] .swipe-dots i.on { background: var(--gold); }
+  .scroll-box { max-height: 380px; overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
+  .scroll-box.more { -webkit-mask-image: linear-gradient(#000 calc(100% - 48px), transparent); mask-image: linear-gradient(#000 calc(100% - 48px), transparent); }
+}
