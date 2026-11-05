@@ -2225,7 +2225,7 @@ function periodPicker(onChange, initial = "month") {
   const custom = h("div", { class: "period-range hidden" },
     h("label", { class: "f" }, h("span", {}, "З"), from), h("label", { class: "f" }, h("span", {}, "По"), to),
     h("button", { class: "btn", onclick: () => from.value && onChange(`date_from=${from.value}&date_to=${to.value || from.value}`, "custom") }, "Показати"));
-  const s = seg([["day", "День"], ["week", "Тиждень"], ["month", "Місяць"], ["year", "Рік"], ["custom", "Період…"]], initial, (v) => {
+  const s = seg([["day", "День"], ["week", "Тиждень"], ["month", "Місяць"], ["year", "Рік"], ["custom", "Період"]], initial, (v) => {
     custom.classList.toggle("hidden", v !== "custom");
     if (v !== "custom") onChange("period=" + v, v);
   });
