@@ -1,5 +1,3 @@
-"""Стрічка подій журналу: тексти простими словами, фільтри, пошук, права."""
-
 from datetime import date, datetime
 
 import pytest
@@ -39,7 +37,6 @@ def test_feed_is_human_readable(db, seed):
     assert by_title["Витрата: Оренда"]["amount"] == 2500000
     assert {"field": "Відсоток майстра", "before": "40%", "after": "45%"} in by_title["Акаунт змінено"]["changes"]
     assert {"field": "Крок слотів, хв", "before": "30", "after": "15"} in by_title["Налаштування змінено"]["changes"]
-    # жодних технічних назв на кшталт «order: close»
     assert not any(":" in x["title"] and x["title"].split(":")[0] in ("order", "appointment", "user") for x in f)
 
     with db.session() as s:

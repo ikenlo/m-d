@@ -1,5 +1,3 @@
-"""Резервні копії в Google Drive: OAuth, завантаження, ротація, помилки — без справжнього Google."""
-
 import json
 from urllib.parse import parse_qs, urlparse
 
@@ -79,19 +77,17 @@ def test_connect_upload_rotate(env, db):
     q = parse_qs(urlparse(url).query)
     assert q["scope"] == [gdrive.SCOPE] and q["access_type"] == ["offline"]
     assert q["redirect_uri"][0].endswith("/api/gdrive/callback")
-    # підроблений state не проходить
     r = c.get("/api/gdrive/callback", params={"state": "fake", "code": "good-code"})
     assert r.status_code == 303 and r.headers["location"].endswith("gdrive=denied")
     r = c.get("/api/gdrive/callback", params={"state": q["state"][0], "code": "good-code"})
     assert r.status_code == 303 and r.headers["location"].endswith("gdrive=ok")
     st = c.get("/api/gdrive", headers=hd).json()
     assert st["connected"] and st["account"] == "salon@example.com"
-    assert "refresh_token" not in json.dumps(st)  # токен не віддається в API
+    assert "refresh_token" not in json.dumps(st)
 
     r = c.post("/api/gdrive/backup-now", headers=hd)
     assert r.status_code == 200, r.text
     assert fake.uploaded and r.json()["status"]["last_file"] == fake.uploaded[0]
-    # ротація: лишається 3 найновіші
     assert fake.deleted == ["old2", "old3"]
     assert (cfg.data_dir / "gdrive.json").stat().st_mode & 0o077 == 0
 
@@ -117,7 +113,7 @@ def test_upload_error_alerts_director_once(env, db, seed):
     assert r1["local"] and "403" in r1["drive_error"] and r2["drive_error"]
     with db.session() as s:
         alerts = s.query(Notification).filter_by(chat_id=555).all()
-        assert len(alerts) == 1 and "Google Drive" in alerts[0].text  # не частіше разу на добу
+        assert len(alerts) == 1 and "Google Drive" in alerts[0].text
     assert c.post("/api/gdrive/backup-now", headers=hd).status_code == 409
     assert c.get("/api/gdrive", headers=hd).json()["last_error"]
 

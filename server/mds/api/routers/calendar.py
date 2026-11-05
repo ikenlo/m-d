@@ -30,26 +30,23 @@ class ShiftIn(BaseModel):
 @router.post("/appointments/shift")
 def shift_appointments(body: ShiftIn, background: BackgroundTasks, request: Request, actor: Actor = Depends(get_actor),
                        s: Session = Depends(get_session)):
-    """Запізнення: зсунути наступні записи майстра на N хв і повідомити клієнтів
-    (Telegram — одразу через чергу бота; SMS/Viber — після збереження, якщо TurboSMS налаштовано)."""
     from ...services import sms_center
 
     r = bookings.shift_appointments(s, actor, master_id=body.master_id, minutes=body.minutes,
                                     from_appt_id=body.from_appt_id, notify_clients=body.notify_clients)
     to_sms = r.pop("sms")
     can_sms = sms_center.ready(s)
-    if to_sms and can_sms:  # сервісні SMS — у чергу й історію; надсилаються у фоні після відповіді
+    if to_sms and can_sms:
         for x in to_sms:
             sms_center.enqueue(s, phone=x["phone"], text=x["text"], kind="service", reason="shift", client_id=x.get("client_id"))
         background.add_task(sms_center.flush, request.app.state.db)
     r["sms_sent"] = len(to_sms) if can_sms else 0
-    r["call"] = [] if can_sms else [x for x in r["shifted"] if x["channel"] == "sms"]  # кому подзвонити
+    r["call"] = [] if can_sms else [x for x in r["shifted"] if x["channel"] == "sms"]
     return r
 
 
 @router.get("/appointments/unclosed")
 def unclosed(master_id: int | None = None, actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
-    """Час запису минув, а замовлення не закрито (за 7 днів)."""
     return [bookings.appt_public(a) for a in bookings.unclosed(s, actor, master_id)]
 
 
@@ -65,7 +62,6 @@ def list_appointments(
 @router.get("/availability")
 def availability(master_id: int, service_id: int, day: date, duration_min: int | None = None,
                  actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
-    """Вільний час; duration_min — інша тривалість (шаблон швидкого запису: «Фарбування · 2 год»)."""
     if duration_min is not None and not (5 <= duration_min <= 12 * 60):
         duration_min = None
     return [t.strftime("%H:%M") for t in bookings.free_slots(s, master_id, service_id, day, duration_min=duration_min)]
@@ -80,19 +76,16 @@ def create_appointment(body: AppointmentIn, actor: Actor = Depends(get_actor), s
 
 @router.get("/appointments/pending")
 def pending(actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
-    """Непідтверджені записи (майстер — лише свої)."""
     return [bookings.appt_public(a) for a in bookings.pending_list(s, actor)]
 
 
 @router.post("/appointments/{appt_id}/decline-busy")
 def decline_busy(appt_id: int, actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
-    """«Час зайнятий»: бот запропонує клієнту найближчі вільні години."""
     return bookings.decline_busy(s, actor, appt_id)
 
 
 @router.post("/appointments/{appt_id}/propose")
 def propose(appt_id: int, body: ProposeIn, actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
-    """Запропонувати клієнту інший час (клієнт підтверджує в боті)."""
     a, notified = bookings.propose_time(s, actor, appt_id, body.starts_at.replace(tzinfo=None, second=0, microsecond=0))
     return {**bookings.appt_public(a), "notified": notified}
 
@@ -117,7 +110,6 @@ def set_status(appt_id: int, body: StatusIn, actor: Actor = Depends(get_actor), 
 
 @router.post("/appointments/{appt_id}/close")
 def close_order(appt_id: int, body: CloseOrderIn, actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
-    """Закрити замовлення. Передавайте idempotency_key — повтор не задвоїть оплату."""
     o = orders.close_order(
         s, actor, appt_id, amount=body.amount, payment_method=body.payment_method,
         materials=[m.model_dump() for m in body.materials], idempotency_key=body.idempotency_key,

@@ -1,11 +1,3 @@
-"""Клієнтська база (Customer Intelligence): статистика, сегменти, об'єднання дублікатів, знеособлення, аналітика.
-
-Клієнт — одна сутність `clients` у всій системі: записи, замовлення й повідомлення прив'язуються до неї.
-Статистика не зберігається окремо, а щоразу рахується з наявних замовлень (`orders`) і записів
-(`appointments`) — тож після закриття замовлення вона оновлюється сама й завжди збігається з оплатами.
-Фінансова статистика — лише за закритими (оплаченими) замовленнями.
-"""
-
 from __future__ import annotations
 
 import csv
@@ -32,7 +24,6 @@ def _cfg(s: Session) -> dict:
 
 
 def segment(visits: int, spent: int, last_visit: datetime | None, created_at: datetime, now: datetime, cfg: dict) -> str:
-    """Неактивний > Давно не був > VIP > Постійний > Новий."""
     ref = last_visit or created_at
     idle = (now - ref).days
     if idle >= cfg["inactive_days"]:
@@ -47,7 +38,6 @@ def segment(visits: int, spent: int, last_visit: datetime | None, created_at: da
 
 
 def _order_stats(s: Session, client_ids: list[int] | None = None, master_id: int | None = None) -> dict[int, dict]:
-    """Одним запитом: візити, сума, перший/останній візит — з закритих замовлень."""
     q = select(Order.client_id, func.count(Order.id), func.coalesce(func.sum(Order.amount), 0),
                func.min(Order.closed_at), func.max(Order.closed_at)).group_by(Order.client_id)
     if client_ids is not None:
@@ -72,7 +62,6 @@ def _row(c: Client, st: dict | None, now: datetime, cfg: dict, finance: bool = T
 
 def list_clients(s: Session, actor: Actor, *, q: str = "", segment_key: str = "", sort: str = "name", page: int = 1,
                  per_page: int = 50, birthdays_days: int | None = None) -> dict:
-    """Таблиця клієнтів зі статистикою, фільтром за сегментом, сортуванням і сторінками (директор/адміністратор)."""
     actor.require(Role.DIRECTOR, Role.ADMIN)
     now, cfg = clock.now(), _cfg(s)
     stmt = select(Client)
@@ -100,7 +89,7 @@ def list_clients(s: Session, actor: Actor, *, q: str = "", segment_key: str = ""
         rows.sort(key=lambda r: (-r["visits"], r["name"].lower()))
     elif sort == "spent":
         rows.sort(key=lambda r: (-r.get("spent", 0), r["name"].lower()))
-    elif sort == "last_visit":  # нещодавні вгорі, без візитів — внизу
+    elif sort == "last_visit":
         rows.sort(key=lambda r: r["last_visit"] or "", reverse=True)
     elif sort == "created":
         rows.sort(key=lambda r: r["created_at"], reverse=True)
@@ -114,7 +103,6 @@ def list_clients(s: Session, actor: Actor, *, q: str = "", segment_key: str = ""
 
 
 def card(s: Session, actor: Actor, client_id: int) -> dict:
-    """Картка: поля, статистика, послуги й майстри. Майстер — лише свої візити й без фінансів салону."""
     c = get_or_404(s, Client, client_id, "Клієнта")
     master_id = actor.user_id if actor.is_master else None
     if master_id and not s.scalar(select(Appointment.id).where(Appointment.client_id == c.id, Appointment.master_id == master_id).limit(1)):
@@ -159,7 +147,6 @@ def _by_month(orders: list[Order]) -> list[dict]:
 
 
 def update_card(s: Session, actor: Actor, client_id: int, data: dict) -> Client:
-    """Редагування картки (директор/адміністратор): номери нормалізуються, дублікати номерів заборонені."""
     from ..errors import Conflict
 
     actor.require(Role.DIRECTOR, Role.ADMIN)
@@ -201,14 +188,12 @@ def update_card(s: Session, actor: Actor, client_id: int, data: dict) -> Client:
 
 
 def find_by_phone(s: Session, actor: Actor, phone: str) -> Client | None:
-    """Пошук за номером (основним або додатковим) — щоб не створювати дублікат."""
     actor.require(Role.DIRECTOR, Role.ADMIN, Role.MASTER)
     n = normalize_phone(phone)
     return s.scalar(select(Client).where((Client.phone == n) | (Client.phone2 == n)))
 
 
 def duplicates(s: Session, actor: Actor) -> list[list[dict]]:
-    """Можливі дублікати: однакове ім'я (без урахування регістру) або чийсь додатковий номер = основний іншого."""
     actor.require(Role.DIRECTOR, Role.ADMIN)
     groups: dict[str, list[Client]] = {}
     for c in s.scalars(select(Client).where(Client.search_name.is_not(None))):
@@ -223,8 +208,6 @@ def duplicates(s: Session, actor: Actor) -> list[list[dict]]:
 
 
 def merge(s: Session, actor: Actor, keep_id: int, dup_id: int) -> Client:
-    """Об'єднати дублікат у основну картку: записи й замовлення переносяться, порожні поля доповнюються,
-    примітки зливаються. Історія — в журналі змін (обидві картки)."""
     actor.require(Role.DIRECTOR)
     if keep_id == dup_id:
         raise ValidationError("Оберіть дві різні картки")
@@ -235,7 +218,7 @@ def merge(s: Session, actor: Actor, keep_id: int, dup_id: int) -> Client:
     for o in s.scalars(select(Order).where(Order.client_id == dup.id)):
         o.client_id = keep.id
     phone, tg = dup.phone, dup.telegram_user_id
-    dup.phone, dup.telegram_user_id = None, None  # звільняємо унікальні поля перед перенесенням
+    dup.phone, dup.telegram_user_id = None, None
     s.flush()
     if not keep.phone and phone:
         keep.phone = phone
@@ -257,7 +240,6 @@ def merge(s: Session, actor: Actor, keep_id: int, dup_id: int) -> Client:
 
 
 def anonymize(s: Session, actor: Actor, client_id: int, reason: str) -> Client:
-    """Знеособлення за запитом клієнта: персональні дані стираються, візити й суми лишаються для звітності."""
     actor.require(Role.DIRECTOR)
     if not (reason or "").strip():
         raise ValidationError("Вкажіть підставу (напр. «запит клієнта від 05.11»)")
@@ -291,7 +273,6 @@ def export_csv(s: Session, actor: Actor) -> str:
 
 
 def analytics(s: Session, actor: Actor, date_from: date, date_to: date) -> dict:
-    """Аналітика бази за період (директор): нові, активні, повторні, середній чек, топ клієнтів, хто перестав ходити."""
     actor.require(Role.DIRECTOR)
     now, cfg = clock.now(), _cfg(s)
     a, b = datetime.combine(date_from, datetime.min.time()), datetime.combine(date_to + timedelta(days=1), datetime.min.time())

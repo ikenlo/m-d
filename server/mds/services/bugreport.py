@@ -1,5 +1,3 @@
-"""Баг-репорти з програми: опис + необов'язковий знімок екрана → директору в Telegram."""
-
 from __future__ import annotations
 
 import base64

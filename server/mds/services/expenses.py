@@ -1,5 +1,3 @@
-"""Операційні витрати салону: оренда, комуналка, реклама, інше."""
-
 from __future__ import annotations
 
 from datetime import date
@@ -60,7 +58,6 @@ def update_expense(s: Session, actor: Actor, expense_id: int, data: dict, reason
 
 
 def delete_expense(s: Session, actor: Actor, expense_id: int, reason: str | None = None) -> None:
-    """М'яке видалення — запис залишається в історії."""
     actor.require(Role.DIRECTOR)
     e: Expense = get_or_404(s, Expense, expense_id, "Витрату")
     if e.is_deleted:

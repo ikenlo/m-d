@@ -1,8 +1,3 @@
-"""ORM-моделі. Гроші — цілі копійки, відсотки — базисні пункти (bp).
-
-Дати-час — наївні, у локальному часі салону (див. clock.py).
-"""
-
 from __future__ import annotations
 
 from datetime import date, datetime
@@ -38,27 +33,23 @@ class Role:
 
 
 class MaterialsMode:
-    """Хто несе собівартість матеріалів."""
 
-    SALON = "salon"  # зменшує частку салону (за замовчуванням)
-    MASTER = "master"  # віднімається від заробітку майстра
-    SPLIT = "split"  # віднімається від суми до поділу (пропорційно)
+    SALON = "salon"
+    MASTER = "master"
+    SPLIT = "split"
     ALL = (SALON, MASTER, SPLIT)
 
 
 class ApptStatus:
-    PENDING = "pending"  # очікує підтвердження (наприклад, з Telegram)
+    PENDING = "pending"
     CONFIRMED = "confirmed"
-    IN_PROGRESS = "in_progress"  # клієнт прийнятий
-    COMPLETED = "completed"  # замовлення закрито
+    IN_PROGRESS = "in_progress"
+    COMPLETED = "completed"
     CANCELLED = "cancelled"
     NO_SHOW = "no_show"
     ALL = (PENDING, CONFIRMED, IN_PROGRESS, COMPLETED, CANCELLED, NO_SHOW)
-    # статуси, що займають час у календарі
     OCCUPYING = (PENDING, CONFIRMED, IN_PROGRESS, COMPLETED)
-    # статуси, з яких можна закрити замовлення
     CLOSABLE = (PENDING, CONFIRMED, IN_PROGRESS)
-    # статуси, які ще можна змінювати/скасовувати
     EDITABLE = (PENDING, CONFIRMED, IN_PROGRESS)
 
 
@@ -71,7 +62,7 @@ class PaymentMethod:
 
 class ShiftStatus:
     OPEN = "open"
-    CLOSED = "closed"  # звіт сформовано, очікує виплати
+    CLOSED = "closed"
     PAID = "paid"
     ALL = (OPEN, CLOSED, PAID)
 
@@ -80,13 +71,13 @@ class ExpenseCategory:
     RENT = "rent"
     UTILITIES = "utilities"
     ADVERTISING = "advertising"
-    MATERIALS = "materials"  # закупівля (грошовий потік, див. docs/FINANCE.md)
-    EQUIPMENT = "equipment"  # обладнання
-    HOUSEHOLD = "household"  # господарські витрати
-    FUEL = "fuel"  # закупівля бензину для генератора (грошовий потік; витрата — за мотогодинами)
+    MATERIALS = "materials"
+    EQUIPMENT = "equipment"
+    HOUSEHOLD = "household"
+    FUEL = "fuel"
     OTHER = "other"
     ALL = (RENT, UTILITIES, ADVERTISING, MATERIALS, EQUIPMENT, HOUSEHOLD, FUEL, OTHER)
-    CASH_FLOW_ONLY = (MATERIALS, FUEL)  # не входять в операційні витрати (інакше подвійний облік)
+    CASH_FLOW_ONLY = (MATERIALS, FUEL)
 
 
 def _now() -> datetime:
@@ -111,20 +102,15 @@ class User(Base):
     phone: Mapped[str | None] = mapped_column(String(32))
     role: Mapped[str] = mapped_column(String(16))
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
-    # індивідуальні фінансові умови майстра (None = значення з налаштувань салону)
     share_bp: Mapped[int | None] = mapped_column(Integer)
     materials_mode: Mapped[str | None] = mapped_column(String(16))
-    # графік: {"0": ["09:00", "18:00"], ...} (0 = понеділок); None = графік салону
     schedule: Mapped[dict | None] = mapped_column(JSON)
     telegram_chat_id: Mapped[int | None] = mapped_column(BigInteger)
     telegram_link_code: Mapped[str | None] = mapped_column(String(16), unique=True)
-    # особистий PIN для входу в розділ персоналу Telegram-бота (хеш scrypt)
     bot_pin_hash: Mapped[str | None] = mapped_column(String(255))
-    # безпека
     token_version: Mapped[int] = mapped_column(Integer, default=0)
     failed_logins: Mapped[int] = mapped_column(Integer, default=0)
     locked_until: Mapped[datetime | None] = mapped_column(DateTime)
-    # лічильник для серіалізації записів до одного майстра (див. bookings.py)
     booking_lock: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
 
@@ -136,46 +122,35 @@ class Service(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(128))
-    # каталог для запису: розділ («Чоловічі», «Жіночі») → тип («Стрижка», «Фарбування») → послуга
     section: Mapped[str | None] = mapped_column(String(64))
     category: Mapped[str | None] = mapped_column(String(64))
-    # необов'язковий третій рівень: «Фарбування» → «Мелірування» → послуга
     subcategory: Mapped[str | None] = mapped_column(String(64))
     duration_min: Mapped[int] = mapped_column(Integer)
-    price: Mapped[int] = mapped_column(Integer)  # копійки
-    # ціна «від»: остаточна сума залежить від довжини/густоти волосся тощо
+    price: Mapped[int] = mapped_column(Integer)
     price_from: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
-    # послуга завжди витрачає матеріали (фарбування): закрите без матеріалів замовлення підсвічується червоним
     needs_materials: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     sort_order: Mapped[int] = mapped_column(Integer, default=0)
 
 
 class Material(Base):
-    """Матеріал на складі. Окремий тон фарби — окремий рядок (name="Igora Royal", tone="7-1").
-
-    Облік ведеться в базових одиницях (unit: г / мл / шт), залишок — у тисячних (stock_milli).
-    Упаковка: pack_name («туба») містить pack_size базових одиниць (напр. 60 г);
-    unit_cost — ціна однієї упаковки в копійках. Для штучного товару pack_size = 1.
-    """
 
     __tablename__ = "materials"
 
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(128))
     tone: Mapped[str | None] = mapped_column(String(32))
-    category: Mapped[str | None] = mapped_column(String(64))  # «Фарби», «Окисники», «Догляд»…
+    category: Mapped[str | None] = mapped_column(String(64))
     unit: Mapped[str] = mapped_column(String(16), default="шт")
     pack_name: Mapped[str] = mapped_column(String(16), default="шт", server_default="шт")
     pack_size: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
-    unit_cost: Mapped[int] = mapped_column(Integer)  # копійки за упаковку
+    unit_cost: Mapped[int] = mapped_column(Integer)
     stock_milli: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     min_stock_milli: Mapped[int | None] = mapped_column(Integer)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
 
 
 class StockMove(Base):
-    """Рух складу: прихід (+), списання на замовлення (−), інвентаризація (±). Лише додавання."""
 
     __tablename__ = "stock_moves"
     __table_args__ = (Index("ix_stock_material", "material_id", "ts"),)
@@ -183,17 +158,15 @@ class StockMove(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     material_id: Mapped[int] = mapped_column(ForeignKey("materials.id"))
     ts: Mapped[datetime] = mapped_column(DateTime, default=_now)
-    kind: Mapped[str] = mapped_column(String(16))  # receipt | order | order_return | adjust | writeoff
-    qty_milli: Mapped[int] = mapped_column(Integer)  # зі знаком, у тисячних базової одиниці
-    cost: Mapped[int] = mapped_column(Integer, default=0)  # копійки (для приходу — сума закупівлі)
+    kind: Mapped[str] = mapped_column(String(16))
+    qty_milli: Mapped[int] = mapped_column(Integer)
+    cost: Mapped[int] = mapped_column(Integer, default=0)
     order_id: Mapped[int | None] = mapped_column(ForeignKey("orders.id"))
     user_id: Mapped[int | None] = mapped_column(Integer)
     note: Mapped[str | None] = mapped_column(Text)
 
 
 class ScheduleDay(Base):
-    """Графік майстра на конкретну дату — перекриває тижневий шаблон.
-    is_off=True — вихідний; інакше робочі години start–end («09:00»)."""
 
     __tablename__ = "schedule_days"
     __table_args__ = (UniqueConstraint("master_id", "day"),)
@@ -211,30 +184,25 @@ class Client(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(128))
-    phone: Mapped[str | None] = mapped_column(String(32), unique=True)  # None — швидкий запис без номера
+    phone: Mapped[str | None] = mapped_column(String(32), unique=True)
     telegram_user_id: Mapped[int | None] = mapped_column(BigInteger, unique=True)
     notes: Mapped[str | None] = mapped_column(Text)
-    # нагадування в Telegram за добу і за 2 години: None — ще не питали, True/False — відповідь клієнта
     reminders: Mapped[bool | None] = mapped_column(Boolean)
-    # захист від спаму: заблокований клієнт не може записатися з бота/сайту (лише через адміністратора)
     blocked: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
     blocked_reason: Mapped[str | None] = mapped_column(Text)
-    # картка клієнта (клієнтська база): необов'язкові поля не блокують створення
-    phone2: Mapped[str | None] = mapped_column(String(32))  # додатковий номер
+    phone2: Mapped[str | None] = mapped_column(String(32))
     birthday: Mapped[date | None] = mapped_column(Date)
     telegram_username: Mapped[str | None] = mapped_column(String(64))
-    source: Mapped[str | None] = mapped_column(String(32))  # джерело: instagram, рекомендація, сайт, бот…
-    wishes: Mapped[str | None] = mapped_column(Text)  # побажання клієнта
-    marketing_consent: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")  # згода на рекламу
+    source: Mapped[str | None] = mapped_column(String(32))
+    wishes: Mapped[str | None] = mapped_column(Text)
+    marketing_consent: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
     last_contact_at: Mapped[datetime | None] = mapped_column(DateTime)
-    # ім'я в нижньому регістрі для пошуку (SQLite не вміє ilike для кирилиці)
     search_name: Mapped[str | None] = mapped_column(String(160), index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
 
 
 class Appointment(Base):
     __tablename__ = "appointments"
-    # швидкі вибірки: календар, історія клієнта
     __table_args__ = (Index("ix_appt_master_time", "master_id", "starts_at"), Index("ix_appt_starts", "starts_at"), Index("ix_appt_client", "client_id"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -243,17 +211,14 @@ class Appointment(Base):
     service_id: Mapped[int] = mapped_column(ForeignKey("services.id"))
     starts_at: Mapped[datetime] = mapped_column(DateTime)
     ends_at: Mapped[datetime] = mapped_column(DateTime)
-    price: Mapped[int] = mapped_column(Integer)  # планова ціна, копійки
+    price: Mapped[int] = mapped_column(Integer)
     status: Mapped[str] = mapped_column(String(16), default=ApptStatus.CONFIRMED)
-    source: Mapped[str] = mapped_column(String(16), default="staff")  # staff | telegram | site
+    source: Mapped[str] = mapped_column(String(16), default="staff")
     comment: Mapped[str | None] = mapped_column(Text)
     cancel_reason: Mapped[str | None] = mapped_column(Text)
-    # майстер запропонував клієнту інший час — чекаємо відповіді в боті
     awaiting_client: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
-    # які нагадування вже надіслано (скидаються при перенесенні)
     reminded_day: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
     reminded_2h: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
-    # майстру вже нагадали в Telegram, що час запису минув, а замовлення не закрито
     close_reminded: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
     created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
@@ -273,7 +238,6 @@ class Shift(Base):
     status: Mapped[str] = mapped_column(String(16), default=ShiftStatus.OPEN)
     opened_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
     closed_at: Mapped[datetime | None] = mapped_column(DateTime)
-    # знімок звіту на момент закриття
     report: Mapped[dict | None] = mapped_column(JSON)
     payout_due: Mapped[int | None] = mapped_column(Integer)
 
@@ -282,27 +246,24 @@ class Shift(Base):
 
 
 class Order(Base):
-    """Закрите замовлення — фінансовий факт наданої послуги."""
 
     __tablename__ = "orders"
-    # індекси для звітів і списків за датою
     __table_args__ = (Index("ix_order_closed", "closed_at"), Index("ix_order_master_closed", "master_id", "closed_at"), Index("ix_order_client", "client_id"), Index("ix_order_shift", "shift_id"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    # unique: одне замовлення на запис (захист від повторного проведення)
     appointment_id: Mapped[int] = mapped_column(ForeignKey("appointments.id"), unique=True)
     idempotency_key: Mapped[str | None] = mapped_column(String(64), unique=True)
     master_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
     client_id: Mapped[int] = mapped_column(ForeignKey("clients.id"))
     service_id: Mapped[int] = mapped_column(ForeignKey("services.id"))
     shift_id: Mapped[int] = mapped_column(ForeignKey("shifts.id"))
-    amount: Mapped[int] = mapped_column(Integer)  # фактична вартість (виручка)
+    amount: Mapped[int] = mapped_column(Integer)
     materials_cost: Mapped[int] = mapped_column(Integer, default=0)
     payment_method: Mapped[str] = mapped_column(String(16))
-    share_bp: Mapped[int] = mapped_column(Integer)  # знімок умов на момент закриття
+    share_bp: Mapped[int] = mapped_column(Integer)
     materials_mode: Mapped[str] = mapped_column(String(16))
     master_earning: Mapped[int] = mapped_column(Integer)
-    salon_earning: Mapped[int] = mapped_column(Integer)  # після матеріалів
+    salon_earning: Mapped[int] = mapped_column(Integer)
     closed_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
     closed_by: Mapped[int] = mapped_column(ForeignKey("users.id"))
     revision: Mapped[int] = mapped_column(Integer, default=1)
@@ -324,21 +285,18 @@ class OrderMaterial(Base):
     order_id: Mapped[int] = mapped_column(ForeignKey("orders.id", ondelete="CASCADE"))
     material_id: Mapped[int | None] = mapped_column(ForeignKey("materials.id"))
     name: Mapped[str] = mapped_column(String(128))
-    qty: Mapped[int] = mapped_column(Integer, default=1)  # у тисячних (1000 = 1 од.)
+    qty: Mapped[int] = mapped_column(Integer, default=1)
     unit_cost: Mapped[int] = mapped_column(Integer)
     total: Mapped[int] = mapped_column(Integer)
 
 
 class Payout(Base):
     __tablename__ = "payouts"
-    # індекси для звітів і списків за датою
     __table_args__ = (Index("ix_payout_cash_shift", "cash_shift_id"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
     master_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
-    # unique: одна виплата на зміну (захист від подвійної виплати)
     shift_id: Mapped[int | None] = mapped_column(ForeignKey("shifts.id"), unique=True)
-    # майстер узяв свій заробіток із готівки в касі при закритті цієї зміни
     cash_shift_id: Mapped[int | None] = mapped_column(ForeignKey("shifts.id"))
     amount: Mapped[int] = mapped_column(Integer)
     method: Mapped[str] = mapped_column(String(16), default=PaymentMethod.CASH)
@@ -351,7 +309,6 @@ class Payout(Base):
 
 class Expense(Base):
     __tablename__ = "expenses"
-    # індекси для звітів і списків за датою
     __table_args__ = (Index("ix_expense_spent_on", "spent_on"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -359,26 +316,24 @@ class Expense(Base):
     amount: Mapped[int] = mapped_column(Integer)
     spent_on: Mapped[date] = mapped_column(Date)
     description: Mapped[str | None] = mapped_column(Text)
-    payment_method: Mapped[str | None] = mapped_column(String(16))  # cash | card | account
+    payment_method: Mapped[str | None] = mapped_column(String(16))
     is_deleted: Mapped[bool] = mapped_column(Boolean, default=False)
     created_by: Mapped[int] = mapped_column(ForeignKey("users.id"))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
 
 
 class MeterReading(Base):
-    """Показники лічильника електроенергії за місяць. Тариф зберігається в записі —
-    зміна тарифу пізніше не змінює історію."""
 
     __tablename__ = "meter_readings"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    month: Mapped[date] = mapped_column(Date, unique=True)  # перше число місяця
+    month: Mapped[date] = mapped_column(Date, unique=True)
     read_on: Mapped[date] = mapped_column(Date)
-    prev_milli: Mapped[int] = mapped_column(BigInteger)  # кВт·год × 1000
+    prev_milli: Mapped[int] = mapped_column(BigInteger)
     curr_milli: Mapped[int] = mapped_column(BigInteger)
     used_milli: Mapped[int] = mapped_column(BigInteger)
-    tariff: Mapped[int] = mapped_column(Integer)  # копійок за 1 кВт·год
-    cost: Mapped[int] = mapped_column(Integer)  # копійки
+    tariff: Mapped[int] = mapped_column(Integer)
+    cost: Mapped[int] = mapped_column(Integer)
     paid_amount: Mapped[int | None] = mapped_column(Integer)
     paid_on: Mapped[date | None] = mapped_column(Date)
     expense_id: Mapped[int | None] = mapped_column(ForeignKey("expenses.id", name="fk_meter_readings_expense_id"))
@@ -390,20 +345,18 @@ class MeterReading(Base):
 
 
 class GeneratorRun(Base):
-    """Робота генератора. Параметри (витрата, ціна бензину, амортизація) — знімок на момент запуску."""
 
     __tablename__ = "generator_runs"
 
     id: Mapped[int] = mapped_column(primary_key=True)
     started_at: Mapped[datetime] = mapped_column(DateTime, index=True)
     ended_at: Mapped[datetime | None] = mapped_column(DateTime)
-    # True лише в одного запису, що зараз працює (UNIQUE) — двох одночасних запусків бути не може
     running: Mapped[bool | None] = mapped_column(Boolean, unique=True)
-    hours_milli: Mapped[int] = mapped_column(Integer, default=0)  # мотогодини × 1000
-    fuel_lph_milli: Mapped[int] = mapped_column(Integer)  # л/год × 1000
-    fuel_price: Mapped[int] = mapped_column(Integer)  # копійок за 1 л
-    amort_per_hour: Mapped[int] = mapped_column(Integer)  # копійок за мотогодину
-    fuel_milli: Mapped[int] = mapped_column(Integer, default=0)  # літри × 1000
+    hours_milli: Mapped[int] = mapped_column(Integer, default=0)
+    fuel_lph_milli: Mapped[int] = mapped_column(Integer)
+    fuel_price: Mapped[int] = mapped_column(Integer)
+    amort_per_hour: Mapped[int] = mapped_column(Integer)
+    fuel_milli: Mapped[int] = mapped_column(Integer, default=0)
     fuel_cost: Mapped[int] = mapped_column(Integer, default=0)
     amort_cost: Mapped[int] = mapped_column(Integer, default=0)
     total_cost: Mapped[int] = mapped_column(Integer, default=0)
@@ -415,18 +368,16 @@ class GeneratorRun(Base):
 
 
 class MasterCharge(Base):
-    """Списання з майстра (частка комунальних/генератора). Лише додавання: скасування — рядок-сторно.
-    dedupe_key (UNIQUE) не дає списати двічі за той самий місяць/зміну."""
 
     __tablename__ = "master_charges"
 
     id: Mapped[int] = mapped_column(primary_key=True)
     master_id: Mapped[int] = mapped_column(ForeignKey("users.id", name="fk_master_charges_master_id"), index=True)
-    kind: Mapped[str] = mapped_column(String(24))  # utilities_month | utilities_shift | utilities_fixed_month | reversal
+    kind: Mapped[str] = mapped_column(String(24))
     charged_on: Mapped[date] = mapped_column(Date, index=True)
-    period: Mapped[date] = mapped_column(Date)  # місяць (перше число)
+    period: Mapped[date] = mapped_column(Date)
     shift_id: Mapped[int | None] = mapped_column(ForeignKey("shifts.id", name="fk_master_charges_shift_id"))
-    amount: Mapped[int] = mapped_column(Integer)  # копійки; сторно — від'ємне
+    amount: Mapped[int] = mapped_column(Integer)
     dedupe_key: Mapped[str | None] = mapped_column(String(64), unique=True)
     reverses_id: Mapped[int | None] = mapped_column(ForeignKey("master_charges.id", name="fk_master_charges_reverses_id"))
     reversed: Mapped[bool] = mapped_column(Boolean, default=False)
@@ -438,7 +389,6 @@ class MasterCharge(Base):
 
 
 class LedgerEntry(Base):
-    """Журнал фінансових операцій. Тільки додавання, ніколи не змінюється."""
 
     __tablename__ = "ledger"
 
@@ -457,16 +407,14 @@ class LedgerEntry(Base):
 
 
 class AuditLog(Base):
-    """Історія змін сутностей (хто, коли, що було, що стало, чому)."""
 
     __tablename__ = "audit_log"
-    # індекси для звітів і списків за датою
     __table_args__ = (Index("ix_audit_ts", "ts"), Index("ix_audit_entity", "entity", "entity_id"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
     ts: Mapped[datetime] = mapped_column(DateTime, default=_now)
     user_id: Mapped[int | None] = mapped_column(Integer)
-    actor: Mapped[str] = mapped_column(String(64))  # username / "telegram:<id>" / "system"
+    actor: Mapped[str] = mapped_column(String(64))
     entity: Mapped[str] = mapped_column(String(32))
     entity_id: Mapped[int] = mapped_column(Integer)
     action: Mapped[str] = mapped_column(String(32))
@@ -483,7 +431,6 @@ class Setting(Base):
 
 
 class CallbackRequest(Base):
-    """«Швидкий запис»: клієнт лишив номер, адміністратор/директор передзвонює."""
 
     __tablename__ = "callback_requests"
 
@@ -491,15 +438,13 @@ class CallbackRequest(Base):
     phone: Mapped[str] = mapped_column(String(32))
     name: Mapped[str | None] = mapped_column(String(128))
     telegram_user_id: Mapped[int | None] = mapped_column(BigInteger)
-    status: Mapped[str] = mapped_column(String(16), default="new")  # new | done
+    status: Mapped[str] = mapped_column(String(16), default="new")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
     handled_at: Mapped[datetime | None] = mapped_column(DateTime)
     handled_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
 
 
 class Notification(Base):
-    """Черга повідомлень Telegram (outbox). Записується в тій самій транзакції,
-    що й подія; доставляє процес бота."""
 
     __tablename__ = "notifications"
     __table_args__ = (Index("ix_notif_pending", "sent_at"),)
@@ -507,9 +452,7 @@ class Notification(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     chat_id: Mapped[int] = mapped_column(BigInteger)
     text: Mapped[str] = mapped_column(Text)
-    # кнопки під повідомленням: [[["Текст", "callback_data"], ...], ...]
     buttons: Mapped[list | None] = mapped_column(JSON)
-    # фото до повідомлення (файл у data_dir), напр. знімок екрана в баг-репорті
     photo_path: Mapped[str | None] = mapped_column(String(255))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
     sent_at: Mapped[datetime | None] = mapped_column(DateTime)
@@ -548,11 +491,6 @@ __all__ = [
 
 
 class CardPayment(Base):
-    """Оплата карткою через застосунок «Термінал» ПриватБанку (NFC на планшеті).
-
-    Створюється ДО оплати (статус pending, токен банку); замовлення закривається лише після того, як
-    сервер сам перевірив результат у банку (check.php, response_code "00"). Повторна перевірка не задвоює оплату.
-    """
 
     __tablename__ = "card_payments"
     __table_args__ = (Index("ix_card_payment_appt", "appointment_id", "status"),)
@@ -560,12 +498,12 @@ class CardPayment(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     appointment_id: Mapped[int] = mapped_column(ForeignKey("appointments.id"))
     order_id: Mapped[int | None] = mapped_column(ForeignKey("orders.id"))
-    amount: Mapped[int] = mapped_column(Integer)  # копійки
-    status: Mapped[str] = mapped_column(String(16), default="pending")  # pending | paid | failed
-    mode: Mapped[str] = mapped_column(String(8))  # mock | live
-    jwt: Mapped[str | None] = mapped_column(Text)  # токен операції банку (одноразовий, не ключ)
+    amount: Mapped[int] = mapped_column(Integer)
+    status: Mapped[str] = mapped_column(String(16), default="pending")
+    mode: Mapped[str] = mapped_column(String(8))
+    jwt: Mapped[str | None] = mapped_column(Text)
     rid: Mapped[str | None] = mapped_column(String(64))
-    close_params: Mapped[dict | None] = mapped_column(JSON)  # матеріали, ім'я клієнта — для закриття після оплати
+    close_params: Mapped[dict | None] = mapped_column(JSON)
     transaction_id: Mapped[str | None] = mapped_column(String(64))
     rrn: Mapped[str | None] = mapped_column(String(32))
     approval_code: Mapped[str | None] = mapped_column(String(16))
@@ -573,26 +511,24 @@ class CardPayment(Base):
     payment_system: Mapped[str | None] = mapped_column(String(32))
     response_code: Mapped[str | None] = mapped_column(String(8))
     message: Mapped[str | None] = mapped_column(String(255))
-    receipt: Mapped[str | None] = mapped_column(Text)  # HTML-чек банку
+    receipt: Mapped[str | None] = mapped_column(Text)
     created_by: Mapped[int | None] = mapped_column(Integer)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
 
 
 class TaxRate(Base):
-    """Ставка/показник з періодом дії. Значення НЕ зашиті в код — вводить директор/бухгалтер.
-    key: min_wage | single_tax | military_fop | esv_fop | pdfo | military_payroll | esv_employer."""
 
     __tablename__ = "tax_rates"
 
     id: Mapped[int] = mapped_column(primary_key=True)
     key: Mapped[str] = mapped_column(String(24), index=True)
-    rate_bp: Mapped[int | None] = mapped_column(Integer)  # ставка в bp (2000 = 20%)
-    amount: Mapped[int | None] = mapped_column(Integer)  # фіксована сума, копійки (напр. мінімальна зарплата)
-    base: Mapped[str] = mapped_column(String(16), default="fixed")  # min_wage | income | salary | salary_min_wage | fixed
-    period: Mapped[str] = mapped_column(String(8), default="month")  # month | quarter
-    due_day: Mapped[int | None] = mapped_column(Integer)  # день сплати
-    due_from: Mapped[str] = mapped_column(String(8), default="end")  # start | end — від початку чи кінця періоду
+    rate_bp: Mapped[int | None] = mapped_column(Integer)
+    amount: Mapped[int | None] = mapped_column(Integer)
+    base: Mapped[str] = mapped_column(String(16), default="fixed")
+    period: Mapped[str] = mapped_column(String(8), default="month")
+    due_day: Mapped[int | None] = mapped_column(Integer)
+    due_from: Mapped[str] = mapped_column(String(8), default="end")
     due_offset_months: Mapped[int] = mapped_column(Integer, default=0)
     valid_from: Mapped[date] = mapped_column(Date)
     valid_to: Mapped[date | None] = mapped_column(Date)
@@ -602,7 +538,6 @@ class TaxRate(Base):
 
 
 class TaxAccrual(Base):
-    """Нарахування податку ФОП за період. Лише додавання: виправлення — сторно + нове нарахування."""
 
     __tablename__ = "tax_accruals"
 
@@ -612,7 +547,7 @@ class TaxAccrual(Base):
     period_end: Mapped[date] = mapped_column(Date)
     base_amount: Mapped[int] = mapped_column(Integer)
     rate_bp: Mapped[int | None] = mapped_column(Integer)
-    amount: Mapped[int] = mapped_column(Integer)  # сторно — від'ємне
+    amount: Mapped[int] = mapped_column(Integer)
     due_date: Mapped[date] = mapped_column(Date)
     dedupe_key: Mapped[str | None] = mapped_column(String(64), unique=True)
     reverses_id: Mapped[int | None] = mapped_column(ForeignKey("tax_accruals.id", name="fk_tax_accruals_reverses_id"))
@@ -638,8 +573,6 @@ class TaxPayment(Base):
 
 
 class PayrollAccrual(Base):
-    """Офіційне (юридичне) нарахування зарплати працівнику за місяць. НЕ пов'язане з управлінським
-    поділом 50/50. Лише додавання: виправлення — сторно + нове нарахування."""
 
     __tablename__ = "payroll_accruals"
 
@@ -652,7 +585,7 @@ class PayrollAccrual(Base):
     net: Mapped[int] = mapped_column(Integer)
     esv_employer: Mapped[int] = mapped_column(Integer)
     esv_base: Mapped[int] = mapped_column(Integer)
-    rates: Mapped[dict | None] = mapped_column(JSON)  # знімок ставок на дату нарахування
+    rates: Mapped[dict | None] = mapped_column(JSON)
     dedupe_key: Mapped[str | None] = mapped_column(String(64), unique=True)
     reverses_id: Mapped[int | None] = mapped_column(ForeignKey("payroll_accruals.id", name="fk_payroll_accruals_reverses_id"))
     reversed: Mapped[bool] = mapped_column(Boolean, default=False)
@@ -677,24 +610,21 @@ class PayrollPayment(Base):
 
 
 class EmployeeProfile(Base):
-    """Кадрові дані найманого працівника для офіційної зарплати і звітів (Податковий розрахунок).
-    Окремо від облікового запису: майстер у системі ≠ обов'язково найманий працівник."""
 
     __tablename__ = "employee_profiles"
 
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", name="fk_employee_profiles_user_id"), unique=True)
-    tin: Mapped[str | None] = mapped_column(String(10))  # РНОКПП
+    tin: Mapped[str | None] = mapped_column(String(10))
     position: Mapped[str | None] = mapped_column(String(128))
     hired_on: Mapped[date | None] = mapped_column(Date)
     fired_on: Mapped[date | None] = mapped_column(Date)
-    main_job: Mapped[bool] = mapped_column(Boolean, default=True)  # основне місце роботи (мінімальна база ЄСВ)
+    main_job: Mapped[bool] = mapped_column(Boolean, default=True)
     note: Mapped[str | None] = mapped_column(Text)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
 
 
 class ExpenseFile(Base):
-    """Фото або файл документа до витрати (чек, накладна). Зберігається в базі — потрапляє в резервні копії."""
 
     __tablename__ = "expense_files"
 
@@ -709,7 +639,6 @@ class ExpenseFile(Base):
 
 
 class LoginChallenge(Base):
-    """Код підтвердження входу (двофакторний вхід): надсилається в Telegram, зберігається лише хеш."""
 
     __tablename__ = "login_challenges"
 
@@ -723,15 +652,14 @@ class LoginChallenge(Base):
 
 
 class TrustedDevice(Base):
-    """Пристрій, на якому вже підтвердили вхід кодом («запам'ятати на 30 днів»). Зберігається лише хеш токена."""
 
     __tablename__ = "trusted_devices"
 
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", name="fk_trusted_devices_user_id", ondelete="CASCADE"), index=True)
     token_hash: Mapped[str] = mapped_column(String(64), unique=True)
-    label: Mapped[str | None] = mapped_column(String(160))  # браузер / застосунок
-    token_version: Mapped[int] = mapped_column(Integer, default=0)  # зміна пароля → пристрої забуваються
+    label: Mapped[str | None] = mapped_column(String(160))
+    token_version: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
     last_used_at: Mapped[datetime | None] = mapped_column(DateTime)
     expires_at: Mapped[datetime] = mapped_column(DateTime)
@@ -744,24 +672,22 @@ def _client_search_name(_mapper, _conn, c: Client) -> None:
 
 
 class SmsCampaign(Base):
-    """Одноразова SMS/Viber-розсилка директора (лише клієнтам зі згодою на рекламу)."""
 
     __tablename__ = "sms_campaigns"
 
     id: Mapped[int] = mapped_column(primary_key=True)
     title: Mapped[str] = mapped_column(String(120))
     text: Mapped[str] = mapped_column(Text)
-    audience: Mapped[str] = mapped_column(String(32))  # all | new | regular | vip | lapsed | inactive | birthdays | return_due
-    status: Mapped[str] = mapped_column(String(16), default="queued")  # queued | done
+    audience: Mapped[str] = mapped_column(String(32))
+    status: Mapped[str] = mapped_column(String(16), default="queued")
     recipients: Mapped[int] = mapped_column(Integer, default=0)
-    cost: Mapped[int] = mapped_column(Integer, default=0)  # копійки (оцінка: кількість × ціна SMS)
+    cost: Mapped[int] = mapped_column(Integer, default=0)
     expense_id: Mapped[int | None] = mapped_column(Integer)
     created_by: Mapped[int | None] = mapped_column(Integer)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
 
 
 class SmsMessage(Base):
-    """Історія SMS/Viber: кожне повідомлення клієнту зі статусом доставки."""
 
     __tablename__ = "sms_messages"
     __table_args__ = (Index("ix_sms_status_created", "status", "created_at"),)
@@ -771,9 +697,8 @@ class SmsMessage(Base):
     campaign_id: Mapped[int | None] = mapped_column(ForeignKey("sms_campaigns.id", name="fk_sms_messages_campaign_id"), index=True)
     phone: Mapped[str] = mapped_column(String(32))
     text: Mapped[str] = mapped_column(Text)
-    kind: Mapped[str] = mapped_column(String(16))  # service | marketing
-    reason: Mapped[str | None] = mapped_column(String(32))  # shift | birthday | return | campaign | test …
-    # queued → sent → delivered | failed; not_configured — TurboSMS не підключено
+    kind: Mapped[str] = mapped_column(String(16))
+    reason: Mapped[str | None] = mapped_column(String(32))
     status: Mapped[str] = mapped_column(String(16), default="queued")
     provider_id: Mapped[str | None] = mapped_column(String(64))
     error: Mapped[str | None] = mapped_column(String(200))

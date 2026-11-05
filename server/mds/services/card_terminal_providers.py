@@ -1,14 +1,3 @@
-"""«Термінал» ПриватБанку (NFC на планшеті) — серверна частина App-to-App інтеграції.
-
-Документація банку: https://app.privatbank.ua/nfcpos (handbook: privatbank.ua/handbook/sumishennya_zastosunok_terminal).
-Потік: сервер → token.php (JWT операції) → планшет відкриває nfcterminal://executor?token=…&callback=… →
-клієнт платить → сервер → check.php (фінальний результат, успіх лише при response_code "00").
-
-Ключі (лише змінні сервера, не БД і не журнали):
-  MDS_PRIVAT_TERMINAL_CLID, MDS_PRIVAT_TERMINAL_SECRET — видає банк інтегратору;
-  MDS_PRIVAT_TERMINAL_CLIENT_TOKEN — ключ підприємства з кабінету terminal.pb.ua («Інтеграція»).
-"""
-
 from __future__ import annotations
 
 import hashlib
@@ -29,20 +18,18 @@ MODES = ("off", "mock", "live")
 
 
 class TerminalError(Exception):
-    """Помилка банку або зв'язку. Повідомлення без ключів."""
+    pass
 
 
 class TerminalUnavailable(TerminalError):
-    """Мережа / 5xx — можна повторити перевірку пізніше."""
+    pass
 
 
 def sign(secret: str, signed: str, data: str) -> str:
-    """signature = sha1(signed + secret + data + secret) — за документацією банку."""
     return hashlib.sha1((signed + secret + data + secret).encode("utf-8")).hexdigest()
 
 
 def body_json(data: dict, amount_kop: int | None = None) -> str:
-    """Тіло запиту рівно тими байтами, що підписуються. Сума — число з 2 знаками (грн), без float."""
     d = dict(data)
     if amount_kop is not None:
         d["amount"] = "__AMOUNT__"
@@ -66,7 +53,7 @@ HttpFn = Callable[[str, bytes, dict, float], tuple[int, bytes]]
 def _urllib(url: str, body: bytes, headers: dict, timeout: float) -> tuple[int, bytes]:
     req = urllib.request.Request(url, data=body, method="POST", headers=headers)
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as r:  # noqa: S310 — лише https BASE_URL
+        with urllib.request.urlopen(req, timeout=timeout) as r:  # noqa: S310
             return r.status, r.read()
     except urllib.error.HTTPError as e:
         return e.code, e.read() or b""
@@ -97,7 +84,7 @@ class PrivatTerminalProvider:
             payload = json.loads(raw.decode("utf-8")) if raw else {}
         except ValueError:
             payload = {}
-        if status >= 500 or status == 418:  # 418 — підпис застарів (годинник), можна повторити
+        if status >= 500 or status == 418:
             raise TerminalUnavailable(f"Банк: HTTP {status}")
         if status >= 400 or payload.get("success") is False:
             msg = payload.get("message") or f"HTTP {status}"
@@ -117,13 +104,12 @@ class PrivatTerminalProvider:
 
 
 class FakeTerminalProvider:
-    """Імітація для тестів і режиму mock: «оплата» відбувається, коли викликано complete()."""
 
     name = "mock"
 
     def __init__(self):
         self.ops: dict[str, dict] = {}
-        self.fail_next: str | None = None  # "decline" | "unavailable" | "reject"
+        self.fail_next: str | None = None
         self.n = 0
 
     def create_pay(self, amount_kop: int, purpose: str) -> dict:
@@ -146,7 +132,7 @@ class FakeTerminalProvider:
         if op is None:
             raise TerminalError("Банк відхилив запит: операцію не знайдено")
         if op["state"] == "new":
-            return {"success": True}  # клієнт ще не оплатив
+            return {"success": True}
         a = op["amount"]
         ok = op["state"] == "paid"
         return {"success": True, "pay": {
@@ -161,7 +147,6 @@ _mock = FakeTerminalProvider()
 
 
 def set_provider(p) -> None:
-    """Лише для тестів."""
     global _override
     _override = p
 

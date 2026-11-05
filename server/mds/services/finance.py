@@ -1,14 +1,3 @@
-"""Фінансове ядро: поділ виручки між майстром і салоном.
-
-Базові правила (детально — docs/FINANCE.md):
-  revenue (amount) = master_earning + materials_cost + salon_earning  — завжди.
-
-Режими обліку матеріалів:
-  salon  (за замовч.): master = amount × share;              салон несе матеріали
-  master:              master = amount × share − materials;  майстер несе матеріали
-  split:               master = (amount − materials) × share; матеріали ділять пропорційно
-"""
-
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -23,11 +12,10 @@ class Split:
     amount: int
     materials: int
     master: int
-    salon: int  # чиста частка салону після матеріалів
+    salon: int
 
     @property
     def salon_gross(self) -> int:
-        """Частка салону до вирахування матеріалів."""
         return self.amount - self.master
 
 

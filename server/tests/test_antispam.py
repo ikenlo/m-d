@@ -1,5 +1,3 @@
-"""Захист від спаму записів: бот і сайт (публічний API)."""
-
 from datetime import datetime
 
 import pytest
@@ -31,17 +29,14 @@ def test_bot_limits_active_per_day_and_block(db, seed):
         _book(s, seed, 12)
         with pytest.raises(TooMany, match="2 активні"):
             _book(s, seed, 14)
-        # скасування не звільняє добовий ліміт (захист від «записав/скасував»)
         a = s.query(Appointment).first()
         bookings.set_status(s, seed["actors"]["director"], a.id, "cancelled")
-        _book(s, seed, 14)  # третій за добу — ще можна
+        _book(s, seed, 14)
         b = s.query(Appointment).filter_by(status="pending").first()
         bookings.set_status(s, seed["actors"]["director"], b.id, "cancelled")
         with pytest.raises(TooMany, match="за добу"):
             _book(s, seed, 16)
-        # адміністратор записує без обмежень
         _book(s, seed, 16, actor=seed["actors"]["admin"])
-        # блокування клієнта
         c = s.query(Client).one()
         catalog.update_client(s, seed["actors"]["director"], c.id, {"blocked": True, "blocked_reason": "спам"})
         update_settings(s, seed["actors"]["director"], {"antispam_max_active": 0, "antispam_max_per_day": 0})
@@ -58,7 +53,6 @@ def test_pending_queue_limit_and_callbacks(db, seed):
         _book(s, seed, 12, phone="0670000002", actor=Actor.telegram(2))
         with pytest.raises(TooMany, match="багато нових записів"):
             _book(s, seed, 14, phone="0670000003", actor=Actor.telegram(3))
-        # заявки «передзвоніть»: 2 за добу з номера (повтор протягом години — та сама заявка)
         callbacks.create_request(s, TG, "0671112233", "Оля")
         clock.set_now(datetime(2026, 11, 2, 10))
         callbacks.create_request(s, TG, "0671112233", "Оля")

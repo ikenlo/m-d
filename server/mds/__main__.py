@@ -1,15 +1,3 @@
-"""Командний рядок MDS Connect.
-
-  python -m mds init                 — створити/оновити БД і першого директора
-  python -m mds migrate              — застосувати міграції
-  python -m mds create-user ...      — додати співробітника
-  python -m mds run                  — API + веб-панель + Telegram-бот + авто-бекапи
-  python -m mds serve                — лише API та веб-панель
-  python -m mds bot                  — лише Telegram-бот
-  python -m mds backup               — зробити резервну копію зараз
-  python -m mds start                — для хостингу: міграції + перший директор зі змінних + run
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -65,8 +53,6 @@ def cmd_init(cfg: Config, args) -> None:
 
 
 def bootstrap_director(cfg: Config) -> str:
-    """Перший запуск на хостингу без консолі: створити директора зі змінних оточення
-    MDS_DIRECTOR_USERNAME / MDS_DIRECTOR_PASSWORD / MDS_DIRECTOR_NAME, якщо директора ще немає."""
     import os
 
     from sqlalchemy import select
@@ -93,7 +79,6 @@ def bootstrap_director(cfg: Config) -> str:
 
 
 def bootstrap_catalog(cfg: Config) -> int:
-    """Якщо послуг ще немає — завантажити прайс салону з mds/seed/services.json."""
     import json
     from pathlib import Path
 
@@ -124,13 +109,11 @@ def cmd_start(cfg: Config, args) -> None:
     bootstrap_catalog(cfg)
     mark = os.environ.get("MDS_WIPE_DATA", "").strip()
     if mark:
-        # одноразове очищення робочих даних (для кожної нової мітки); перед ним — резервна копія
         from .wipe import already_wiped
 
         if not already_wiped(_db(cfg), mark):
             _wipe(cfg, mark)
     if os.environ.get("MDS_DEMO_FOP1", "").strip().lower() == "yes":
-        # тестове середовище: замінити демо-дані на сценарій «ФОП 1 група» (окремий процес)
         import subprocess
 
         subprocess.Popen([sys.executable, "-m", "mds", "demo-fop1"])
@@ -146,14 +129,12 @@ def _wipe(cfg: Config, mark: str | None) -> None:
 
 
 def cmd_wipe_data(cfg: Config, args) -> None:
-    """Очистити робочі дані (лишаються акаунти, послуги, налаштування). Потрібне --yes."""
     if not args.yes:
         raise SystemExit("Незворотна дія. Додайте --yes, щоб підтвердити (резервна копія буде зроблена).")
     _wipe(cfg, None)
 
 
 def cmd_demo_fop1(cfg: Config, _args) -> None:
-    """Тестове середовище: резервна копія → видалити старі демо-дані → сценарій «ФОП 1 група» (повтор — пропуск)."""
     from sqlalchemy import select
 
     from .demo_fop1 import FOP_LOGIN, purge_demo, seed_fop1
@@ -168,7 +149,6 @@ def cmd_demo_fop1(cfg: Config, _args) -> None:
     print("Резервна копія перед заміною демо-даних:", make_backup(cfg.database_url, cfg.backup_dir, cfg.backup_keep), flush=True)
     print(purge_demo(db), flush=True)
     print(seed_fop1(db), flush=True)
-
 
 
 def cmd_create_user(cfg: Config, args) -> None:

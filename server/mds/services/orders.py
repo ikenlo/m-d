@@ -1,5 +1,3 @@
-"""Закриття замовлень, зміни майстрів, виплати, виправлення директором."""
-
 from __future__ import annotations
 
 from datetime import date, datetime, time, timedelta
@@ -54,7 +52,6 @@ def order_public(o: Order) -> dict:
         "salon_earning": o.salon_earning,
         "closed_at": o.closed_at.isoformat(),
         "revision": o.revision,
-        # фарбування тощо закрито без матеріалів — майстер має дописати витрату (склад і собівартість)
         "needs_materials": bool(o.service.needs_materials) and not o.materials,
     }
 
@@ -73,11 +70,6 @@ def _order_snapshot(o: Order) -> dict:
 
 
 def _build_materials(s: Session, items: list[dict]) -> list[OrderMaterial]:
-    """items: [{material_id?, name?, qty, unit_cost?}]
-
-    Матеріал зі складу (material_id): qty — у базових одиницях матеріалу (г / мл / шт),
-    собівартість рахується від ціни упаковки. Довільний матеріал (без material_id):
-    qty — штуки, unit_cost — ціна за штуку; на склад не впливає."""
     out = []
     for it in items or []:
         from .stock import to_milli
@@ -108,8 +100,6 @@ def _build_materials(s: Session, items: list[dict]) -> list[OrderMaterial]:
     return out
 
 
-# ------------------------------------------------------------------- зміни
-
 def current_shift(s: Session, master_id: int) -> Shift | None:
     return s.scalar(select(Shift).where(Shift.master_id == master_id, Shift.status == ShiftStatus.OPEN))
 
@@ -120,7 +110,6 @@ def open_shift(s: Session, actor: Actor, master_id: int) -> Shift:
     master: User = get_or_404(s, User, master_id, "Майстра")
     if master.role != Role.MASTER:
         raise ValidationError("Зміни ведуться лише для майстрів")
-    # серіалізуємо відкриття зміни для майстра
     s.execute(update(User).where(User.id == master_id).values(booking_lock=User.booking_lock + 1))
     sh = current_shift(s, master_id)
     if sh:
@@ -131,8 +120,6 @@ def open_shift(s: Session, actor: Actor, master_id: int) -> Shift:
     audit(s, actor, "shift", sh.id, "open")
     return sh
 
-
-# --------------------------------------------------------- закриття замовлення
 
 def close_order(
     s: Session,
@@ -145,14 +132,6 @@ def close_order(
     idempotency_key: str | None = None,
     client_name: str | None = None,
 ) -> Order:
-    """Закрити замовлення: фіксує виручку, рахує частки, пише журнал.
-
-    client_name — ім'я та прізвище клієнта, уточнені майстром (напр. замість нікнейму
-    з Telegram); оновлюється в картці клієнта.
-
-    Повторний виклик з тим самим idempotency_key повертає вже створене
-    замовлення (захист від подвійного натискання / повтору запиту).
-    """
     if idempotency_key:
         existing = s.scalar(select(Order).where(Order.idempotency_key == idempotency_key))
         if existing:
@@ -175,7 +154,6 @@ def close_order(
         if len(client_name) > 128:
             raise ValidationError("Ім'я клієнта задовге")
 
-    # Атомарний перехід статусу: лише один запит зможе перевести запис у COMPLETED.
     res = s.execute(
         update(Appointment)
         .where(Appointment.id == appt_id, Appointment.status.in_(ApptStatus.CLOSABLE))
@@ -235,12 +213,6 @@ def close_order(
 
 
 def correct_order(s: Session, actor: Actor, order_id: int, data: dict, reason: str) -> Order:
-    """Виправлення закритого замовлення директором.
-
-    Журнал: сторно старих сум + проведення нових; історія — в audit_log.
-    Якщо зміна вже виплачена, різниця автоматично потрапляє в баланс майстра.
-    Майстер (і адміністратор) може змінити лише матеріали — свого замовлення за останні 14 днів.
-    """
     o: Order = get_or_404(s, Order, order_id, "Замовлення")
     if not actor.is_director:
         only_materials = set(data) <= {"materials"} and "materials" in data
@@ -312,10 +284,7 @@ def list_orders(
     return list(s.scalars(q.order_by(Order.closed_at.desc())).unique())
 
 
-# ------------------------------------------------------------ звіт зміни
-
 def shift_report(s: Session, sh: Shift, charge: int | None = None) -> dict:
-    """charge — списання комунальних при закритті зміни (режим fixed); None — попередній розрахунок."""
     orders = list(s.scalars(select(Order).where(Order.shift_id == sh.id).order_by(Order.closed_at)))
     end = sh.closed_at or clock.now()
     day_from = datetime.combine(sh.opened_at.date(), time.min)
@@ -337,14 +306,12 @@ def shift_report(s: Session, sh: Shift, charge: int | None = None) -> dict:
         by_payment[o.payment_method] = by_payment.get(o.payment_method, 0) + o.amount
     master_earning = sum(o.master_earning for o in orders)
     revenue = sum(o.amount for o in orders)
-    # Розрахунок готівки: майстер бере заробіток із готівки клієнтів, решту готівки лишає в касі;
-    # якщо готівки не вистачило (клієнти платили карткою) — різницю доплачує директор.
     cash = by_payment.get("cash", 0)
     if charge is None:
         from .utilities import shift_charge
 
         charge = shift_charge(s, sh.master_id, sh)[0] if sh.status == ShiftStatus.OPEN else 0
-    net_earning = master_earning - charge  # після списання комунальних (якщо ввімкнено фіксовану ставку)
+    net_earning = master_earning - charge
     takes_cash = bool(get_setting(s, "master_takes_cash"))
     take = min(max(net_earning, 0), cash) if takes_cash else 0
     director_pays = max(net_earning - take, 0)
@@ -379,7 +346,6 @@ def shift_report(s: Session, sh: Shift, charge: int | None = None) -> dict:
 
 
 def shift_payouts(s: Session, shift_ids: list[int]) -> dict:
-    """Виплати для кількох змін одним запитом: {("shift"|"cash", shift_id): Payout} — без N+1 у списку змін."""
     out: dict = {}
     if not shift_ids:
         return out
@@ -424,13 +390,12 @@ def close_shift(s: Session, actor: Actor, master_id: int) -> Shift:
     s.flush()
     from .utilities import charge_on_shift_close
 
-    charged = charge_on_shift_close(s, actor, sh)  # фіксоване списання комунальних (один раз — dedupe_key)
+    charged = charge_on_shift_close(s, actor, sh)
     report = shift_report(s, sh, charge=charged)
     sh.report = {k: v for k, v in report.items() if k != "orders"} | {"order_ids": [o["id"] for o in report["orders"]]}
     sh.payout_due = report["payout_due"]
     take = report["cash"]["master_takes"]
     if take > 0:
-        # майстер забрав свій заробіток із каси — це фактична виплата
         p = Payout(master_id=master_id, cash_shift_id=sh.id, amount=take, method=PaymentMethod.CASH,
                    note=f"Взято з каси при закритті зміни #{sh.id}", paid_at=sh.closed_at, confirmed_by=actor.user_id or master_id)
         s.add(p)
@@ -438,7 +403,7 @@ def close_shift(s: Session, actor: Actor, master_id: int) -> Shift:
         ledger(s, actor, "payout", "payout", p.id, master_id=master_id, amount=take, master_amount=-take,
                details={"shift_id": sh.id, "method": "cash", "from_till": True})
     if sh.payout_due <= 0:
-        sh.status = ShiftStatus.PAID  # усе вже отримано з каси — директору доплачувати нічого
+        sh.status = ShiftStatus.PAID
     audit(s, actor, "shift", sh.id, "close", None, sh.report)
     ledger(
         s, actor, "shift_closed", "shift", sh.id, master_id=master_id,
@@ -481,8 +446,6 @@ def get_shift(s: Session, actor: Actor, shift_id: int) -> Shift:
     return sh
 
 
-# ---------------------------------------------------------------- виплати
-
 def payout_public(p: Payout) -> dict:
     return {
         "id": p.id,
@@ -507,7 +470,6 @@ def confirm_payout(
     method: str = PaymentMethod.CASH,
     note: str | None = None,
 ) -> Payout:
-    """Директор підтверджує фактичну виплату майстру (за зміну або довільну)."""
     actor.require(Role.DIRECTOR)
     if amount <= 0:
         raise ValidationError("Сума виплати має бути більшою за 0")
@@ -515,7 +477,6 @@ def confirm_payout(
         raise ValidationError("Невідомий спосіб виплати")
     master: User = get_or_404(s, User, master_id, "Майстра")
     if shift_id is not None:
-        # атомарно: лише одна виплата може перевести зміну в PAID
         res = s.execute(
             update(Shift)
             .where(Shift.id == shift_id, Shift.master_id == master_id, Shift.status == ShiftStatus.CLOSED)
@@ -539,12 +500,11 @@ def confirm_payout(
 
 
 def master_balance(s: Session, master_id: int) -> dict:
-    """Нараховано за весь час − виплачено = борг салону перед майстром."""
     from .utilities import charges_total
 
     accrued = s.scalar(select(func.coalesce(func.sum(Order.master_earning), 0)).where(Order.master_id == master_id)) or 0
     paid = s.scalar(select(func.coalesce(func.sum(Payout.amount), 0)).where(Payout.master_id == master_id)) or 0
-    charged = charges_total(s, master_id=master_id)  # списання комунальних/генератора
+    charged = charges_total(s, master_id=master_id)
     return {"accrued": int(accrued), "paid": int(paid), "charged": charged,
             "balance": int(accrued) - int(paid) - charged}
 
@@ -561,7 +521,6 @@ def list_payouts(s: Session, actor: Actor, *, master_id: int | None = None, limi
 
 
 def needing_materials(s: Session, actor: Actor, days: int = 14) -> list[Order]:
-    """Замовлення за `days` днів, закриті без матеріалів, хоча послуга завжди їх витрачає (фарбування)."""
     from ..models import OrderMaterial, Service
 
     q = (select(Order).join(Service, Order.service_id == Service.id)

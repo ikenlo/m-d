@@ -1,6 +1,3 @@
-"""Клієнтська база (Customer Intelligence): таблиця, картка зі статистикою, дублікати, аналітика, експорт.
-Реєструється раніше за catalog, щоб /api/clients/base тощо не сприймались як /api/clients/{id}."""
-
 from __future__ import annotations
 
 from datetime import date, timedelta
@@ -28,7 +25,6 @@ def base(q: str = "", segment: str = "", sort: str = "name", page: int = 1, per_
 
 @router.get("/lookup")
 def lookup(phone: str, actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
-    """Є клієнт із таким номером? (щоб відкрити картку, а не створювати новий)"""
     c = cb.find_by_phone(s, actor, phone)
     return {"found": bool(c), "client": client_public(c) if c else None}
 

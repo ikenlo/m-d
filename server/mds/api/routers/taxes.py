@@ -1,5 +1,3 @@
-"""Податки ФОП (ставки з датами, нарахування, сплати) і офіційна зарплата найманих — шар над services/taxes.py."""
-
 from __future__ import annotations
 
 from datetime import date

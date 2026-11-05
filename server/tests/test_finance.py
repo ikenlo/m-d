@@ -33,7 +33,7 @@ def test_split_always_balances(amount, bp, mode):
 
 
 def test_rounding_half_up():
-    assert percent_of(1, 5000) == 1  # 0.5 коп -> 1
+    assert percent_of(1, 5000) == 1
     assert percent_of(-1, 5000) == -1
     assert percent_of(3, 3333) == 1
 

@@ -1,21 +1,3 @@
-"""Податки ФОП і офіційна (юридична) зарплата працівників.
-
-ВАЖЛИВО:
-- Ставки, мінімальна зарплата, бази й строки сплати НЕ зашиті в код: це записи tax_rates з датами дії,
-  які вводить директор/бухгалтер. Нова ставка з датою автоматично завершує попередню (історія не змінюється).
-- Офіційна зарплата — окремий юридичний розрахунок. Управлінський поділ 50/50 (orders/finance.py) НЕ змінюється
-  і не підміняє нарахування зарплати.
-- Нарахування лише додаються: виправлення — сторно (від'ємний рядок) + нове нарахування.
-- Гроші — копійки, ставки — bp, округлення до копійки «половина вгору».
-
-Ключі ставок (key): min_wage (amount — мінімальна зарплата), single_tax, military_fop, esv_fop (податки ФОП),
-pdfo, military_payroll, esv_employer (зарплата). База (base): min_wage | income | fixed | salary | salary_min_wage.
-
-Кадрові дані працівника (EmployeeProfile): РНОКПП, посада, прийом/звільнення, основне місце роботи. Мінімальна база
-ЄСВ (не менше мінімальної зарплати) застосовується лише за основним місцем роботи і за повний місяць роботи —
-інакше база = фактичне нарахування (уточнюйте з бухгалтером особливі випадки: лікарняні, відпустки без збереження).
-"""
-
 from __future__ import annotations
 
 import calendar
@@ -43,7 +25,6 @@ BASES = ("min_wage", "income", "fixed", "salary", "salary_min_wage")
 
 
 def pct(amount: int, bp: int) -> int:
-    """amount × bp / 10000 з округленням до копійки (половина вгору; для від'ємних — симетрично)."""
     sign = -1 if amount < 0 else 1
     return sign * ((abs(amount) * bp + 5000) // 10000)
 
@@ -69,7 +50,6 @@ def period_bounds(d: date, period: str) -> tuple[date, date]:
     return a, b.replace(day=calendar.monthrange(b.year, b.month)[1])
 
 
-# =================================================================== ставки
 def rate_public(r: TaxRate) -> dict:
     return {"id": r.id, "key": r.key, "title": KEY_UA.get(r.key, r.key), "rate_bp": r.rate_bp, "amount": r.amount,
             "base": r.base, "period": r.period, "due_day": r.due_day, "due_from": r.due_from,
@@ -86,7 +66,6 @@ def rate_for(s: Session, key: str, on: date) -> TaxRate | None:
 def add_rate(s: Session, actor: Actor, *, key: str, valid_from: date, rate_bp: int | None = None, amount: int | None = None,
              base: str = "fixed", period: str = "month", due_day: int | None = None, due_from: str = "end",
              due_offset_months: int = 0, valid_to: date | None = None, note: str | None = None) -> TaxRate:
-    """Нова ставка з датою дії. Попередня відкрита ставка цього ключа завершується днем раніше."""
     actor.require(Role.DIRECTOR)
     if key not in ALL_KEYS:
         raise ValidationError("Невідомий вид ставки")
@@ -133,9 +112,7 @@ def _min_wage(s: Session, on: date) -> int:
     return r.amount
 
 
-# =================================================================== податки ФОП
 def _income(s: Session, a: date, b: date) -> int:
-    """Дохід ФОП за період — сума закритих замовлень (поточні редакції, після повернень)."""
     return int(s.scalar(select(func.coalesce(func.sum(Order.amount), 0)).where(
         Order.closed_at >= datetime.combine(a, time.min), Order.closed_at < datetime.combine(b + timedelta(days=1), time.min))) or 0)
 
@@ -163,7 +140,6 @@ def _calc_fop(s: Session, key: str, on: date) -> dict:
 
 
 def accrue_fop(s: Session, actor: Actor, key: str, on: date) -> TaxAccrual:
-    """Нарахувати податок ФОП за період, що містить дату on (один раз)."""
     actor.require(Role.DIRECTOR)
     if key not in FOP_KEYS:
         raise ValidationError("Невідомий податок ФОП")
@@ -183,7 +159,6 @@ def accrue_fop(s: Session, actor: Actor, key: str, on: date) -> TaxAccrual:
 
 
 def correct_fop(s: Session, actor: Actor, accrual_id: int, reason: str, amount: int | None = None) -> TaxAccrual:
-    """Виправлення: сторно старого + нове (перерахунок за поточними ставками або вказана сума)."""
     actor.require(Role.DIRECTOR)
     if not (reason or "").strip():
         raise ValidationError("Вкажіть причину виправлення")
@@ -226,7 +201,6 @@ def accrual_public(t: TaxAccrual) -> dict:
 
 
 def fop_summary(s: Session, actor: Actor, year: int) -> list[dict]:
-    """По кожному податку і періоду: нараховано (з урахуванням сторно), сплачено, борг, строк, прострочено."""
     actor.require(Role.DIRECTOR)
     a, b = date(year, 1, 1), date(year, 12, 31)
     rows: dict[tuple, dict] = {}
@@ -252,7 +226,6 @@ def fop_summary(s: Session, actor: Actor, year: int) -> list[dict]:
 
 
 def tax_reminders(s: Session, days_before: int = 5) -> int:
-    """Нагадати директору про строки сплати (один раз на нарахування)."""
     today = clock.now().date()
     n = 0
     for t in s.scalars(select(TaxAccrual).where(TaxAccrual.reversed.is_(False), TaxAccrual.amount > 0,
@@ -271,7 +244,6 @@ def tax_reminders(s: Session, days_before: int = 5) -> int:
     return n
 
 
-# =================================================================== офіційна зарплата
 def _payroll_rates(s: Session, on: date) -> dict:
     out = {}
     for k in PAYROLL_KEYS:
@@ -290,8 +262,6 @@ def _full_month(p: EmployeeProfile | None, m: date) -> bool:
 
 
 def calc_payroll(s: Session, gross: int, month: date, user_id: int | None = None) -> dict:
-    """Розрахунок: ПДФО і військовий збір утримуються із зарплати; ЄСВ — нарахування роботодавця зверху.
-    Мінімальна база ЄСВ — лише за основним місцем роботи і повний місяць (див. EmployeeProfile)."""
     if gross < 0:
         raise ValidationError("Сума не може бути від'ємною")
     m = month_start(month)
@@ -377,7 +347,6 @@ def salary_debt(s: Session, user_id: int, month: date) -> int:
 
 
 def pay_salary(s: Session, actor: Actor, *, user_id: int, month: date, amount: int, paid_on: date, note: str | None = None) -> PayrollPayment:
-    """Виплата офіційної зарплати (часткова або повна). Більше за борг — заборонено."""
     actor.require(Role.DIRECTOR)
     if amount <= 0:
         raise ValidationError("Сума виплати має бути більшою за 0")
@@ -412,7 +381,6 @@ def payroll_summary(s: Session, actor: Actor, month: date) -> dict:
         r["debt"] = r["net"] - r["paid"]
         out.append(r)
     tot = {k: sum(r[k] for r in out) for k in ("gross", "pdfo", "military", "net", "esv_employer", "paid", "debt")}
-    # до бюджету: ПДФО + військовий збір + ЄСВ роботодавця
     tot["to_budget"] = tot["pdfo"] + tot["military"] + tot["esv_employer"]
     tot["employer_cost"] = tot["gross"] + tot["esv_employer"]
     return {"month": m.isoformat(), "rows": sorted(out, key=lambda x: x["user_name"]), "totals": tot}
@@ -424,7 +392,6 @@ def payroll_history(s: Session, actor: Actor, user_id: int) -> list[dict]:
                                                   .order_by(PayrollAccrual.month.desc(), PayrollAccrual.id))]
 
 
-# =================================================================== кадрові дані і звіти по найманих
 def employee_public(u: User, p: EmployeeProfile | None) -> dict:
     return {"user_id": u.id, "full_name": u.full_name, "role": u.role, "is_active": u.is_active,
             "tin": p.tin if p else None, "position": p.position if p else None,
@@ -441,7 +408,6 @@ def list_employees(s: Session, actor: Actor) -> list[dict]:
 
 
 def set_employee(s: Session, actor: Actor, user_id: int, data: dict) -> dict:
-    """Кадрові дані (директор). РНОКПП — 10 цифр; звільнення не раніше прийому."""
     import re
 
     actor.require(Role.DIRECTOR)
@@ -470,8 +436,6 @@ def set_employee(s: Session, actor: Actor, user_id: int, data: dict) -> dict:
 
 
 def payroll_quarter(s: Session, actor: Actor, year: int, quarter: int) -> dict:
-    """Квартальна відомість для Податкового розрахунку: по працівнику і місяцю — нараховано, ПДФО, ВЗ,
-    база і сума ЄСВ (за місяцем нарахування) і виплачено (за датою виплати)."""
     actor.require(Role.DIRECTOR)
     if quarter not in (1, 2, 3, 4):
         raise ValidationError("Квартал — від 1 до 4")

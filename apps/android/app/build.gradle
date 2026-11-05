@@ -1,11 +1,8 @@
-// MDS Connect для Android — оболонка WebView над веб-панеллю салону.
-// Уся логіка на сервері: оновлення сайту одразу видно в застосунку, перевстановлювати не треба.
 plugins {
     id "com.android.application"
 }
 
 def appUrl = project.findProperty("appUrl") ?: "https://m-d-production.up.railway.app"
-// Підпис: ключ з GitHub Secrets (CI) або локальний файл; без нього — тестовий (debug) підпис.
 def ksFile = System.getenv("ANDROID_KEYSTORE_FILE")
 def ksPass = System.getenv("ANDROID_KEYSTORE_PASSWORD")
 

@@ -1,5 +1,3 @@
-"""Граничні значення на вході API: жодних 500, лише зрозумілі помилки 4xx."""
-
 from datetime import datetime
 
 from fastapi.testclient import TestClient

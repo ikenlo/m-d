@@ -1,5 +1,3 @@
-"""Звіт про доходи для декларації ФОП: суми по місяцях/кварталах/року, CSV, права."""
-
 from datetime import datetime
 
 import pytest
@@ -25,12 +23,12 @@ def _visit(db, seed, at, amount, pay="cash", master="m1", phone="0670000001"):
 
 @pytest.fixture
 def year_data(db, seed):
-    _visit(db, seed, datetime(2025, 12, 30, 10), 99900)  # минулий рік — не враховується
+    _visit(db, seed, datetime(2025, 12, 30, 10), 99900)
     a = _visit(db, seed, datetime(2026, 1, 15, 10), 50000, "cash")
     _visit(db, seed, datetime(2026, 1, 16, 12), 60000, "card", master="m2", phone="0670000002")
     _visit(db, seed, datetime(2026, 3, 31, 18), 70000, "card", phone="0670000003")
     _visit(db, seed, datetime(2026, 4, 1, 9), 45000, "cash", phone="0670000004")
-    _visit(db, seed, datetime(2027, 1, 2, 10), 88800)  # наступний рік — не враховується
+    _visit(db, seed, datetime(2027, 1, 2, 10), 88800)
     return {"first": a}
 
 
@@ -51,7 +49,7 @@ def test_year_report_exact_sums(db, seed, year_data):
 def test_quarter_report_year_to_date_and_limit(db, seed, year_data):
     d = seed["actors"]["director"]
     with db.session() as s:
-        update_settings(s, d, {"fop_income_limit": 144404900})  # 1 444 049 грн
+        update_settings(s, d, {"fop_income_limit": 144404900})
         r = tax_report.income_report(s, d, 2026, 2)
     assert [m["month"] for m in r["months"]] == ["2026-04", "2026-05", "2026-06"]
     assert r["total"]["total"] == 45000 and [q["quarter"] for q in r["quarters"]] == [2]

@@ -1,9 +1,3 @@
-"""Резервне копіювання БД.
-
-SQLite: онлайн-копія через sqlite3 backup API (безпечно під час роботи).
-PostgreSQL: використовуйте pg_dump за розкладом (див. docs/OPERATIONS.md).
-"""
-
 from __future__ import annotations
 
 import sqlite3
@@ -31,10 +25,8 @@ def make_backup(database_url: str, backup_dir: Path, keep: int = 30) -> Path:
     while dst.exists():
         dst = backup_dir / f"mds-{datetime.now():%Y%m%d-%H%M%S}-{i}.db"
         i += 1
-    # closing(): «with sqlite3.connect()» лише фіксує транзакцію, але не закриває з'єднання
     with closing(sqlite3.connect(src)) as source, closing(sqlite3.connect(dst)) as target:
         source.backup(target)
-    # перевірка цілісності копії
     with closing(sqlite3.connect(dst)) as check:
         if check.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
             raise RuntimeError("Резервна копія не пройшла перевірку цілісності")
@@ -58,8 +50,6 @@ def list_backups(backup_dir: Path) -> list[dict]:
 
 
 def backup_cycle(cfg, db) -> dict:
-    """Один цикл: локальна копія + (якщо підключено) завантаження в Google Drive.
-    Помилку Drive не ховаємо: пишемо в стан і повідомляємо директора (не частіше разу на добу)."""
     from . import gdrive, notifications
 
     out: dict = {"local": None, "drive": None}
@@ -70,7 +60,7 @@ def backup_cycle(cfg, db) -> dict:
     if gdrive.configured() and gdrive.load_state(cfg.data_dir).get("refresh_token"):
         try:
             out["drive"] = gdrive.upload(cfg.data_dir, path)
-        except Exception as e:  # noqa: BLE001 — будь-яка помилка мережі/Google
+        except Exception as e:  # noqa: BLE001
             out["drive_error"] = str(e)
             if gdrive.record_error(cfg.data_dir, str(e)):
                 with db.session() as s:

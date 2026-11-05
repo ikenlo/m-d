@@ -1,5 +1,3 @@
-"""Читання журналів: фінансові операції та історія змін."""
-
 from __future__ import annotations
 
 from sqlalchemy import select

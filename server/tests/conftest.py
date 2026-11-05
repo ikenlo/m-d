@@ -10,7 +10,7 @@ from mds.models import Role
 from mds.services import catalog, users
 from mds.services.common import Actor
 
-NOW = datetime(2026, 11, 2, 8, 0)  # понеділок, 08:00
+NOW = datetime(2026, 11, 2, 8, 0)
 
 
 @pytest.fixture(autouse=True)
@@ -29,7 +29,6 @@ def db(tmp_path):
 
 @pytest.fixture
 def seed(db):
-    """Директор, адміністратор, два майстри, послуги, матеріал."""
     sysa = Actor.system()
     with db.session() as s:
         d = users.create_user(s, sysa, username="director", password="Director123", full_name="Марина Д.", role=Role.DIRECTOR)

@@ -1,5 +1,3 @@
-"""SMS-розсилки: аудиторії лише зі згодою, розсилка й витрати, черга й статуси, автоматизація, аналіз бази."""
-
 from datetime import date, datetime
 
 import pytest
@@ -37,7 +35,7 @@ def test_campaign_only_consent_cost_to_expenses_and_statuses(db, seed, fake_sms)
     clock.set_now(datetime(2026, 11, 5, 11))
     with db.session() as s:
         _clients(s, seed)
-        with pytest.raises(ValidationError):  # не ввімкнено в налаштуваннях
+        with pytest.raises(ValidationError):
             sms_center.create_campaign(s, d, title="Акція", text="{name}, привіт", audience_key="all")
         update_settings(s, d, {"sms_enabled": True, "sms_price": 150})
         pre = sms_center.create_campaign(s, d, title="Акція", text="{name}, знижка 10%", audience_key="all", dry_run=True)
@@ -71,8 +69,8 @@ def test_not_configured_marks_history_and_automations(db, seed, monkeypatch):
     monkeypatch.setenv("MDS_TURBOSMS_SENDER", "MD")
     with db.session() as s:
         update_settings(s, d, {"sms_enabled": True, "sms_auto_birthday": True})
-        assert sms_center.run_automations(s) == 1  # сьогодні 06.11 — день народження Олени
-        assert sms_center.run_automations(s) == 0  # не двічі
+        assert sms_center.run_automations(s) == 1
+        assert sms_center.run_automations(s) == 0
         msg = s.query(SmsMessage).filter_by(reason="birthday").one()
         assert msg.text.startswith("Олена, вітаємо") and msg.kind == "marketing"
         ins = sms_center.insights(s, d)

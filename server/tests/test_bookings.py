@@ -32,9 +32,7 @@ def test_create_and_prevent_double_booking(db, seed):
         with db.session() as s, pytest.raises(Conflict):
             book(s, adm, seed["m1"], seed["manicure"], start, phone="0500000000")
     with db.session() as s:
-        # інший майстер на той самий час — можна
         book(s, adm, seed["m2"], seed["manicure"], at(10), phone="0500000000")
-        # одразу після закінчення — можна
         book(s, adm, seed["m1"], seed["haircut"], at(11, 30), phone="0500000001")
 
 
@@ -58,10 +56,8 @@ def test_free_slots(db, seed):
         assert "09:00" in times and "11:00" in times
         assert "11:30" not in times and "12:00" not in times and "12:30" not in times
         assert "13:00" in times
-        assert times[-1] == "19:00"  # остання година перед 20:00
-        # клієнт бота: мінімум 60 хв від "зараз" (08:00) -> з 09:00
+        assert times[-1] == "19:00"
         assert bookings.free_slots(s, seed["m1"], seed["haircut"], DAY, for_client=True)[0] == at(9)
-        # неділя — вихідний за графіком салону
         assert bookings.free_slots(s, seed["m1"], seed["haircut"], date(2026, 11, 8)) == []
 
 
@@ -84,7 +80,6 @@ def test_reschedule_checks_conflicts_and_audits(db, seed):
         bookings.reschedule(s, adm, b.id, starts_at=at(10, 30))
     with db.session() as s:
         bookings.reschedule(s, adm, b.id, starts_at=at(15))
-        # перенесення на своє ж місце з перетином із самим собою — дозволено
         bookings.reschedule(s, adm, b.id, starts_at=at(15, 30))
     with db.session() as s:
         b2 = s.get(Appointment, b.id)
@@ -105,7 +100,6 @@ def test_master_sees_and_edits_only_own(db, seed):
             bookings.get_appointment(s, m2, a.id)
         with pytest.raises(Forbidden):
             book(s, m2, seed["m1"], seed["haircut"], at(14))
-        # майстер може записати клієнта до себе
         book(s, m2, seed["m2"], seed["haircut"], at(14), phone="0502222222")
 
 
@@ -132,12 +126,10 @@ def test_telegram_client_flow(db, seed):
         mine = bookings.upcoming_for_telegram(s, 777)
         assert [x.id for x in mine] == [a.id]
         assert bookings.upcoming_for_telegram(s, 888) == []
-        # чужий клієнт не бачить запис
         with pytest.raises(NotFound):
             bookings.get_appointment(s, Actor.telegram(888), a.id)
         with pytest.raises(Forbidden):
             bookings.set_status(s, tg, a.id, ApptStatus.CONFIRMED)
-        # поза графіком та в минулому — не можна
         with pytest.raises(ValidationError):
             book(s, tg, seed["m1"], seed["haircut"], at(7), phone="+380931234567")
         with pytest.raises(ValidationError):

@@ -1,5 +1,3 @@
-"""Клієнтська база: статистика з замовлень, сегменти, пошук, дублікати й об'єднання, знеособлення, права, аналітика."""
-
 from datetime import date, datetime
 
 import pytest
@@ -24,13 +22,12 @@ def _visit(db, seed, day, hour, phone, name="Олена Коваль", master="m
 
 
 def test_stats_segments_and_card(db, seed):
-    for i, (m, d) in enumerate([(8, 1), (8, 31), (9, 30)]):  # інтервали 30 і 30 днів
+    for i, (m, d) in enumerate([(8, 1), (8, 31), (9, 30)]):
         _visit(db, seed, (m, d), 10, "0671110001", amount=50000 + i * 10000)
     clock.set_now(datetime(2026, 10, 5, 12))
     d = seed["actors"]["director"]
     with db.session() as s:
         cid = s.query(Client).filter_by(phone="+380671110001").one().id
-        # скасований запис рахується окремо
         a = bookings.create_appointment(s, seed["actors"]["admin"], master_id=seed["m2"], service_id=seed["haircut"],
                                         starts_at=datetime(2026, 10, 10, 10), client_id=cid)
         bookings.set_status(s, d, a.id, "cancelled")
@@ -42,18 +39,17 @@ def test_stats_segments_and_card(db, seed):
         assert c["finance"]["spent"] == 180000
         update_settings(s, d, {"client_seg_vip_spent": 150000})
         assert cb.card(s, d, cid)["segment"] == "vip"
-    clock.set_now(datetime(2026, 11, 20, 12))  # 51 день без візиту
+    clock.set_now(datetime(2026, 11, 20, 12))
     with db.session() as s:
         assert cb.card(s, d, cid)["segment"] == "lapsed"
         lst = cb.list_clients(s, d, segment_key="lapsed")
         assert [r["id"] for r in lst["items"]] == [cid] and lst["segments"]["lapsed"] == 1
-        # майстер бачить свого клієнта без фінансів салону; чужий майстер — не бачить
         mc = cb.card(s, seed["actors"]["m1"], cid)
         assert "finance" not in mc and "spent" not in mc and mc["visits"] == 3
         with pytest.raises(Forbidden):
             cb.list_clients(s, seed["actors"]["m1"])
     with db.session() as s:
-        with pytest.raises(NotFound):  # клієнт без візитів до цього майстра
+        with pytest.raises(NotFound):
             cb.card(s, seed["actors"]["m2"], _other_client(s, seed))
     clock.set_now(None)
 
@@ -71,10 +67,9 @@ def test_search_cyrillic_lookup_and_no_duplicates(db, seed):
         c = catalog.get_or_create_client(s, adm, "Ірина Шевченко", "067 222 33 44")
         cb.update_card(s, adm, c.id, {"phone2": "0503334455", "birthday": date(1990, 11, 4), "source": "instagram",
                                       "marketing_consent": True, "telegram_username": "@ira"})
-        assert [r["id"] for r in cb.list_clients(s, adm, q="шевч")["items"]] == [c.id]  # кирилиця без регістру
-        assert [r["id"] for r in cb.list_clients(s, adm, q="33344")["items"]] == [c.id]  # частина додаткового номера
+        assert [r["id"] for r in cb.list_clients(s, adm, q="шевч")["items"]] == [c.id]
+        assert [r["id"] for r in cb.list_clients(s, adm, q="33344")["items"]] == [c.id]
         assert cb.find_by_phone(s, adm, "+380503334455").id == c.id
-        # запис за додатковим номером — та сама картка, не дублікат
         again = catalog.get_or_create_client(s, adm, "Іра", "0503334455")
         assert again.id == c.id and s.query(Client).count() == 1
         other = catalog.get_or_create_client(s, adm, "Хтось", "0661112233")
@@ -106,7 +101,7 @@ def test_merge_duplicates_and_anonymize(db, seed):
             cb.anonymize(s, d, keep, "")
         z = cb.anonymize(s, d, keep, "Запит клієнта")
         assert z.phone is None and z.phone2 is None and z.name.startswith("Знеособлений")
-        assert cb.card(s, d, keep)["spent"] == 100000  # фінанси лишились
+        assert cb.card(s, d, keep)["spent"] == 100000
     clock.set_now(None)
 
 

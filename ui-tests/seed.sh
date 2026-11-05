@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Демо-база для UI-перевірки: директор, майстер, прайс і рік даних «ФОП 1 група». Лише тимчасовий каталог CI.
 set -euo pipefail
 cd "$(dirname "$0")/../server"
 python -m mds init --username margaryta --full-name "Маргарита" --password Director123

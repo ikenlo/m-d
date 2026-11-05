@@ -42,7 +42,6 @@ def ledger(ref_type: str | None = None, ref_id: int | None = None, limit: int = 
 @router.get("/journal/feed")
 def journal_feed(date_from: date, date_to: date | None = None, category: str | None = None, q: str | None = None,
                  limit: int = 300, actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
-    """Стрічка подій простими словами (для директора)."""
     if date_to and (date_to - date_from).days > 366:
         raise ValidationError("Період журналу — не більше року")
     return journal_feed_svc.feed(s, actor, date_from=date_from, date_to=date_to or date_from, category=category,
@@ -73,12 +72,11 @@ class BugReportIn(BaseModel):
     text: str
     page: str | None = None
     context: dict | None = None
-    image: str | None = Field(default=None, max_length=7_500_000)  # base64 (≤5 МБ)
+    image: str | None = Field(default=None, max_length=7_500_000)
 
 
 @router.post("/bug-report", status_code=201)
 def bug_report(body: BugReportIn, request: Request, actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
-    """Баг-репорт із програми — директору в Telegram (зі знімком екрана, якщо додано)."""
     return bugreport.create(s, actor, request.app.state.config.data_dir, text=body.text, page=body.page,
                             context=body.context, image_b64=body.image)
 
@@ -94,7 +92,6 @@ class RumIn(BaseModel):
 
 @router.post("/perf/rum", status_code=204)
 def perf_rum(body: RumIn, actor: Actor = Depends(get_actor)):
-    """Виміри з браузера (RUM): час завантаження й відкриття сторінок. Лише назви сторінок і мілісекунди."""
     for it in body.items:
         if perf.CLIENT_NAME.match(it.name):
             perf.record("client", it.name, it.ms, perf.SLOW_CLIENT_MS)
@@ -102,18 +99,15 @@ def perf_rum(body: RumIn, actor: Actor = Depends(get_actor)):
 
 @router.get("/perf")
 def perf_stats(actor: Actor = Depends(get_actor)):
-    """Швидкодія з моменту останнього запуску: найповільніші запити API і сторінки в браузерах (директор)."""
     actor.require(Role.DIRECTOR)
     return perf.snapshot()
 
 
 @router.get("/health")
 def health():
-    """Перевірка роботи сервера; version — щоб звірити розгорнуту версію з тегом у Git."""
     return {"ok": True, "version": __version__}
 
 
-# ------------------------------------------------------------ Google Drive
 def _redirect_uri(request: Request) -> str:
     return str(request.url_for("gdrive_callback"))
 
@@ -126,7 +120,6 @@ def gdrive_status(request: Request, actor: Actor = Depends(get_actor)):
 
 @router.post("/gdrive/connect")
 def gdrive_connect(request: Request, actor: Actor = Depends(get_actor)):
-    """Посилання на сторінку Google для підключення диска (директор)."""
     actor.require(Role.DIRECTOR)
     cfg = request.app.state.config
     now = int(time.time())
@@ -138,7 +131,6 @@ def gdrive_connect(request: Request, actor: Actor = Depends(get_actor)):
 @router.get("/gdrive/callback", name="gdrive_callback", include_in_schema=False)
 def gdrive_callback(request: Request, state: str = "", code: str = "", error: str = "",
                     s: Session = Depends(get_session)):
-    """Повернення з Google. Захист від підробки — підписаний state (діє 15 хв, лише для директора)."""
     cfg = request.app.state.config
     try:
         payload = jwt.decode(state, cfg.secret_key, algorithms=["HS256"])
@@ -160,7 +152,6 @@ def gdrive_callback(request: Request, state: str = "", code: str = "", error: st
 
 @router.post("/gdrive/backup-now")
 def gdrive_backup_now(request: Request, actor: Actor = Depends(get_actor)):
-    """Зробити копію зараз і завантажити на диск (директор)."""
     actor.require(Role.DIRECTOR)
     cfg = request.app.state.config
     res = backup.backup_cycle(cfg, request.app.state.db)
@@ -171,7 +162,6 @@ def gdrive_backup_now(request: Request, actor: Actor = Depends(get_actor)):
 
 @router.post("/gdrive/disconnect")
 def gdrive_disconnect(request: Request, actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
-    """Відключити диск. Уже збережені на диску копії лишаються."""
     actor.require(Role.DIRECTOR)
     gdrive.disconnect(request.app.state.config.data_dir)
     write_audit(s, actor, "gdrive", actor.user_id or 0, "disconnect", None, None)
@@ -180,13 +170,11 @@ def gdrive_disconnect(request: Request, actor: Actor = Depends(get_actor), s: Se
 
 @router.get("/sync")
 def sync_changes(since: int | None = None, actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
-    """Живе оновлення: версія даних, які сутності змінились і нові записи (для сповіщень)."""
     return sync.changes(s, actor, since)
 
 
 @router.get("/sms/status")
 def sms_status(actor: Actor = Depends(get_actor)):
-    """Чи задано ключ TurboSMS (змінні сервера) — для налаштувань."""
     from ...services import sms as sms_svc
 
     actor.require(Role.DIRECTOR)

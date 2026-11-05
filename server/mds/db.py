@@ -1,5 +1,3 @@
-"""Підключення до БД. Підтримується SQLite (за замовчуванням) і PostgreSQL."""
-
 from __future__ import annotations
 
 from contextlib import contextmanager
@@ -26,13 +24,12 @@ class Database:
         self.session_factory = sessionmaker(self.engine, expire_on_commit=False)
 
     def create_all(self) -> None:
-        from . import models  # noqa: F401  (реєстрація таблиць)
+        from . import models  # noqa: F401
 
         Base.metadata.create_all(self.engine)
 
     @contextmanager
     def session(self) -> Iterator[Session]:
-        """Одна сесія = одна транзакція. Commit при успіху, rollback при помилці."""
         s = self.session_factory()
         try:
             yield s

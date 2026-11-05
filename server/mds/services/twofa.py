@@ -1,10 +1,3 @@
-"""Двофакторний вхід: після правильного пароля — 6-значний код у Telegram.
-
-Кому: ролі з налаштування `twofa_roles` (за замовчуванням директор), якщо в людини підключено Telegram.
-Код дійсний 5 хвилин, 5 спроб; зберігається лише хеш. Після підтвердження пристрій можна «запам'ятати»
-на 30 днів — тоді код на ньому не питається. Зміна пароля (token_version) забуває всі пристрої.
-"""
-
 from __future__ import annotations
 
 import hashlib
@@ -37,8 +30,6 @@ def _code_hash(ch_id: int, user_id: int, code: str) -> str:
 
 
 def applies(s: Session, u: User) -> bool:
-    """Чи потрібен код для цієї людини (роль у налаштуванні і підключений Telegram).
-    Аварійно (Telegram недоступний) вимикається змінною сервера MDS_TWOFA_DISABLED=1."""
     if os.environ.get("MDS_TWOFA_DISABLED", "").strip().lower() in ("1", "yes", "true"):
         return False
     roles = get_setting(s, "twofa_roles") or []
@@ -57,7 +48,6 @@ def device_ok(s: Session, u: User, device_token: str | None) -> bool:
 
 
 def start(s: Session, u: User) -> LoginChallenge:
-    """Новий код (попередні невикористані — анулюються) і повідомлення в Telegram."""
     now = clock.now()
     s.execute(update(LoginChallenge).where(LoginChallenge.user_id == u.id, LoginChallenge.used.is_(False)).values(used=True))
     s.execute(delete(LoginChallenge).where(LoginChallenge.created_at < now - timedelta(days=1)))
@@ -75,7 +65,6 @@ def start(s: Session, u: User) -> LoginChallenge:
 
 
 def verify(s: Session, challenge_id: int, code: str) -> User:
-    """Перевірити код. Помилка — AuthError (401). Спроби рахуються навіть при помилці (commit у роутері)."""
     code = (code or "").strip().replace(" ", "")
     if not (code.isdigit() and len(code) == 6):
         raise ValidationError("Код — 6 цифр")

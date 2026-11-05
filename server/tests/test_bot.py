@@ -1,5 +1,3 @@
-"""Наскрізні тести бота: справжній Dispatcher + підроблена сесія Telegram."""
-
 from __future__ import annotations
 
 import asyncio
@@ -36,7 +34,6 @@ class FakeSession(BaseSession):
     async def stream_content(self, *a, **kw):  # pragma: no cover
         yield b""
 
-    # зручні помічники
     def texts(self):
         return [m.text for m in self.calls if isinstance(m, (SendMessage, EditMessageText))]
 
@@ -104,7 +101,6 @@ def test_full_booking_flow_and_notifications(h, db):
     h.click_text("Сьогодні")
     h.click_text("10:00")
     assert "номером" in h.session.texts()[-1]
-    # чужий контакт не приймається
     h.send(contact=Contact(phone_number="380671234567", first_name="Хтось", user_id=1))
     assert "саме свій" in h.session.texts()[-1]
     h.send(contact=Contact(phone_number="380931234567", first_name="Катя", user_id=TG_ID))
@@ -118,19 +114,17 @@ def test_full_booking_flow_and_notifications(h, db):
         assert a.client.phone == "+380931234567" and a.client.telegram_user_id == TG_ID
         assert sorted(n.chat_id for n in s.query(Notification)) == [9001, 9002]
 
-    # доставка черги сповіщень
     sent = asyncio.run(deliver_outbox(h.bot, db))
     assert sent == 2
     with db.session() as s:
         assert all(n.sent_at for n in s.query(Notification))
 
-    # повторний запис: клієнт уже відомий — без запиту номера
     h.send("📅 Записатися")
     h.click_text("Манікюр")
     h.click_text("👥 Будь-хто")
     h.click_text("Сьогодні")
     slot_texts = [b.text for b in h.session.buttons()]
-    assert "10:00" in slot_texts  # Ірина вільна о 10:00
+    assert "10:00" in slot_texts
     h.click_text("10:00")
     assert "Перевірте запис" in h.session.texts()[-1]
     h.click("ok")
@@ -146,7 +140,6 @@ def test_slot_taken_between_steps(h, db, seed):
     h.click_text("Сьогодні")
     h.click_text("10:00")
     h.send(contact=Contact(phone_number="380931234567", first_name="Катя", user_id=TG_ID))
-    # поки клієнт думав, адміністратор зайняв цей час
     from mds.services import bookings
     with db.session() as s:
         bookings.create_appointment(s, seed["actors"]["admin"], master_id=seed["m1"], service_id=seed["haircut"],
@@ -172,7 +165,6 @@ def test_my_bookings_cancel_and_move(h, db, seed):
     assert "перенесено" in h.session.texts()[-1]
     with db.session() as s:
         assert s.get(Appointment, appt_id).starts_at == datetime(2026, 11, 4, 15)
-    # чужий клієнт не може скасувати
     other = BotHarness(db, user_id=42)
     other.click(f"cnlok:{appt_id}")
     assert any("не знайдено" in a for a in other.session.alerts())
@@ -202,19 +194,15 @@ def test_staff_link_and_today(h, db, seed):
                                     client_phone="0675550011")
     h.send("/today")
     assert "Сьогодні" in h.session.texts()[-1]
-    assert "Анна &lt;script&gt;" in h.session.texts()[-1]  # дані клієнта екрановано для HTML
-    # код одноразовий
+    assert "Анна &lt;script&gt;" in h.session.texts()[-1]
     h2 = BotHarness(db, user_id=77)
     h2.send(f"/link {code}")
     assert "не знайдено" in h2.session.texts()[-1]
-    # клієнт не бачить /today
     h2.send("/today")
     assert "лише персоналу" in h2.session.texts()[-1]
 
 
-
 def test_env_aware_session_uses_proxy_env_and_custom_ca(monkeypatch):
-    """Бот має працювати за корпоративним проксі зі власним сертифікатом (HTTPS_PROXY, SSL_CERT_FILE)."""
     import certifi
 
     from mds.bot.runner import EnvAwareSession
@@ -232,8 +220,6 @@ def test_env_aware_session_uses_proxy_env_and_custom_ca(monkeypatch):
     assert asyncio.run(check()) is True
     assert s._connector_init["ssl"] is not None
 
-
-# ---------------------------------------------------------------- персонал
 
 @pytest.fixture
 def pins(db, seed):
@@ -273,7 +259,6 @@ def test_staff_wrong_code_is_rejected(h, pins):
     assert "код доступу" in h.session.texts()[-1]
     h.send("1234")
     assert "Цей розділ не для вас" in h.session.texts()[-1]
-    # без коду вибір людини не працює
     h.click(f"s:who:{pins['m1']}")
     assert any("не для вас" in a for a in h.session.alerts())
 
@@ -283,7 +268,7 @@ def test_staff_code_shows_only_people_with_pin(h, pins):
     h.send("0000")
     names = [b.text for b in h.session.buttons()]
     assert any("Олена" in n for n in names) and any("Марина" in n for n in names)
-    assert not any("Ірина" in n for n in names)  # немає PIN
+    assert not any("Ірина" in n for n in names)
 
 
 def test_staff_pin_bruteforce_lock(h, pins):
@@ -301,12 +286,10 @@ def test_master_flow_add_list_close_earn_shift(h, db, pins):
     from aiogram.methods import DeleteMessage
     staff_login(h, pins["m1"], "1111")
     assert "Олена" in h.session.texts()[-1] and "Оберіть дію" in h.session.texts()[-1]
-    # код і PIN видаляються з чату
     assert sum(isinstance(c, DeleteMessage) for c in h.session.calls) >= 2
     with db.session() as s:
         assert s.get(User, pins["m1"]).telegram_chat_id == TG_ID
 
-    # додати запис
     h.click("s:add")
     h.click_text("Стрижка")
     h.click_text("Сьогодні")
@@ -320,12 +303,10 @@ def test_master_flow_add_list_close_earn_shift(h, db, pins):
         assert a.master_id == pins["m1"] and a.client.name == "Анна" and a.status == ApptStatus.CONFIRMED
         appt_id = a.id
 
-    # мої записи на сьогодні
     h.click("s:list")
     h.click("s:ld:20261102")
     assert "Анна" in h.session.texts()[-1]
 
-    # закрити замовлення з іншою сумою
     h.click(f"s:cl:{appt_id}")
     h.send("Анна Коваленко")
     h.send("620")
@@ -333,7 +314,7 @@ def test_master_flow_add_list_close_earn_shift(h, db, pins):
     assert not any("Переказ" in b.text for b in h.session.buttons())
     h.click_text("💵 Готівка")
     assert "Замовлення закрито" in h.session.texts()[-1] and "310 ₴" in h.session.texts()[-1]
-    h.click(f"s:pm:{appt_id}:62000:cash")  # повторне натискання — без задвоєння
+    h.click(f"s:pm:{appt_id}:62000:cash")
     with db.session() as s:
         from mds.models import Order
         assert s.query(Order).count() == 1
@@ -345,7 +326,6 @@ def test_master_flow_add_list_close_earn_shift(h, db, pins):
     h.click("s:shiftok")
     assert "Звіт зміни" in h.session.texts()[-1]
 
-    # майстер не має доступу до фінансів директора
     h.click("s:fin")
     assert any("Сесія" in a for a in h.session.alerts())
 
@@ -373,12 +353,10 @@ def test_director_flow(h, db, pins):
     texts = h.session.texts()
     assert any("Анна" in t and "Олена" in t for t in texts)
 
-    # перенести
     h.click(f"s:mv:{a.id}")
     h.click_text("Сьогодні")
     h.click_text("15:00")
     assert "Перенесено" in h.session.texts()[-1]
-    # видалити (скасування з історією)
     h.click(f"s:del:{a.id}")
     h.click(f"s:delok:{a.id}")
     with db.session() as s:
@@ -386,13 +364,12 @@ def test_director_flow(h, db, pins):
         assert x.status == ApptStatus.CANCELLED and "директором" in x.cancel_reason
         assert x.starts_at == datetime(2026, 11, 2, 15)
 
-    # додати запис іншому майстру
     h.click("s:add")
     h.click(f"s:am:{pins['m2']}")
     h.click_text("Манікюр")
     h.click_text("Сьогодні")
     h.click_text("14:00")
-    h.send("0671112233")  # відомий клієнт — запис одразу
+    h.send("0671112233")
     assert "Запис створено" in h.session.texts()[-1]
 
     h.click("s:fin")
@@ -400,7 +377,7 @@ def test_director_flow(h, db, pins):
     h.click("s:pay")
     h.click(f"s:po:{shift_id}")
     assert any("Виплачено" in a for a in h.session.alerts())
-    h.click(f"s:po:{shift_id}")  # вдруге — відмова
+    h.click(f"s:po:{shift_id}")
     assert any("вже виплачена" in a for a in h.session.alerts())
 
 
@@ -435,7 +412,6 @@ def test_booking_goes_section_then_type_then_service(h, db, seed):
     assert [b.text for b in h.session.buttons()][0] == "AirTouch · 3 000 ₴"
     h.click_text("AirTouch")
     assert "оберіть майстра" in h.session.texts()[-1].lower()
-    # у чоловічих один тип — крок «тип» пропускається
     h.send("📅 Записатися")
     h.click_text("💈 Чоловічі")
     assert [b.text for b in h.session.buttons()][0].startswith("Модельна стрижка")
@@ -475,7 +451,6 @@ def test_three_level_coloring_and_back_navigation(h, db, seed):
     assert [b.text for b in h.session.buttons()][:2] == ["Стрижка", "Фарбування"]
     h.click_text("« Назад")
     assert [b.text for b in h.session.buttons()] == ["💈 Чоловічі", "💇‍♀️ Жіночі"]
-    # у чоловічих один тип — одразу послуги, «Назад» веде до розділів
     h.click_text("💈 Чоловічі")
     assert [b.text for b in h.session.buttons()] == ["Модельна · 450 ₴", "« Назад"]
     h.send("💅 Послуги та ціни")
@@ -501,12 +476,11 @@ def test_quick_booking_creates_callback_request_and_notifies(h, db, pins):
     h.send("067 123 45 67")
     assert "зателефонуємо" in h.session.texts()[-1]
     h.send("⚡ Швидкий запис")
-    h.send(contact=Contact(phone_number="380671234567", first_name="Катя", user_id=TG_ID))  # повтор — без дубля
+    h.send(contact=Contact(phone_number="380671234567", first_name="Катя", user_id=TG_ID))
     with db.session() as s:
         reqs = s.query(CallbackRequest).all()
         assert [r.phone for r in reqs] == ["+380671234567"]
         assert any("передзвонити" in n.text and n.chat_id == 9001 for n in s.query(Notification))
-    # директор бачить заявку в боті й позначає опрацьованою
     staff_login(h, pins["director"], "9999")
     h.click("s:calls")
     assert "+380671234567" in h.session.texts()[-1]
@@ -519,7 +493,6 @@ def test_masters_show_first_name_and_nearest_free_time(h, db, seed):
     d = seed["actors"]["director"]
     with db.session() as s:
         us.update_user(s, d, seed["m1"], {"full_name": "Олена Коваль"})
-        # Ірина зайнята весь сьогоднішній день — її найближчий вільний час завтра
         us.update_user(s, d, seed["m2"], {"schedule": {"0": ["09:00", "10:00"], "1": ["09:00", "18:00"]}})
         bookings.create_appointment(s, seed["actors"]["admin"], master_id=seed["m2"], service_id=seed["haircut"],
                                     starts_at=datetime(2026, 11, 2, 9), client_name="X", client_phone="0500000000")
@@ -527,7 +500,7 @@ def test_masters_show_first_name_and_nearest_free_time(h, db, seed):
     h.click_text("Стрижка")
     labels = [b.text for b in h.session.buttons()]
     assert labels[0] == "👥 Будь-хто · найближче сьогодні о 09:00"
-    assert "Олена · найближче сьогодні о 09:00" in labels  # без прізвища
+    assert "Олена · найближче сьогодні о 09:00" in labels
     assert "Ірина · найближче завтра о 09:00" in labels
     h.click_text("Олена")
     days = [b.text for b in h.session.buttons()]
@@ -536,10 +509,8 @@ def test_masters_show_first_name_and_nearest_free_time(h, db, seed):
     assert "Сьогодні, 2 листопада" in h.session.texts()[-1]
     labels = [b.text for b in h.session.buttons()]
     assert labels[0] == "🌅 Ранок" and "☀️ День" in labels and "🌙 Вечір" in labels
-    h.click("nop")  # заголовок групи нічого не робить
+    h.click("nop")
 
-
-# ---------------------------------------------- непідтверджені записи
 
 def _pending_from_bot(db, seed, h, when=datetime(2026, 11, 2, 10)):
     from mds.services import bookings
@@ -559,32 +530,28 @@ def test_busy_reply_offers_free_slots_and_client_rebooks(h, db, seed):
         assert bookings.pending_list(s, seed["actors"]["m2"]) == []
         r = bookings.decline_busy(s, seed["actors"]["m1"], appt_id)
         assert r["notified"] and len(r["slots"]) == 6
-        assert "2026-11-02T10:00:00" not in r["slots"]  # зайнятий час не пропонуємо
-        assert r["slots"][:2] == ["2026-11-02T09:00:00", "2026-11-02T12:00:00"]  # рознесено в часі
+        assert "2026-11-02T10:00:00" not in r["slots"]
+        assert r["slots"][:2] == ["2026-11-02T09:00:00", "2026-11-02T12:00:00"]
     with db.session() as s:
         assert s.get(Appointment, appt_id).status == ApptStatus.CANCELLED
-        n = s.query(Notification).filter_by(chat_id=TG_ID).one()  # одне повідомлення, без дубля «скасовано салоном»
+        n = s.query(Notification).filter_by(chat_id=TG_ID).one()
         assert "уже зайнятий" in n.text
         first_cb = n.buttons[0][0][1]
         n_buttons = n.buttons
         assert first_cb.startswith(f"rb:{appt_id}:") and n.buttons[-1][0][1] == "book"
-    # бот доставляє повідомлення з кнопками
     asyncio.run(deliver_outbox(h.bot, db))
     sent = [c for c in h.session.calls if isinstance(c, SendMessage) and c.chat_id == TG_ID][-1]
     assert sent.reply_markup.inline_keyboard[0][0].callback_data == first_cb
-    # клієнт обирає запропонований час
     h.click(first_cb)
     assert any("Вас записано" in x for x in h.session.texts()[-2:])
     with db.session() as s:
         new = s.query(Appointment).order_by(Appointment.id.desc()).first()
         assert new.id != appt_id and new.master_id == seed["m1"] and new.client.telegram_user_id == TG_ID
-    # повторне натискання або інший запропонований час — без другого запису
     h.click(first_cb)
     h.click(n_buttons[1][0][1])
     assert sum("вже записані" in a for a in h.session.alerts()) == 2
     with db.session() as s:
         assert s.query(Appointment).filter(Appointment.id != appt_id).count() == 1
-    # чужий клієнт не може скористатися кнопкою
     other = BotHarness(db, user_id=42)
     other.click(first_cb)
     assert any("не знайдено" in a for a in other.session.alerts())
@@ -600,7 +567,6 @@ def test_master_proposes_other_time_and_client_accepts(h, db, seed):
         n = s.query(Notification).filter_by(chat_id=TG_ID).one()
         assert "пропонує інший час" in n.text and "Пн 02.11 о 15:00" in n.text
         assert [row[0][1] for row in n.buttons] == [f"acc:{appt_id}", f"mv:{appt_id}", f"cnl:{appt_id}"]
-    # час тримається за клієнтом — інший не може його зайняти
     from mds.errors import Conflict
     with db.session() as s, pytest.raises(Conflict):
         bookings.create_appointment(s, seed["actors"]["admin"], master_id=seed["m1"], service_id=seed["haircut"],
@@ -610,7 +576,7 @@ def test_master_proposes_other_time_and_client_accepts(h, db, seed):
     with db.session() as s:
         a = s.get(Appointment, appt_id)
         assert a.status == ApptStatus.CONFIRMED and not a.awaiting_client
-    h.click(f"acc:{appt_id}")  # повторно — пропозиція вже неактуальна
+    h.click(f"acc:{appt_id}")
     assert any("неактуальна" in x for x in h.session.alerts())
 
 
@@ -694,7 +660,7 @@ def test_favorite_master_after_three_visits(h, db, seed):
     _visits(db, seed, "m2", 2)
     with db.session() as s:
         cid = s.query(Client).one().id
-        assert bookings.favorite_master(s, cid) is None  # 2 візити — ще не улюблений
+        assert bookings.favorite_master(s, cid) is None
     _visits(db, seed, "m2", 1, start_h=12)
     with db.session() as s:
         m, n = bookings.favorite_master(s, cid)
@@ -715,14 +681,12 @@ def test_favorite_master_respects_service_and_threshold_setting(db, seed):
         cid = s.query(Client).one().id
         update_settings(s, A.system(), {"favorite_master_visits": 2})
         assert bookings.favorite_master(s, cid)[0].id == seed["m1"]
-        # Олена більше не робить манікюр → для манікюру не пропонуємо
         us.update_user(s, seed["actors"]["director"], seed["m1"], {"service_ids": [seed["haircut"]]})
         assert bookings.favorite_master(s, cid, seed["manicure"]) is None
         assert bookings.favorite_master(s, cid, seed["haircut"])[0].id == seed["m1"]
 
 
 class _NotModifiedSession(FakeSession):
-    """Telegram відповідає «message is not modified» на будь-яке редагування."""
 
     async def make_request(self, bot, method, timeout=None):
         from aiogram.exceptions import TelegramBadRequest
@@ -744,7 +708,7 @@ def test_same_screen_twice_does_not_hang_button(db, seed):
     h = BotHarness(db)
     h.session = _NotModifiedSession()
     h.bot = make_bot("123456:TEST-TOKEN", session=h.session)
-    h.click("book")  # не кидає виняток
+    h.click("book")
     answers = [c for c in h.session.calls if isinstance(c, AnswerCallbackQuery)]
     assert answers, "кнопка має отримати відповідь, щоб не крутилася"
 

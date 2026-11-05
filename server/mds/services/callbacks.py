@@ -1,5 +1,3 @@
-"""«Швидкий запис»: заявки клієнтів на зворотний дзвінок."""
-
 from __future__ import annotations
 
 from datetime import timedelta
@@ -29,8 +27,6 @@ def callback_public(r: CallbackRequest) -> dict:
 
 
 def create_request(s: Session, actor: Actor, phone: str, name: str | None = None) -> CallbackRequest:
-    """Клієнт просить передзвонити. Повторна заявка з того ж Telegram/номера протягом години
-    не створюється (захист від спаму), а повертається вже наявна."""
     phone_n = normalize_phone(phone)
     since = clock.now() - REPEAT_WINDOW
     q = select(CallbackRequest).where(CallbackRequest.status == "new", CallbackRequest.created_at >= since)

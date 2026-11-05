@@ -1,13 +1,3 @@
-"""Оплата карткою через «Термінал» ПриватБанку на планшеті (NFC) з автоматичним закриттям замовлення.
-
-1. start_payment — перевіряє запис і суму, створює CardPayment(pending) і токен операції в банку,
-   повертає deeplink для планшета. Повторний виклик для того самого запису повертає ту саму незавершену оплату.
-2. Планшет відкриває «Термінал», клієнт прикладає картку.
-3. check_payment — сервер САМ питає банк (check.php). Лише response_code "00" → paid і закриття замовлення
-   (orders.close_order, спосіб «card», ключ ідемпотентності card-<id>) в одній транзакції.
-   Повторна перевірка не задвоює ні оплату, ні замовлення; відповідь планшета на результат не впливає.
-"""
-
 from __future__ import annotations
 
 import logging
@@ -22,7 +12,7 @@ from . import orders
 from .common import Actor, audit, get_setting
 
 log = logging.getLogger("mds.card_terminal")
-MIN_AMOUNT = 100  # банк: мінімум 1,00 грн
+MIN_AMOUNT = 100
 
 
 def mode(s) -> str:
@@ -68,7 +58,7 @@ def start_payment(s, actor: Actor, appt_id: int, *, amount: int, materials: list
         if existing.status == "paid":
             raise Conflict("Цей запис уже оплачено карткою — перевірте оплату", code="already_paid")
         if existing.amount == amount and existing.mode == md:
-            return public(existing, tp.deeplink(existing.jwt))  # повторне натискання — та сама операція
+            return public(existing, tp.deeplink(existing.jwt))
         raise Conflict("Є незавершена оплата на іншу суму — спершу перевірте або скасуйте її", code="pending_payment")
     prov = _provider(s)
     try:
@@ -89,7 +79,7 @@ def _get(s, actor: Actor, payment_id: int) -> CardPayment:
     p = s.get(CardPayment, payment_id)
     if p is None:
         raise NotFound("Оплату не знайдено")
-    _appointment(s, actor, p.appointment_id)  # перевірка прав
+    _appointment(s, actor, p.appointment_id)
     return p
 
 
@@ -130,7 +120,6 @@ def check_payment(s, actor: Actor, payment_id: int) -> dict:
 
 
 def cancel_payment(s, actor: Actor, payment_id: int) -> dict:
-    """Скасувати незавершену оплату (клієнт передумав). Спершу перевіряємо в банку, що гроші НЕ списано."""
     p = _get(s, actor, payment_id)
     if p.status != "pending":
         return public(p)

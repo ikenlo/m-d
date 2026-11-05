@@ -1,5 +1,3 @@
-"""Тексти та клавіатури бота (без звернень до Telegram — легко тестувати)."""
-
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta
@@ -70,7 +68,6 @@ def kb(rows: list[list[tuple[str, str]]]) -> InlineKeyboardMarkup:
 
 
 def price_text(x: Service) -> str:
-    """Ціна для клієнта: «450 ₴» або «від 550 ₴»."""
     return ("від " if x.price_from else "") + fmt(x.price)
 
 
@@ -88,7 +85,6 @@ def services_text(services: list[Service], salon: str) -> str:
             for sub, items in subs:
                 if sub:
                     lines.append(f"<i>{e(sub)}</i>")
-                # тривалість клієнтам не показуємо — вона потрібна лише календарю
                 lines += [f"• {e(x.name)} — <b>{price_text(x)}</b>" for x in items]
     return "\n".join(lines)
 
@@ -105,19 +101,12 @@ def _children(tree: list, path: list[int]) -> list:
 
 
 def _auto(children: list) -> bool:
-    """Рівень, де вибору немає (один варіант), пропускається."""
     return len(children) == 1 and not isinstance(children[0], Service)
 
 
 def tree_step(tree: list, path: list[int], prefix: str, leaf_cb, back_root: str | None = None):
-    """Один крок вибору послуги в дереві каталогу.
-
-    path — індекси вже обраних вузлів; prefix — початок callback_data
-    (вузли кодуються як "<prefix>:1.0.2"); leaf_cb(service) -> callback_data послуги.
-    Повертає (текст, клавіатуру). Рівні з одним варіантом пропускаються автоматично.
-    """
     if path and any(i >= len(_children(tree, path[:k])) for k, i in enumerate(path)):
-        path = []  # каталог змінився — починаємо з початку
+        path = []
     children = _children(tree, path)
     while children and _auto(children):
         path = path + [0]
@@ -136,7 +125,6 @@ def tree_step(tree: list, path: list[int], prefix: str, leaf_cb, back_root: str 
             return f"{SECTION_ICON.get(name.lower(), '✨')} {name}" if not path else name
         rows = [[(label(name), f"{prefix}:{'.'.join(map(str, path + [i]))}")] for i, (name, _) in enumerate(children)]
         prompt = LEVEL_PROMPT[min(len(path), 2)]
-    # «Назад» — до найближчого рівня, де був вибір
     back_path = path[:-1]
     while back_path and not len(_children(tree, back_path)) > 1:
         back_path = back_path[:-1]
@@ -159,12 +147,10 @@ WEEKDAYS_LONG = ["Понеділок", "Вівторок", "Середа", "Че
 
 
 def short_name(full_name: str) -> str:
-    """Для клієнтів — лише ім'я майстра, без прізвища."""
     return (full_name or "").split()[0] if full_name else ""
 
 
 def day_label(d: date, long: bool = False) -> str:
-    """«Сьогодні», «Завтра», «Пт, 6 листопада» (long: «П'ятниця, 6 листопада»)."""
     today = clock.now().date()
     if d == today:
         return "Сьогодні"
@@ -175,25 +161,20 @@ def day_label(d: date, long: bool = False) -> str:
 
 
 def day_title(d: date) -> str:
-    """Заголовок: «Сьогодні, 2 листопада» / «П'ятниця, 6 листопада»."""
     lbl = day_label(d, long=True)
     return f"{lbl}, {d.day} {MONTHS_GEN[d.month - 1]}" if lbl in ("Сьогодні", "Завтра") else lbl
 
 
 def when_label(t: datetime) -> str:
-    """Найближчий час: «сьогодні о 14:00», «завтра о 10:00», «пт, 6 листопада о 10:00»."""
     lbl = day_label(t.date())
     return f"{lbl[0].lower() + lbl[1:]} о {t:%H:%M}"
 
 
 def masters_kb(service_id: int, masters: list[tuple[User, datetime]], any_first: datetime | None,
                favorite_id: int | None = None) -> InlineKeyboardMarkup:
-    """masters: [(майстер, найближчий вільний час)] — показуємо лише вільних.
-    Улюблений майстер клієнта — першою кнопкою з ⭐."""
     rows = []
     fav = [(m, t) for m, t in masters if m.id == favorite_id]
     rest = [(m, t) for m, t in masters if m.id != favorite_id]
-    # «найближче — …»: це лише підказка; кнопка відкриває всі вільні дні майстра
     rows += [[(f"⭐ Ваш майстер {short_name(m.full_name)} · найближче {when_label(t)}", f"mst:{service_id}:{m.id}")]
              for m, t in fav]
     if any_first and len(masters) > 1:
@@ -204,7 +185,6 @@ def masters_kb(service_id: int, masters: list[tuple[User, datetime]], any_first:
 
 
 def days_kb(prefix: str, days: list[date], back: str, counts: dict[date, int] | None = None) -> InlineKeyboardMarkup:
-    """Дні по два в ряд: «Сьогодні · 6 віл.», «Пт, 6 листопада»."""
     rows, row = [], []
     for d in days:
         label = day_label(d)
@@ -224,7 +204,6 @@ DAY_PARTS = [("🌅 Ранок", 0, 12), ("☀️ День", 12, 17), ("🌙 В�
 
 
 def slots_kb(prefix: str, slots: list[datetime], back: str) -> InlineKeyboardMarkup:
-    """Час, згрупований за частинами дня (заголовки груп — неактивні кнопки)."""
     rows = []
     for title, h0, h1 in DAY_PARTS:
         part = [t for t in slots if h0 <= t.hour < h1]
@@ -305,8 +284,6 @@ def free_text(day: date, rows: list[tuple[str, list[tuple[datetime, datetime]]]]
     out.append("\n<i>Час рахується за графіком майстрів і вже зробленими записами.</i>")
     return "\n".join(out)
 
-
-# ------------------------------------------------------------------ персонал
 
 def staff_people_kb(people: list[User]) -> InlineKeyboardMarkup:
     rows = [[(("👑 " if u.role == "director" else "💇 ") + u.full_name, f"s:who:{u.id}")] for u in people]

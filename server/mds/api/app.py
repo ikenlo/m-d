@@ -1,5 +1,3 @@
-"""Фабрика FastAPI-застосунку: REST API + веб-панель (PWA) зі статики."""
-
 from __future__ import annotations
 
 import asyncio
@@ -26,8 +24,6 @@ STATIC = Path(__file__).resolve().parent.parent / "web" / "static"
 
 
 def _asset_version() -> str:
-    """Мітка для ?v= у index.html: версія + хеш app.js/style.css — новий файл = нова адреса,
-    тож браузер може кешувати статику «назавжди» (immutable) і не перевіряти її щоразу."""
     import hashlib
 
     digest = hashlib.sha256()
@@ -37,8 +33,6 @@ def _asset_version() -> str:
 
 
 async def _backup_loop(cfg: Config, db: Database) -> None:
-    """Автоматичний бекап кожні N годин (за замовч. 6; перший — одразу при старті):
-    локальна копія + Google Drive, якщо підключено."""
     while True:
         try:
             res = await asyncio.to_thread(backup.backup_cycle, cfg, db)
@@ -50,7 +44,6 @@ async def _backup_loop(cfg: Config, db: Database) -> None:
 
 
 async def _reminders_loop(db: Database) -> None:
-    """Нагадування клієнтам (за добу і за 2 год) — кожні 5 хвилин; строки податків ФОП — щогодини."""
     from ..services import reminders, taxes
 
     tick = 0
@@ -58,13 +51,13 @@ async def _reminders_loop(db: Database) -> None:
         try:
             with db.session() as s:
                 n = reminders.send_due(s) + reminders.remind_unclosed(s)
-                from ..services import sms_center  # SMS: автоматизація, черга, статуси доставки
+                from ..services import sms_center
 
                 sms_center.run_automations(s)
                 sms_center.process_queue(s)
                 if tick % 3 == 0:
                     sms_center.refresh_statuses(s)
-                if tick % 12 == 0:  # щогодини — строки сплати податків ФОП (директору)
+                if tick % 12 == 0:
                     taxes.tax_reminders(s)
             if n:
                 log.info("Нагадувань поставлено в чергу: %s", n)
@@ -81,7 +74,6 @@ def create_app(
     background: bool = False,
     with_bot: bool = False,
 ) -> FastAPI:
-    """background — авто-бекапи; with_bot — запустити Telegram-бот у тому ж процесі."""
     cfg = cfg or Config()
     clock.configure(cfg.timezone)
     db = db or Database(cfg.database_url)
@@ -136,8 +128,6 @@ def create_app(
 
     @app.middleware("http")
     async def timing(request: Request, call_next):
-        """Час відповіді API: заголовок Server-Timing (видно в DevTools), статистика для «Налаштування →
-        Швидкодія», повільні запити — у журнал сервера (лише шаблон маршруту, без параметрів і даних)."""
         if not request.url.path.startswith("/api/"):
             return await call_next(request)
         t0 = time.perf_counter()
@@ -161,14 +151,12 @@ def create_app(
         if path.startswith("/api/"):
             resp.headers.setdefault("Cache-Control", "no-store")
         elif path.startswith("/static/") and resp.status_code in (200, 304):
-            # версійовані файли (?v=…) і шрифти не змінюються — кешуємо на рік; решта — з перевіркою ETag
             if request.query_params.get("v") or path.startswith("/static/fonts/"):
                 resp.headers["Cache-Control"] = "public, max-age=31536000, immutable"
             else:
                 resp.headers.setdefault("Cache-Control", "no-cache")
         return resp
 
-    # стиснення відповідей (JS/CSS/JSON) — у 3–5 разів менше трафіку на мобільному інтернеті
     app.add_middleware(GZipMiddleware, minimum_size=1024, compresslevel=6)
 
     return app

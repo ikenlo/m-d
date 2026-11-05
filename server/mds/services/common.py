@@ -1,5 +1,3 @@
-"""Спільні інструменти сервісного шару: актор, журнали, налаштування."""
-
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -15,11 +13,10 @@ from ..models import AuditLog, LedgerEntry, MaterialsMode, Role, Setting, User
 
 @dataclass(frozen=True)
 class Actor:
-    """Хто виконує дію: співробітник, клієнт з Telegram або система."""
 
     user_id: int | None
     name: str
-    role: str  # director | admin | master | client | system
+    role: str
     telegram_user_id: int | None = None
 
     @classmethod
@@ -40,7 +37,6 @@ class Actor:
 
     @property
     def is_staff_manager(self) -> bool:
-        """Директор або адміністратор — керують календарем усіх майстрів."""
         return self.role in (Role.DIRECTOR, Role.ADMIN, "system")
 
     @property
@@ -53,8 +49,6 @@ class Actor:
         if self.role not in roles:
             raise Forbidden("Недостатньо прав для цієї дії")
 
-
-# ---------------------------------------------------------------- журнали
 
 def _jsonable(v: Any) -> Any:
     if isinstance(v, (datetime, date)):
@@ -120,67 +114,50 @@ def ledger(
     )
 
 
-# ----------------------------------------------------------- налаштування
-
 DEFAULT_SETTINGS: dict[str, Any] = {
     "salon_name": "M&D",
-    "default_share_bp": 5000,  # 50% майстру
+    "default_share_bp": 5000,
     "default_materials_mode": MaterialsMode.SALON,
-    # графік салону за замовчуванням: 0 = понеділок
     "schedule": {str(d): ["09:00", "20:00"] for d in range(6)},
     "slot_step_min": 30,
     "booking_horizon_days": 30,
-    "booking_min_lead_min": 60,  # мінімум хвилин до запису через бот
-    "telegram_auto_confirm": False,  # записи з бота одразу підтверджені?
+    "booking_min_lead_min": 60,
+    "telegram_auto_confirm": False,
     "bot_staff_code": "0000",
-    # при закритті зміни майстер забирає свій заробіток із готівки в касі; решту доплачує директор
     "master_takes_cash": True,
-    # скільки візитів до одного майстра — і він стає «улюбленим» для клієнта
     "favorite_master_visits": 3,
-    # нагадування клієнтам у Telegram за добу і за 2 години (лише тим, хто погодився)
     "reminders_enabled": True,
-    # двофакторний вхід: для цих ролей після пароля — код у Telegram (якщо Telegram підключено)
     "twofa_roles": ["director"],
-    # склад: якщо після списання лишилось менше цієї частки упаковки (у тисячних: 100 = 0,1 упаковки) — списати залишок; 0 — вимкнено
     "stock_auto_writeoff_milli": 100,
-    # захист онлайн-запису (бот і сайт); 0 — без обмеження
-    # номери без обмежень захисту від спаму (власниця, персонал), формат +380XXXXXXXXX
     "antispam_whitelist": ["+380687166910"],
-    # SMS/Viber клієнтам (TurboSMS; ключ — змінні сервера MDS_TURBOSMS_TOKEN і MDS_TURBOSMS_SENDER)
     "sms_enabled": False,
-    "sms_price": 0,  # ціна однієї SMS за тарифом TurboSMS, копійки (для обліку витрат на розсилки)
-    "sms_auto_birthday": False,  # автопривітання з днем народження (лише зі згодою)
-    "sms_auto_return": False,  # автонагадування про повторний візит (лише зі згодою)
-    "sms_auto_hour": 11,  # о котрій годині надсилати автоматичні повідомлення
+    "sms_price": 0,
+    "sms_auto_birthday": False,
+    "sms_auto_return": False,
+    "sms_auto_hour": 11,
     "sms_birthday_text": "{name}, вітаємо з днем народження! 🎉 Даруємо приємний бонус на наступний візит у M&D.",
     "sms_return_text": "{name}, час оновити образ 💇 Запишіться в M&D — оберемо зручний час.",
-    "antispam_max_active": 2,  # активних майбутніх записів на клієнта
-    "antispam_max_per_day": 3,  # нових онлайн-записів від клієнта за добу
-    "antispam_max_pending_total": 20,  # непідтверджених онлайн-записів у черзі
-    "antispam_callbacks_per_day": 2,  # заявок «передзвоніть» з одного номера за добу
-    "antispam_callbacks_per_hour": 20,  # заявок «передзвоніть» за годину загалом
-    # клієнтська база: критерії сегментів (налаштовує директор)
-    "client_seg_regular_visits": 3,  # «Постійний» — від стількох візитів
-    "client_seg_vip_visits": 10,  # «VIP» — від стількох візитів…
-    "client_seg_vip_spent": 1_000_000,  # …або від такої суми витрат, копійки (10 000 ₴)
-    "client_seg_lapsed_days": 45,  # «Давно не був» — без візиту стільки днів
-    "client_seg_inactive_days": 90,  # «Неактивний» — без візиту стільки днів
-    # ---- генератор (значення діють для НОВИХ запусків; минулі зберігають свої)
-    "generator_fuel_lph_milli": 0,  # витрата бензину, л/год × 1000 (1500 = 1,5 л/год)
-    "generator_fuel_price": 0,  # ціна бензину, копійок за 1 л
-    "generator_amort_per_hour": 0,  # амортизація, копійок за 1 мотогодину
-    "generator_hours_initial_milli": 0,  # мотогодини на момент початку обліку × 1000
-    # ---- розподіл комунальних і генератора між майстрами
-    "utilities_charge_mode": "none",  # none | month_end | fixed
-    "utilities_split": "revenue",  # month_end: revenue (пропорційно виручці) | equal (порівну)
-    "utilities_charge_share_bp": 10000,  # яку частку витрат розподіляти (10000 = 100%)
-    "utilities_fixed_amount": 0,  # fixed: сума, копійки
-    "utilities_fixed_per": "shift",  # fixed: shift (за зміну) | month (за місяць)
-    # ліміт доходу групи ФОП за рік, копійки (0 — не задано); вносить директор/бухгалтер
+    "antispam_max_active": 2,
+    "antispam_max_per_day": 3,
+    "antispam_max_pending_total": 20,
+    "antispam_callbacks_per_day": 2,
+    "antispam_callbacks_per_hour": 20,
+    "client_seg_regular_visits": 3,
+    "client_seg_vip_visits": 10,
+    "client_seg_vip_spent": 1_000_000,
+    "client_seg_lapsed_days": 45,
+    "client_seg_inactive_days": 90,
+    "generator_fuel_lph_milli": 0,
+    "generator_fuel_price": 0,
+    "generator_amort_per_hour": 0,
+    "generator_hours_initial_milli": 0,
+    "utilities_charge_mode": "none",
+    "utilities_split": "revenue",
+    "utilities_charge_share_bp": 10000,
+    "utilities_fixed_amount": 0,
+    "utilities_fixed_per": "shift",
     "fop_income_limit": 0,
-    # оплата карткою через «Термінал» ПриватБанку на планшеті: off | mock (імітація) | live (ключі — змінні сервера)
     "card_terminal_mode": "off",
-    # профіль ФОП для XML-декларації (services/tax_declaration.py); ставки вносить директор/бухгалтер
     "fop_tin": "",
     "fop_name": "",
     "fop_address": "",
@@ -190,8 +167,8 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "fop_c_sti": 0,
     "fop_kved": "96.02",
     "fop_kved_name": "Надання послуг перукарнями та салонами краси",
-    "fop_single_tax_month": 0,  # єдиний податок на місяць, копійки (рішення місцевої ради)
-    "fop_min_wage": 0,  # мінімальна зарплата на 1 січня року декларації, копійки
+    "fop_single_tax_month": 0,
+    "fop_min_wage": 0,
     "fop_email": "",
     "fop_phone": "",
     "salon_address": "",
@@ -233,7 +210,6 @@ def get_or_404(s: Session, model, obj_id: int, what: str = "Об'єкт"):
 
 
 def update_settings(s: Session, actor: Actor, data: dict[str, Any]) -> dict[str, Any]:
-    """Оновлення налаштувань салону з валідацією."""
     from ..errors import ValidationError
     from .users import _validate_schedule
 

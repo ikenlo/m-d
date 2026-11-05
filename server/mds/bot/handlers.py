@@ -1,5 +1,3 @@
-"""Обробники бота. Уся логіка — у сервісному шарі; тут лише діалог."""
-
 from __future__ import annotations
 
 from aiogram import F, Router
@@ -39,13 +37,11 @@ def _client_by_tg(s, tg_id: int) -> Client | None:
 
 
 def build_router() -> Router:
-    """Новий роутер з усіма обробниками (роутер aiogram можна підключити лише до одного диспетчера)."""
     from .staff import build_staff_router
 
     router = Router(name="mds")
     router.include_router(build_staff_router())
 
-    # ------------------------------------------------------------------ меню
 
     @router.message(CommandStart())
     async def start(message: Message, db: Database, state: FSMContext):
@@ -68,7 +64,6 @@ def build_router() -> Router:
         await message.answer(text, reply_markup=v.main_menu())
 
 
-    # ---------------------------------------------------- швидкий запис
     @router.message(Command("call"))
     @router.message(F.text == v.BTN_QUICK)
     async def quick_start(message: Message, state: FSMContext):
@@ -94,7 +89,7 @@ def build_router() -> Router:
         try:
             with db.session() as s:
                 callbacks.create_request(s, Actor.telegram(message.from_user.id), phone, name)
-        except TooMany as e:  # захист від спаму заявок
+        except TooMany as e:
             await state.clear()
             await message.answer(v.e(e.message), reply_markup=v.main_menu())
             return
@@ -133,8 +128,6 @@ def build_router() -> Router:
         await cb.message.edit_text(v.free_text(day, rows), reply_markup=markup)
         await cb.answer()
 
-    # Запис: розділ (Чоловічі/Жіночі) → тип (Стрижка/Фарбування…) → вид → послуга → майстер → день → час.
-    # Рівень пропускається, якщо в ньому лише один варіант (див. views.tree_step).
     def _step(s, path: list[int]):
         tree = catalog.service_tree(catalog.list_services(s))
         if not tree:
@@ -175,12 +168,10 @@ def build_router() -> Router:
             if svc is None or not svc.is_active:
                 await cb.answer("Послуга зараз недоступна", show_alert=True)
                 return
-            # показуємо лише майстрів, у яких є вільний час, і їхній найближчий вільний час
             free = [(m, t) for m in users.masters_for_service(s, service_id)
                     if (t := _nearest(s, service_id, m.id))]
             any_first = min((t for _, t in free), default=None)
             title = svc.name
-            # улюблений майстер клієнта (3+ візити) — першим у списку
             fav_id, hint = None, ""
             client = _client_by_tg(s, cb.from_user.id)
             fav = bookings.favorite_master(s, client.id, service_id) if client else None
@@ -192,7 +183,6 @@ def build_router() -> Router:
             await cb.answer("Найближчими днями вільного часу на цю послугу немає 😔", show_alert=True)
             return
         if len(free) == 1:
-            # один вільний майстер — одразу дні, без зайвого кроку «Оберіть майстра»
             await _show_days(cb, db, service_id, free[0][0].id, back="book", title=title)
             return
         await cb.message.edit_text(f"<b>{v.e(title)}</b>{hint}\nОберіть майстра:",
@@ -215,7 +205,6 @@ def build_router() -> Router:
         return None
 
     def _available_days(s, service_id: int, master_id: int) -> dict:
-        """{день: кількість вільних початків} — лише дні, де є вільний час."""
         out = {}
         for d in _horizon(s):
             n = len(_slots(s, service_id, master_id, d))
@@ -352,8 +341,6 @@ def build_router() -> Router:
         await cb.answer("Сесія запису застаріла. Почніть спочатку: «📅 Записатися».", show_alert=True)
 
 
-    # ------------------------------------------------------------ мої записи
-
     @router.message(Command("my"))
     @router.message(F.text == v.BTN_MY)
     async def my_bookings(message: Message, db: Database):
@@ -368,7 +355,6 @@ def build_router() -> Router:
 
     @router.callback_query(F.data.startswith("acc:"))
     async def accept_proposal(cb: CallbackQuery, db: Database):
-        """Клієнт погодився на час, запропонований майстром."""
         try:
             with db.session() as s:
                 a = bookings.client_accept(s, Actor.telegram(cb.from_user.id), int(cb.data.split(":")[1]))
@@ -381,7 +367,6 @@ def build_router() -> Router:
 
     @router.callback_query(F.data.startswith("rb:"))
     async def rebook(cb: CallbackQuery, db: Database):
-        """Клієнт обрав запропонований вільний час після відповіді «зайнято»."""
         _, old_id, dt = cb.data.split(":")
         try:
             with db.session() as s:
@@ -397,7 +382,6 @@ def build_router() -> Router:
         await _ask_reminders(cb, db)
 
     async def _ask_reminders(cb: CallbackQuery, db: Database) -> None:
-        """Після першого запису — спитати, чи потрібні нагадування (один раз)."""
         with db.session() as s:
             ask = reminders.should_ask(s, cb.from_user.id)
         if ask:
@@ -509,8 +493,6 @@ def build_router() -> Router:
         await cb.answer()
 
 
-    # ------------------------------------------------------------- персонал
-
     @router.message(Command("link"))
     async def link_staff(message: Message, command: CommandObject, db: Database):
         if not command.args:
@@ -539,7 +521,6 @@ def build_router() -> Router:
                 s, actor, date_from=today, date_to=today,
                 master_id=u.id if u.role == Role.MASTER else None, include_cancelled=False,
             )
-            # дані клієнтів екрануються: бот відповідає в режимі HTML
             lines = [f"{a.starts_at:%H:%M} {v.e(a.service.name)} — {v.e(a.client.name)} {v.e(a.client.phone or '')}"
                      + ("" if u.role == Role.MASTER else f" ({v.e(a.master.full_name)})") for a in items]
         await message.answer("📋 Сьогодні:\n" + ("\n".join(lines) if lines else "записів немає"))

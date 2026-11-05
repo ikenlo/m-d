@@ -1,5 +1,3 @@
-"""Вхідні моделі API. Усі гроші — цілі копійки, відсотки — bp (5000 = 50%)."""
-
 from __future__ import annotations
 
 from datetime import date, datetime
@@ -7,8 +5,6 @@ from datetime import date, datetime
 from pydantic import BaseModel as _PydanticModel
 from pydantic import Field, model_validator
 
-# Межа для будь-якого цілого числа у запиті: 10^12 копійок = 10 млрд грн.
-# Більші числа не вміщаються в INTEGER бази й означають помилку введення.
 MAX_INT = 10**12
 
 
@@ -26,7 +22,6 @@ def _check_ints(v) -> None:
 
 
 class BaseModel(_PydanticModel):
-    """Базова вхідна модель: відхиляє завеликі цілі числа (422 замість помилки бази)."""
 
     @model_validator(mode="after")
     def _limit_ints(self):
@@ -38,7 +33,7 @@ class BaseModel(_PydanticModel):
 class LoginIn(BaseModel):
     username: str
     password: str
-    device_token: str | None = None  # довірений пристрій (двофакторний вхід)
+    device_token: str | None = None
 
 
 class ChangePasswordIn(BaseModel):
@@ -68,7 +63,7 @@ class UserPatch(BaseModel):
     materials_mode: str | None = None
     schedule: dict | None = None
     service_ids: list[int] | None = None
-    bot_pin: str | None = None  # лише запис; у відповіді — bot_pin_set
+    bot_pin: str | None = None
 
 
 class PasswordIn(BaseModel):
@@ -103,14 +98,14 @@ class ServicePatch(BaseModel):
 
 class MaterialIn(BaseModel):
     name: str
-    unit_cost: int | None = 0  # копійки за упаковку (можна вказати пізніше)
-    unit: str = "шт"  # базова одиниця обліку: г / мл / шт
+    unit_cost: int | None = 0
+    unit: str = "шт"
     tone: str | None = None
     category: str | None = None
-    pack_name: str | None = None  # «туба», «банка»
-    pack_size: int = 1  # базових одиниць в упаковці
+    pack_name: str | None = None
+    pack_size: int = 1
     min_stock: float | None = None
-    stock: float | None = None  # початковий залишок (у базових одиницях)
+    stock: float | None = None
 
 
 class MaterialPatch(BaseModel):
@@ -178,7 +173,7 @@ class CloseOrderIn(BaseModel):
     payment_method: str
     materials: list[MaterialLine] = []
     idempotency_key: str | None = Field(default=None, max_length=64)
-    client_name: str | None = Field(default=None, max_length=128)  # ім'я та прізвище клієнта
+    client_name: str | None = Field(default=None, max_length=128)
 
 
 class OrderCorrectionIn(BaseModel):

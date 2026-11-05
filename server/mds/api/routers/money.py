@@ -21,7 +21,6 @@ def _range(period: str | None, date_from: date | None, date_to: date | None) -> 
     return analytics.period_range(period or "month", date_to)
 
 
-# ---------------------------------------------------------------- замовлення
 @router.get("/orders")
 def list_orders(period: str | None = None, date_from: date | None = None, date_to: date | None = None,
                 master_id: int | None = None, actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
@@ -31,7 +30,6 @@ def list_orders(period: str | None = None, date_from: date | None = None, date_t
 
 @router.get("/orders/needs-materials")
 def orders_needing_materials(actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
-    """Закриті без матеріалів замовлення послуг, що завжди їх витрачають (14 днів). Майстер — свої."""
     return [orders.order_public(o) for o in orders.needing_materials(s, actor)]
 
 
@@ -54,7 +52,6 @@ def correct_order(order_id: int, body: OrderCorrectionIn, actor: Actor = Depends
     return orders.order_public(orders.correct_order(s, actor, order_id, data, body.reason))
 
 
-# -------------------------------------------------------------------- зміни
 @router.get("/shifts/current")
 def current_shift(actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
     actor.require(Role.MASTER)
@@ -84,11 +81,10 @@ def list_shifts(status: str | None = None, master_id: int | None = None,
 def get_shift(shift_id: int, actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
     sh = orders.get_shift(s, actor, shift_id)
     out = orders.shift_public(s, sh)
-    out["current"] = orders.shift_report(s, sh)  # актуальні цифри з урахуванням виправлень
+    out["current"] = orders.shift_report(s, sh)
     return out
 
 
-# ------------------------------------------------------------------ виплати
 @router.post("/payouts", status_code=201)
 def create_payout(body: PayoutIn, actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
     return orders.payout_public(orders.confirm_payout(s, actor, **body.model_dump()))
@@ -99,7 +95,6 @@ def list_payouts(master_id: int | None = None, actor: Actor = Depends(get_actor)
     return [orders.payout_public(p) for p in orders.list_payouts(s, actor, master_id=master_id)]
 
 
-# --------------------------------------------------------------- аналітика
 @router.get("/finance/dashboard")
 def dashboard(period: str | None = None, date_from: date | None = None, date_to: date | None = None,
               actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
@@ -115,7 +110,6 @@ def dashboard(period: str | None = None, date_from: date | None = None, date_to:
 @router.get("/finance/insights")
 def finance_insights(period: str | None = None, date_from: date | None = None, date_to: date | None = None,
                      actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
-    """Аналітика: порівняння з попереднім періодом, прогноз місяця, середній чек, клієнти, дні тижня."""
     a, b = _range(period, date_from, date_to)
     return analytics.insights(s, actor, a, b)
 
@@ -125,7 +119,6 @@ def my_finance(master_id: int | None = None, actor: Actor = Depends(get_actor), 
     return analytics.my_earnings(s, actor, master_id)
 
 
-# ------------------------------------------------------------------ витрати
 @router.get("/expenses")
 def list_expenses(period: str | None = None, date_from: date | None = None, date_to: date | None = None,
                   actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):

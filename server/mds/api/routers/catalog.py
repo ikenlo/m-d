@@ -13,7 +13,6 @@ from ..schemas import ClientIn, ClientPatch, MaterialIn, MaterialPatch, ServiceI
 router = APIRouter(prefix="/api", tags=["catalog"])
 
 
-# ----------------------------------------------------------------- послуги
 @router.get("/services")
 def list_services(all: bool = False, actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
     return [catalog.service_public(x) for x in catalog.list_services(s, active_only=not all)]
@@ -29,7 +28,6 @@ def update_service(service_id: int, body: ServicePatch, actor: Actor = Depends(g
     return catalog.service_public(catalog.update_service(s, actor, service_id, body.model_dump(exclude_unset=True)))
 
 
-# --------------------------------------------------------------- матеріали
 @router.get("/materials")
 def list_materials(all: bool = False, actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
     return [catalog.material_public(x) for x in catalog.list_materials(s, active_only=not all)]
@@ -45,7 +43,6 @@ def update_material(material_id: int, body: MaterialPatch, actor: Actor = Depend
     return catalog.material_public(catalog.update_material(s, actor, material_id, body.model_dump(exclude_unset=True)))
 
 
-# ----------------------------------------------------------------- клієнти
 @router.get("/clients")
 def search_clients(q: str = "", actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
     actor.require(Role.DIRECTOR, Role.ADMIN, Role.MASTER)
@@ -60,7 +57,6 @@ def create_client(body: ClientIn, actor: Actor = Depends(get_actor), s: Session 
 
 @router.post("/clients/purge-no-phone")
 def purge_no_phone(dry_run: bool = False, actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
-    """Прибрати клієнтів без телефону (dry_run=true — лише порахувати)."""
     return catalog.purge_clients_without_phone(s, actor, dry_run=dry_run)
 
 
@@ -71,7 +67,6 @@ def update_client(client_id: int, body: ClientPatch, actor: Actor = Depends(get_
 
 @router.get("/clients/{client_id}")
 def get_client(client_id: int, actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
-    """Картка клієнта з історією відвідувань. Майстер бачить лише свої візити."""
     c = get_or_404(s, Client, client_id, "Клієнта")
     history = bookings.client_history(s, c.id)
     if actor.is_master:

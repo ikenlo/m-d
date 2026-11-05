@@ -1,5 +1,3 @@
-"""Версія узгоджена: код, pyproject і CHANGELOG (з нього GitHub Actions бере опис релізу)."""
-
 import re
 from pathlib import Path
 

@@ -1,5 +1,3 @@
-"""Запуск бота (long polling) і доставка черги сповіщень."""
-
 from __future__ import annotations
 
 import asyncio
@@ -26,17 +24,13 @@ log = logging.getLogger("mds.bot")
 
 
 async def on_error(event: ErrorEvent) -> bool:
-    """Помилки обробників не повинні «вішати» кнопки в Telegram.
-
-    - «message is not modified» (повторне натискання / той самий екран) — тихо ігноруємо;
-    - інше — пишемо в журнал і відповідаємо на натискання, щоб кнопка не крутилася."""
     exc = event.exception
     cb = event.update.callback_query
     if isinstance(exc, TelegramBadRequest) and "message is not modified" in str(exc):
         if cb:
             try:
                 await cb.answer()
-            except Exception:  # noqa: BLE001 — уже відповіли
+            except Exception:  # noqa: BLE001
                 pass
         return True
     log.exception("Помилка в обробнику бота (update %s)", event.update.update_id, exc_info=exc)
@@ -58,8 +52,6 @@ def build_dispatcher(db: Database) -> Dispatcher:
 
 
 class EnvAwareSession(AiohttpSession):
-    """HTTP-сесія бота, що враховує стандартні налаштування мережі сервера:
-    HTTPS_PROXY / NO_PROXY (корпоративний проксі) і SSL_CERT_FILE (власний CA)."""
 
     def __init__(self, **kw) -> None:
         super().__init__(**kw)
@@ -86,7 +78,6 @@ def make_bot(token: str, **kw) -> Bot:
 
 
 async def deliver_outbox(bot: Bot, db: Database) -> int:
-    """Надіслати накопичені сповіщення. Повертає кількість надісланих."""
     sent = 0
     with db.session() as s:
         for n in notifications.pending(s):
@@ -97,7 +88,6 @@ async def deliver_outbox(bot: Bot, db: Database) -> int:
                         [InlineKeyboardButton(text=t, callback_data=d) for t, d in row] for row in n.buttons
                     ])
                 if n.photo_path and os.path.exists(n.photo_path):
-                    # підпис до фото — до 1024 символів; повний текст окремим повідомленням
                     await bot.send_photo(n.chat_id, FSInputFile(n.photo_path), caption=n.text[:1000], parse_mode=None)
                     if len(n.text) > 1000:
                         await bot.send_message(n.chat_id, n.text, parse_mode=None, reply_markup=markup)
@@ -105,7 +95,7 @@ async def deliver_outbox(bot: Bot, db: Database) -> int:
                     await bot.send_message(n.chat_id, n.text, parse_mode=None, reply_markup=markup)
                 notifications.mark_sent(n)
                 sent += 1
-            except Exception as e:  # noqa: BLE001 — помилка одного повідомлення не зупиняє чергу
+            except Exception as e:  # noqa: BLE001
                 notifications.mark_failed(n, str(e))
                 log.warning("Не вдалося надіслати сповіщення #%s: %s", n.id, e)
     return sent
@@ -121,8 +111,6 @@ async def outbox_loop(bot: Bot, db: Database, interval: float = 3.0) -> None:
 
 
 async def run_bot(token: str, db: Database, *, retry_delay: float = 15.0) -> None:
-    """Запуск бота з автоматичним перезапуском: помилка мережі не зупиняє бота назавжди
-    і обов'язково потрапляє в журнал (раніше падіння фонової задачі було непомітним)."""
     while True:
         bot = make_bot(token)
         dp = build_dispatcher(db)

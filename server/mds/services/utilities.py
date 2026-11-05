@@ -1,23 +1,3 @@
-"""Комунальні витрати та генератор (детально — docs/FINANCE.md, розділ 7).
-
-Електроенергія: щомісячні показники лічильника → кВт·год × тариф = вартість. Тариф зберігається
-в записі місяця. Підтвердження директором створює витрату «Комунальні» (одна на місяць).
-
-Генератор: перемикач ON/OFF фіксує час роботи (мотогодини). Вартість години =
-витрата (л/год) × ціна бензину + амортизація. Параметри — знімок на момент запуску:
-зміна ціни бензину не перераховує минулі запуски. Директор може виправити запуск (з причиною).
-
-Розподіл між майстрами (налаштування utilities_charge_mode):
-- none — не списувати;
-- month_end — після завершення місяця директор розподіляє (електроенергія + генератор) × частку
-  між майстрами пропорційно виручці або порівну;
-- fixed — фіксована сума автоматично при закритті зміни (за зміну або раз на місяць).
-Подвійне списання неможливе: кожне списання має унікальний dedupe_key, а розподіл місяця
-відмовляє, якщо в місяці вже є списання. Скасування — сторно (від'ємний рядок), історія лишається.
-
-Гроші — копійки, кількості — тисячні (кВт·год, л, мотогодини × 1000). Без float.
-"""
-
 from __future__ import annotations
 
 import calendar
@@ -50,7 +30,6 @@ MONTHS = ["січень", "лютий", "березень", "квітень", "�
 
 
 def _r(a: int, b: int) -> int:
-    """a × b / 1000 з округленням (для тисячних одиниць)."""
     return (a * b + 500) // 1000
 
 
@@ -85,7 +64,6 @@ def _milli(v, what: str) -> int:
         raise ValidationError(f"{what}: невірне число") from None
 
 
-# =================================================================== електроенергія
 def reading_public(r: MeterReading) -> dict:
     return {
         "id": r.id, "month": r.month.isoformat(), "read_on": r.read_on.isoformat(),
@@ -117,7 +95,6 @@ def last_reading(s: Session, before: date | None = None) -> MeterReading | None:
 
 def create_reading(s: Session, actor: Actor, *, month: date, read_on: date, curr, tariff: int, prev=None,
                    paid_amount: int | None = None, paid_on: date | None = None, note: str | None = None) -> MeterReading:
-    """Внести показники за місяць. prev за замовчуванням — поточний показник попереднього місяця."""
     actor.require(Role.DIRECTOR)
     m = month_start(month)
     if s.scalar(select(MeterReading.id).where(MeterReading.month == m)):
@@ -146,8 +123,6 @@ def create_reading(s: Session, actor: Actor, *, month: date, read_on: date, curr
 
 
 def update_reading(s: Session, actor: Actor, reading_id: int, data: dict, reason: str | None = None) -> MeterReading:
-    """Виправити показники/тариф/оплату. Якщо місяць уже підтверджено — витрата виправляється
-    сторно + новим записом (через expenses.update_expense), потрібна причина."""
     actor.require(Role.DIRECTOR)
     r = s.get(MeterReading, reading_id)
     if r is None:
@@ -180,7 +155,6 @@ def _reading_desc(r: MeterReading) -> str:
 
 
 def confirm_reading(s: Session, actor: Actor, reading_id: int) -> MeterReading:
-    """Підтвердити місяць: вартість стає витратою «Комунальні» (лише один раз)."""
     actor.require(Role.DIRECTOR)
     r = s.get(MeterReading, reading_id)
     if r is None:
@@ -200,7 +174,6 @@ def list_readings(s: Session, actor: Actor) -> list[dict]:
     return [reading_public(r) for r in s.scalars(select(MeterReading).order_by(MeterReading.month.desc()))]
 
 
-# =================================================================== генератор
 def generator_settings(s: Session) -> dict:
     lph = int(get_setting(s, "generator_fuel_lph_milli") or 0)
     price = int(get_setting(s, "generator_fuel_price") or 0)
@@ -241,7 +214,6 @@ def current_run(s: Session) -> GeneratorRun | None:
 
 
 def start_generator(s: Session, actor: Actor, *, power_outage: bool = True, note: str | None = None) -> GeneratorRun:
-    """Генератор увімкнено. Дозволено персоналу (світло зникло — увімкнути може будь-хто на місці)."""
     actor.require(Role.DIRECTOR, Role.ADMIN, Role.MASTER)
     if current_run(s):
         raise Conflict("Генератор уже працює")
@@ -275,7 +247,6 @@ def stop_generator(s: Session, actor: Actor) -> GeneratorRun:
 
 def add_run(s: Session, actor: Actor, *, started_at: datetime, hours, power_outage: bool = True,
             note: str | None = None) -> GeneratorRun:
-    """Директор додає запуск вручну (забули увімкнути перемикач). Параметри — поточні налаштування."""
     actor.require(Role.DIRECTOR)
     hm = _milli(hours, "Мотогодини")
     if hm <= 0 or hm > 24 * 31 * 1000:
@@ -294,9 +265,6 @@ def add_run(s: Session, actor: Actor, *, started_at: datetime, hours, power_outa
 
 
 def record_hours(s: Session, actor: Actor, *, on: date, current=None, hours=None, note: str | None = None) -> GeneratorRun:
-    """Внести роботу генератора, як показники лічильника: або новий показник лічильника мотогодин
-    (різниця з попереднім = відпрацьовано), або відпрацьовані години. Вартість = мотогодини × (витрата × ціна
-    бензину + амортизація) — за налаштуваннями на момент внесення."""
     actor.require(Role.DIRECTOR, Role.ADMIN)
     if (current is None) == (hours is None):
         raise ValidationError("Вкажіть показник лічильника мотогодин або кількість відпрацьованих годин")
@@ -327,7 +295,6 @@ def record_hours(s: Session, actor: Actor, *, on: date, current=None, hours=None
 
 
 def generator_history(s: Session, actor: Actor, months: int = 6) -> list[dict]:
-    """Підсумки генератора по місяцях (від старого до поточного): мотогодини, літри, бензин, амортизація."""
     actor.require(Role.DIRECTOR)
     months = max(1, min(int(months), 24))
     cur = month_start(clock.now().date())
@@ -343,7 +310,6 @@ def generator_history(s: Session, actor: Actor, months: int = 6) -> list[dict]:
 
 
 def correct_run(s: Session, actor: Actor, run_id: int, data: dict, reason: str) -> GeneratorRun:
-    """Ручне коригування запуску: мотогодини, витрата, ціна бензину, амортизація або загальна сума."""
     actor.require(Role.DIRECTOR)
     if not (reason or "").strip():
         raise ValidationError("Вкажіть причину коригування")
@@ -367,7 +333,6 @@ def correct_run(s: Session, actor: Actor, run_id: int, data: dict, reason: str) 
     for k, v in _costs(g.hours_milli, g.fuel_lph_milli, g.fuel_price, g.amort_per_hour).items():
         setattr(g, k, v)
     if data.get("fuel_cost") is not None or data.get("amort_cost") is not None:
-        # ручна сума (напр. за чеком АЗС) — перекриває розрахунок
         if data.get("fuel_cost") is not None:
             g.fuel_cost = int(data["fuel_cost"])
         if data.get("amort_cost") is not None:
@@ -384,7 +349,6 @@ def correct_run(s: Session, actor: Actor, run_id: int, data: dict, reason: str) 
 
 
 def set_motohours(s: Session, actor: Actor, current) -> dict:
-    """Звірка з лічильником генератора: встановити поточні мотогодини (зсув початкових)."""
     from .common import set_setting
 
     actor.require(Role.DIRECTOR)
@@ -414,7 +378,6 @@ def generator_state(s: Session, actor: Actor) -> dict:
 
 
 def generator_forecast(s: Session, actor: Actor, today: date) -> dict:
-    """Прогноз на місяць: середні мотогодини за минулі дні × днів у місяці × поточна вартість години."""
     actor.require(Role.DIRECTOR)
     st = generator_settings(s)
     a, b = _month_bounds(today)
@@ -439,7 +402,6 @@ def list_runs(s: Session, actor: Actor, month: date) -> list[dict]:
 
 
 def generator_totals(s: Session, start: datetime, end: datetime) -> dict:
-    """Підсумки завершених запусків, що почались у [start, end)."""
     row = s.execute(select(
         func.count(GeneratorRun.id), func.coalesce(func.sum(GeneratorRun.hours_milli), 0),
         func.coalesce(func.sum(GeneratorRun.fuel_milli), 0), func.coalesce(func.sum(GeneratorRun.fuel_cost), 0),
@@ -449,7 +411,6 @@ def generator_totals(s: Session, start: datetime, end: datetime) -> dict:
             "amort_cost": int(row[4]), "total_cost": int(row[5])}
 
 
-# =================================================================== списання з майстрів
 def charges_total(s: Session, *, master_id: int | None = None, d_from: date | None = None, d_to: date | None = None) -> int:
     q = select(func.coalesce(func.sum(MasterCharge.amount), 0))
     if master_id:
@@ -463,7 +424,6 @@ def charges_total(s: Session, *, master_id: int | None = None, d_from: date | No
 
 def _charge(s: Session, actor: Actor, *, master_id: int, kind: str, amount: int, charged_on: date,
             dedupe_key: str, shift_id: int | None = None, basis: dict | None = None) -> MasterCharge | None:
-    """Одне списання. Повторне (той самий dedupe_key) — не створюється (повертає None)."""
     if amount <= 0:
         return None
     if s.scalar(select(MasterCharge.id).where(MasterCharge.dedupe_key == dedupe_key)):
@@ -484,7 +444,6 @@ def _charge(s: Session, actor: Actor, *, master_id: int, kind: str, amount: int,
 
 
 def shift_charge(s: Session, master_id: int, sh: Shift) -> tuple[int, str | None, str | None]:
-    """Скільки списати при закритті зміни (режим fixed). Повертає (сума, kind, dedupe_key)."""
     if get_setting(s, "utilities_charge_mode") != "fixed":
         return 0, None, None
     amount = int(get_setting(s, "utilities_fixed_amount") or 0)
@@ -518,7 +477,6 @@ def month_costs(s: Session, m: date) -> dict:
 
 
 def _largest_remainder(total: int, weights: dict[int, int]) -> dict[int, int]:
-    """Поділ total пропорційно вагам без втрати копійок (метод найбільших залишків)."""
     wsum = sum(weights.values())
     if wsum <= 0 or total <= 0:
         return {k: 0 for k in weights}
@@ -531,7 +489,6 @@ def _largest_remainder(total: int, weights: dict[int, int]) -> dict[int, int]:
 
 
 def allocation_preview(s: Session, actor: Actor, m: date) -> dict:
-    """Що буде списано з кожного майстра за місяць (режим month_end), без запису."""
     actor.require(Role.DIRECTOR)
     m = month_start(m)
     costs = month_costs(s, m)
@@ -557,7 +514,6 @@ def allocation_preview(s: Session, actor: Actor, m: date) -> dict:
 
 
 def allocate_month(s: Session, actor: Actor, m: date) -> dict:
-    """Розподілити витрати місяця між майстрами (режим month_end). Один раз на місяць."""
     actor.require(Role.DIRECTOR)
     m = month_start(m)
     if get_setting(s, "utilities_charge_mode") != "month_end":
@@ -585,7 +541,6 @@ def allocate_month(s: Session, actor: Actor, m: date) -> dict:
 
 
 def reverse_month(s: Session, actor: Actor, m: date, reason: str) -> int:
-    """Скасувати списання місяця: рядки-сторно; після цього місяць можна розподілити знову."""
     actor.require(Role.DIRECTOR)
     if not (reason or "").strip():
         raise ValidationError("Вкажіть причину скасування")
@@ -594,7 +549,7 @@ def reverse_month(s: Session, actor: Actor, m: date, reason: str) -> int:
         MasterCharge.period == m, MasterCharge.reversed.is_(False), MasterCharge.amount > 0)))
     for c in rows:
         c.reversed = True
-        c.dedupe_key = None  # звільняємо ключ — можна розподілити заново
+        c.dedupe_key = None
         r = MasterCharge(master_id=c.master_id, kind="reversal", charged_on=c.charged_on, period=c.period,
                          shift_id=c.shift_id, amount=-c.amount, reverses_id=c.id, basis={"reason": reason},
                          created_by=actor.user_id)
@@ -621,9 +576,7 @@ def charges_list(s: Session, actor: Actor, *, m: date | None = None, master_id: 
              "shift_id": c.shift_id} for c in s.scalars(q.order_by(MasterCharge.id.desc()).limit(500))]
 
 
-# =================================================================== аналітика
 def month_summary(s: Session, actor: Actor, m: date) -> dict:
-    """Комунальні та генератор за місяць: витрати, мотогодини, бензин, списання, вплив на прибуток."""
     actor.require(Role.DIRECTOR)
     m = month_start(m)
     a, b = _month_bounds(m)
@@ -650,7 +603,6 @@ def month_summary(s: Session, actor: Actor, m: date) -> dict:
         "total": total,
         "charged_to_masters": charged,
         "by_master": sorted(charges.values(), key=lambda x: -x["amount"]),
-        # вплив на чистий прибуток салону: витрати мінус те, що компенсували майстри
         "net_impact": -(total - charged),
         "mode": get_setting(s, "utilities_charge_mode"),
     }

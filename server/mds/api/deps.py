@@ -1,5 +1,3 @@
-"""Залежності FastAPI: сесія БД, поточний користувач, перевірка ролей."""
-
 from __future__ import annotations
 
 from typing import Iterator

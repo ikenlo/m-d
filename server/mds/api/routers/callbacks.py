@@ -12,7 +12,6 @@ router = APIRouter(prefix="/api/callbacks", tags=["callbacks"])
 
 @router.get("")
 def list_callbacks(status: str | None = "new", actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
-    """Заявки «Швидкий запис» (просять передзвонити)."""
     return [callbacks.callback_public(r) for r in callbacks.list_requests(s, actor, status or None)]
 
 
