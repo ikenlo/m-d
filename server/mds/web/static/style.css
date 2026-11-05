@@ -1175,3 +1175,34 @@ label.row > input[type="checkbox"], label.row > input[type="radio"] { flex: 0 0 
 .slot.on { background: var(--brand); border-color: var(--brand); color: #fff; }
 :root[data-theme="dark"] .slot.on { background: var(--gold); border-color: var(--gold); color: #17120a; }
 .ap-save { margin-top: 20px; }
+
+@media (max-width: 900px) {
+  .main { padding-bottom: calc(104px + env(safe-area-inset-bottom, 0px)); }
+  .tabbar {
+    left: max(12px, env(safe-area-inset-left, 0px)); right: max(12px, env(safe-area-inset-right, 0px));
+    bottom: calc(10px + env(safe-area-inset-bottom, 0px));
+    max-width: 480px; margin: 0 auto; height: 64px; padding: 6px; gap: 2px; align-items: center;
+    border-radius: 999px; border: 1px solid rgba(255, 255, 255, .7);
+    background: rgba(255, 255, 255, .72);
+    -webkit-backdrop-filter: blur(22px) saturate(180%); backdrop-filter: blur(22px) saturate(180%);
+    box-shadow: 0 12px 32px -8px rgba(15, 25, 20, .28), 0 2px 6px rgba(15, 25, 20, .08), inset 0 1px 0 rgba(255, 255, 255, .9);
+  }
+  .tabbar a {
+    flex: 1 1 0; min-width: 0; height: 52px; padding: 0; gap: 0; justify-content: center; border-radius: 999px;
+    color: var(--ink-2); -webkit-tap-highlight-color: transparent; transition: background var(--dur-1) var(--ease), color var(--dur-1) var(--ease);
+  }
+  .tabbar a svg { width: 25px; height: 25px; stroke-width: 2; }
+  .tabbar a:active { transform: scale(.94); }
+  .tabbar a.active { color: var(--brand); background: rgba(20, 30, 25, .08); }
+  .tabbar a.active svg { stroke-width: 2.4; }
+  .tab-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .tab-plus { flex: 1 1 0; height: 52px; }
+  .tab-plus span { width: 46px; height: 46px; margin-top: 0; box-shadow: 0 4px 12px -3px rgba(23, 111, 73, .55), inset 0 1px 0 rgba(255, 255, 255, .25); }
+  :root[data-theme="dark"] .tabbar { background: rgba(17, 36, 29, .72); border-color: rgba(255, 255, 255, .08);
+    box-shadow: 0 12px 32px -8px rgba(0, 0, 0, .6), inset 0 1px 0 rgba(255, 255, 255, .06); }
+  :root[data-theme="dark"] .tabbar a { color: var(--ink-2); }
+  :root[data-theme="dark"] .tabbar a.active { color: var(--gold); background: rgba(255, 255, 255, .1); }
+}
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .tabbar { background: var(--surface) !important; }
+}

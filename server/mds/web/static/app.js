@@ -719,7 +719,7 @@ function renderApp() {
   const tabLinks = tabIds.map((id) => {
     const it = items.find((i) => i[0] === id) || ["more", "more", "Ще"];
     const active = id === route || (id === "more" && !tabIds.includes(route));
-    return h("a", { href: "#/" + id, class: active ? "active" : "" }, icon(it[1]), it[2]);
+    return h("a", { href: "#/" + id, class: active ? "active" : "", "aria-label": it[2], title: it[2], "aria-current": active ? "page" : null }, icon(it[1]), h("span", { class: "tab-label" }, it[2]));
   });
   const plus = () => h("button", { class: "tab-plus", type: "button", "aria-label": "Швидкий запис", onclick: () => quickBook({}) }, h("span", {}, icon("plus")));
   tabLinks.splice(Math.floor(tabLinks.length / 2), 0, plus());
