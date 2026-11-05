@@ -129,7 +129,7 @@ function h(tag, attrs, ...children) {
 
 const money = (k) => {
   const v = (k || 0) / 100;
-  return v.toLocaleString("uk-UA", { minimumFractionDigits: k % 100 ? 2 : 0, maximumFractionDigits: 2 }) + " ₴";
+  return v.toLocaleString("uk-UA", { minimumFractionDigits: k % 100 ? 2 : 0, maximumFractionDigits: 2 }) + "\u00a0₴"; // нерозривний пробіл — «₴» не переноситься окремо
 };
 const toKop = (s) => {
   const n = parseFloat(String(s).replace(/\s/g, "").replace(",", ".").replace(/[^\d.\-]/g, ""));
