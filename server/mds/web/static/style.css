@@ -1142,3 +1142,25 @@ label.row > input[type="checkbox"], label.row > input[type="radio"] { flex: 0 0 
   .ord-extra.open { display: flex; }
   .ord-extra select { width: 100% !important; }
 }
+
+/* «Клієнти» на телефоні: аналітика — один рядок, що гортається; дії — під «⋯» біля пошуку */
+.only-mob-flex { display: none; }
+@media (max-width: 760px) {
+  .only-mob-flex { display: inline-flex; }
+  .cl-period { margin-bottom: 8px; }
+  .cl-analytics .grid.kpi.kpi-6 { display: flex; overflow-x: auto; gap: 8px; scrollbar-width: none; margin: 0 -16px 8px; padding: 2px 16px; scroll-padding: 0 16px; scroll-snap-type: x proximity; }
+  .cl-analytics .grid.kpi.kpi-6::-webkit-scrollbar { display: none; }
+  .cl-analytics .grid.kpi.kpi-6 > .kpi-tile { flex: 0 0 auto; min-width: 104px; padding: 8px 12px; gap: 2px; scroll-snap-align: start; }
+  .cl-analytics .kpi-tile .kpi-ico, .cl-analytics .kpi-tile > .row.small { display: none; }
+  .cl-analytics .kpi-tile .kpi-label { white-space: nowrap; font-size: var(--fs-2xs); }
+  .cl-analytics .kpi-tile .kpi-value { font-size: var(--fs-md); }
+  .cl-analytics details.card { padding: 10px 12px; margin-bottom: 8px !important; font-size: var(--fs-sm); }
+  .cl-search { flex-wrap: nowrap !important; gap: 6px; }
+  .cl-search > .search-box { flex: 1 1 0; min-width: 0 !important; }
+  .cl-search > select { flex: 0 0 auto; width: 112px !important; padding-left: 10px; font-size: var(--fs-sm) !important; }
+  .cl-search > .cl-more { flex: 0 0 auto; width: 40px; padding: 0; justify-content: center; }
+  /* сегменти — один рядок, що гортається, замість трьох */
+  .cl-chips { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; margin: 0 -16px 10px; padding: 0 16px; }
+  .cl-chips::-webkit-scrollbar { display: none; }
+  .cl-chips .chip-btn { flex: 0 0 auto; white-space: nowrap; }
+}
