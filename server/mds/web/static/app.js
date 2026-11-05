@@ -841,7 +841,7 @@ function apptSheet(a, onChange) {
     h("div", { class: "stack" },
       h("div", { class: "row" }, h("div", { class: "grow" },
         h("div", { style: { fontSize: "26px", fontWeight: 700, letterSpacing: "-.02em" } }, `${hm(a.starts_at)}–${hm(a.ends_at)}`),
-        h("div", { class: "muted" }, `${weekday(a.starts_at.slice(0, 10))}, ${dmy(a.starts_at)} · ${a.duration_min} хв`)), chip(a.status)),
+        h("div", { class: "muted" }, `${weekday(a.starts_at.slice(0, 10))}, ${dmy(a.starts_at)} · ${a.duration_min}\u00a0хв`)), chip(a.status)),
       h("div", { class: "client-box" }, avatar(a.client.name, "lg"),
         h("div", { class: "grow" }, h("div", { style: { fontWeight: 700, fontSize: "15px" } }, a.client.name),
           a.client.phone ? h("a", { href: "tel:" + a.client.phone, class: "row small", style: { gap: "5px" } }, icon("phone", "sm"), a.client.phone) : h("span", { class: "muted small" }, "без номера")),
@@ -1086,7 +1086,7 @@ function quickBook({ master_id = null, date = today(), time = null, client = nul
   ].map((p) => ({ ...p, service: services.filter(p.match).sort((a, b) => Math.abs(a.duration_min - p.min) - Math.abs(b.duration_min - p.min))[0] }))
     .filter((p) => p.service);
   if (!PRESETS.length) st.service = services.find((s) => s.id === recent[0])?.id || null;
-  const durText = (m) => (m % 60 ? `${m} хв` : `${m / 60} год`);
+  const durText = (m) => (m % 60 ? `${m}\u00a0хв` : `${m / 60} год`);
   const pBox = h("div", { class: "qb-presets" });
   const drawPresets = () => pBox.replaceChildren(...PRESETS.map((p) => h("button", { type: "button", class: "qb-preset" + (st.preset === p.key ? " on" : ""),
     onclick: () => { st.preset = p.key; st.service = p.service.id; st.duration = p.min; st.time = null; drawPresets(); drawServices(); loadTimes(); } },
@@ -1120,7 +1120,7 @@ function quickBook({ master_id = null, date = today(), time = null, client = nul
     const q = sSearch.value.trim().toLowerCase();
     sFound.replaceChildren(...(q ? services.filter((s) => [s.name, s.category, s.subcategory, s.section].join(" ").toLowerCase().includes(q)).slice(0, 8)
       .map((s) => h("button", { type: "button", class: "qb-found-item", onclick: () => pickService(s.id) },
-        h("span", {}, s.name, h("small", { class: "muted" }, " · " + [s.section, s.subcategory || s.category].filter(Boolean).join(" · "))), h("small", { class: "muted" }, `${s.duration_min} хв · ${priceText(s)}`))) : []));
+        h("span", {}, s.name, h("small", { class: "muted" }, " · " + [s.section, s.subcategory || s.category].filter(Boolean).join(" · "))), h("small", { class: "muted" }, `${s.duration_min}\u00a0хв · ${priceText(s)}`))) : []));
   });
   const drawDays = () => {
     const days = [0, 1, 2].map((i) => addDays(today(), i));
@@ -1209,32 +1209,52 @@ function apptForm({ appt = null, master_id = null, date = today(), time = "10:00
   const isMaster = state.user.role === "master";
   const masters = isMaster ? [{ id: state.user.id, full_name: state.user.full_name }] : state.masters;
   const activeServices = state.services.filter((s) => s.is_active);
-  const svc = select(activeServices.map((s) => [s.id, `${[s.section, s.subcategory || s.category].filter(Boolean).join(" · ")}${s.section || s.category ? " · " : ""}${s.name} · ${priceText(s)} · ${s.duration_min} хв`]), appt ? appt.service_id : activeServices[0]?.id);
+  const svc = select(activeServices.map((s) => [s.id, `${[s.section, s.subcategory || s.category].filter(Boolean).join(" · ")}${s.section || s.category ? " · " : ""}${s.name} · ${priceText(s)} · ${s.duration_min}\u00a0хв`]), appt ? appt.service_id : activeServices[0]?.id);
   const mst = select(masters.map((m) => [m.id, m.full_name]), appt ? appt.master_id : master_id || masters[0]?.id);
   const d = h("input", { type: "date", value: appt ? appt.starts_at.slice(0, 10) : date });
   const t = h("input", { type: "time", step: 300, value: appt ? hm(appt.starts_at) : time });
-  const dur = h("input", { type: "number", min: 5, step: 5, value: appt ? appt.duration_min : "" , placeholder: "за послугою" });
-  const price = h("input", { inputmode: "decimal", value: appt ? kopToInput(appt.price) : "", placeholder: "за послугою" });
-  const comment = h("input", { value: appt?.comment || "" });
-  const slots = h("div", { class: "row small" });
-  const phone = h("input", { type: "tel", placeholder: "+380…" });
-  const name = h("input", { placeholder: "Ім'я" });
+  const dur = h("input", { type: "number", min: 5, step: 5, value: appt ? appt.duration_min : "" });
+  const price = h("input", { inputmode: "decimal", value: appt ? kopToInput(appt.price) : "" });
+  const comment = h("input", { value: appt?.comment || "", placeholder: "необов'язково" });
+  const slots = h("div", { class: "slot-strip" });
+  const slotHead = h("span", { class: "muted" });
+  const phone = h("input", { type: "tel", inputmode: "tel", placeholder: "необов'язково" });
+  const name = h("input", { placeholder: "Ім'я клієнта", autocapitalize: "words" });
+  const svcInfo = h("span", { class: "grow" });
+  const svcEdit = h("div", { class: "ap-grid ap-grid-2 hidden" }, field("Тривалість, хв", dur), field("Ціна, ₴", price));
+  const svcToggle = h("button", { type: "button", class: "btn sm ghost", onclick: () => {
+    const open = svcEdit.classList.toggle("hidden") === false;
+    svcToggle.textContent = open ? "Сховати" : "Змінити";
+    if (open) dur.focus();
+  } }, "Змінити");
+  const curSvc = () => state.services.find((x) => String(x.id) === svc.value);
+  const drawInfo = () => {
+    const s = curSvc() || {};
+    const m = dur.value ? +dur.value : s.duration_min;
+    const p = price.value ? money(toKop(price.value)) : priceText(s);
+    const custom = !!(dur.value || price.value);
+    svcInfo.replaceChildren(h("b", {}, `${m}\u00a0хв · ${p}`), h("span", { class: "muted" }, custom ? " · змінено" : " · за послугою"));
+    dur.placeholder = s.duration_min ? String(s.duration_min) : "";
+    price.placeholder = s.price !== undefined ? kopToInput(s.price) : "";
+  };
+  [dur, price].forEach((el) => el.addEventListener("input", drawInfo));
+  const markSlot = () => [...slots.querySelectorAll(".slot")].forEach((b) => b.classList.toggle("on", b.textContent === t.value));
+  t.addEventListener("input", markSlot);
   const found = h("div", { class: "muted small" });
   let clientId = null;
 
   const loadSlots = async () => {
-    slots.replaceChildren(h("span", { class: "muted" }, "Вільний час: …"));
+    slotHead.textContent = "шукаю…";
     try {
       const list = await api.get(`/api/availability?master_id=${mst.value}&service_id=${svc.value}&day=${d.value}`);
-      slots.replaceChildren(h("span", { class: "muted" }, "Вільно:"), ...(list.length ? list.slice(0, 24).map((x) =>
-        h("button", { class: "btn sm ghost", type: "button", onclick: () => { t.value = x; } }, x)) : [h("span", { class: "muted" }, "немає")]));
-    } catch (e) { slots.replaceChildren(); }
+      slotHead.textContent = list.length ? `${list.length} ${plural(list.length, "вікно", "вікна", "вікон")}` : "";
+      slots.replaceChildren(...(list.length ? list.map((x) =>
+        h("button", { class: "slot", type: "button", onclick: () => { t.value = x; markSlot(); } }, x)) : [h("span", { class: "muted small" }, "Вільних вікон немає — оберіть інший день або вкажіть час вручну")]));
+      markSlot();
+    } catch (e) { slotHead.textContent = ""; slots.replaceChildren(); }
   };
   [svc, mst, d].forEach((el) => el.addEventListener("change", loadSlots));
-  svc.addEventListener("change", () => {
-    const s = state.services.find((x) => String(x.id) === svc.value);
-    if (s && !appt) { dur.placeholder = s.duration_min + " хв"; price.placeholder = kopToInput(s.price); }
-  });
+  svc.addEventListener("change", drawInfo);
   let timer;
   phone.addEventListener("input", () => {
     clearTimeout(timer);
@@ -1258,7 +1278,7 @@ function apptForm({ appt = null, master_id = null, date = today(), time = "10:00
     }, 350);
   });
 
-  const save = h("button", { class: "btn gold big", onclick: async () => {
+  const save = h("button", { class: "btn primary big ap-save", onclick: async () => {
     const body = {
       master_id: +mst.value, service_id: +svc.value, starts_at: `${d.value}T${t.value}`,
       comment: comment.value.trim() || null,
@@ -1272,7 +1292,7 @@ function apptForm({ appt = null, master_id = null, date = today(), time = "10:00
       } else {
         if (clientId) body.client_id = clientId;
         else {
-          if (!phone.value.trim() && !name.value.trim()) { save.disabled = false; return toast("Вкажіть ім'я клієнта (телефон — необов'язково)", true); }
+          if (!phone.value.trim() && !name.value.trim()) { save.disabled = false; name.focus(); return toast("Вкажіть ім'я клієнта (телефон — необов'язково)", true); }
           body.client_phone = phone.value.trim() || null; body.client_name = name.value;
         }
         await createAppt(body, save, "Запис створено");
@@ -1283,17 +1303,21 @@ function apptForm({ appt = null, master_id = null, date = today(), time = "10:00
   } }, appt ? "Зберегти зміни" : "Записати");
 
   openSheet(appt ? "Перенести / змінити запис" : "Новий запис",
-    h("div", { class: "stack" },
-      appt ? h("div", { class: "muted" }, appt.client.name, " · ", appt.client.phone || "без номера") :
-        h("div", { class: "form-grid" }, field("Телефон (необов'язково)", phone), field("Ім'я", name)),
-      appt ? null : found,
-      field("Послуга", svc),
-      isMaster ? null : field("Майстер", mst),
-      h("div", { class: "form-grid" }, field("Дата", d), field("Час", t)),
-      slots,
-      h("div", { class: "form-grid" }, field("Тривалість, хв", dur), field("Ціна, ₴", price)),
+    h("div", { class: "stack ap-form" },
+      appt ? h("div", { class: "client-box" }, icon("user", "sm"), h("div", { class: "grow" }, h("b", {}, appt.client.name), h("div", { class: "muted small" }, appt.client.phone || "без номера")))
+        : h("section", { class: "ap-section" }, h("div", { class: "ap-title" }, "Клієнт"),
+          h("div", { class: "ap-grid ap-grid-sm2" }, field("Ім'я", name), field("Телефон", phone)), found),
+      h("section", { class: "ap-section" }, h("div", { class: "ap-title" }, "Послуга"),
+        field("Послуга", svc),
+        h("div", { class: "svc-strip" }, icon("clock", "sm"), svcInfo, svcToggle),
+        svcEdit,
+        isMaster ? null : field("Майстер", mst)),
+      h("section", { class: "ap-section" }, h("div", { class: "ap-title" }, "Час"),
+        h("div", { class: "ap-grid ap-grid-2" }, field("Дата", d), field("Час", t)),
+        h("div", { class: "slot-panel" }, h("div", { class: "slot-head" }, h("span", {}, "Вільний час"), slotHead), slots)),
       field("Коментар", comment),
       save));
+  drawInfo();
   loadSlots();
 }
 
@@ -1501,7 +1525,7 @@ function nowCard(a, unc = []) {
   const label = a.status === "in_progress" ? "Зараз у кріслі"
     : st <= now && now < en ? "Зараз · час запису настав"
       : en <= now ? "Не закрито — час минув"
-        : mins <= 60 ? `Наступний · через ${mins} хв` : `Наступний · о ${hm(a.starts_at)}`;
+        : mins <= 60 ? `Наступний · через ${mins}\u00a0хв` : `Наступний · о ${hm(a.starts_at)}`;
   const urgent = st <= now;
   return h("div", { class: "card now-card" + (urgent ? " urgent" : "") },
     h("div", { class: "now-top" }, h("span", { class: "now-label" }, h("i", { class: "pulse" }), label), chip(a.status)),
@@ -1748,7 +1772,7 @@ VIEWS.calendar = async (main) => {
           grid.append(h("button", { class: "cal-free", type: "button",
             style: { top: yOf(g0) + 4 + "px", left: head.offsetLeft + 6 + "px", width: head.offsetWidth - 12 + "px" },
             onclick: () => quickBook({ master_id: m.id, date: day, time: fmt(g0) }) },
-            icon("plus", "sm"), `Вільно ${fmt(g0)}–${fmt(g1)}`, h("span", {}, len >= 60 ? ` · ${Math.floor(len / 60)} год${len % 60 ? " " + (len % 60) + " хв" : ""}` : ` · ${len} хв`)));
+            icon("plus", "sm"), `Вільно ${fmt(g0)}–${fmt(g1)}`, h("span", {}, len >= 60 ? ` · ${Math.floor(len / 60)} год${len % 60 ? " " + (len % 60) + " хв" : ""}` : ` · ${len}\u00a0хв`)));
         }
       });
       if (day === today()) {
@@ -2196,15 +2220,16 @@ async function clientsSimple(main) {
 }
 
 function periodPicker(onChange, initial = "month") {
-  const from = h("input", { type: "date", style: { width: "auto" }, "aria-label": "З" });
-  const to = h("input", { type: "date", style: { width: "auto" }, "aria-label": "По" });
-  const custom = h("span", { class: "row hidden" }, from, "—", to,
-    h("button", { class: "btn sm", onclick: () => from.value && onChange(`date_from=${from.value}&date_to=${to.value || from.value}`, "custom") }, "Показати"));
+  const from = h("input", { type: "date", "aria-label": "З" });
+  const to = h("input", { type: "date", "aria-label": "По" });
+  const custom = h("div", { class: "period-range hidden" },
+    h("label", { class: "f" }, h("span", {}, "З"), from), h("label", { class: "f" }, h("span", {}, "По"), to),
+    h("button", { class: "btn", onclick: () => from.value && onChange(`date_from=${from.value}&date_to=${to.value || from.value}`, "custom") }, "Показати"));
   const s = seg([["day", "День"], ["week", "Тиждень"], ["month", "Місяць"], ["year", "Рік"], ["custom", "Період…"]], initial, (v) => {
     custom.classList.toggle("hidden", v !== "custom");
     if (v !== "custom") onChange("period=" + v, v);
   });
-  return h("div", { class: "row", style: { marginBottom: "14px" } }, s, custom);
+  return h("div", { class: "row period-picker", style: { marginBottom: "14px" } }, s, custom);
 }
 
 function prevRange(from, to, kind) {
@@ -2438,40 +2463,40 @@ function insightsBlock(ins) {
 const MONTHS_UA = ["Січень", "Лютий", "Березень", "Квітень", "Травень", "Червень", "Липень", "Серпень", "Вересень", "Жовтень", "Листопад", "Грудень"];
 const monthTitle = (iso) => `${MONTHS_UA[+iso.slice(5, 7) - 1]} ${iso.slice(0, 4)}`;
 const addMonths = (iso, n) => { const d = new Date(iso.slice(0, 7) + "-01T12:00"); d.setMonth(d.getMonth() + n); return isoDate(d).slice(0, 7) + "-01"; };
-const fmtH = (h) => { const m = Math.round(h * 60); return `${Math.floor(m / 60)} год ${m % 60} хв`; };
+const fmtH = (h) => { const m = Math.round(h * 60); return `${Math.floor(m / 60)} год ${m % 60}\u00a0хв`; };
 
 const num = (v) => parseFloat(String(v).replace(",", "."));
 function hourCostText(st) {
-  return st.hour_cost ? `${money(st.hour_cost)} за мотогодину = ${fmtNum(st.fuel_lph_milli / 1000)} л × ${money(st.fuel_price)} + амортизація ${money(st.amort_per_hour)}` : "вартість мотогодини не задано";
+  return st.hour_cost ? `${money(st.hour_cost)} за мотогодину = ${fmtNum(st.fuel_lph_milli / 1000)}\u00a0л × ${money(st.fuel_price)} + амортизація ${money(st.amort_per_hour)}` : "вартість мотогодини не задано";
 }
 function generatorHoursForm(g, onDone) {
   let mode = "meter";
   const val = h("input", { inputmode: "decimal", placeholder: "напр. 125,5" });
   const on = h("input", { type: "date", value: today(), max: today() });
-  const note = h("input", { placeholder: "необов'язково (напр. «відключення 14:00–18:00»)" });
-  const lbl = h("span", {}, "Показник лічильника мотогодин");
+  const note = h("input", { placeholder: "необов'язково" });
+  const lbl = h("span", {}, "Показник лічильника");
   const hint = h("p", { class: "muted small" });
   const preview = h("div", { class: "card gen-preview" });
   const st = g.settings;
   const calc = () => {
     const x = num(val.value);
     const hrs = mode === "meter" ? x - g.motohours : x;
-    hint.textContent = mode === "meter" ? `Попередній показник: ${fmtNum(g.motohours)} мотогод. Різниця = відпрацьовано.` : "Скільки мотогодин генератор пропрацював (можна дробове: 2,5).";
+    hint.textContent = mode === "meter" ? `Попередній показник: ${fmtNum(g.motohours)}\u00a0мотогод. Різниця = відпрацьовано.` : "Скільки мотогодин генератор пропрацював (можна дробове: 2,5).";
     if (!(hrs > 0)) { preview.replaceChildren(h("span", { class: "muted small" }, Number.isFinite(x) && mode === "meter" ? "Показник має бути більший за попередній" : "Вкажіть значення — тут з'явиться розрахунок")); return; }
     const fuel = hrs * st.fuel_lph_milli / 1000;
     const fuelCost = Math.round(fuel * st.fuel_price), amort = Math.round(hrs * st.amort_per_hour);
     preview.replaceChildren(
-      h("div", { class: "sum-line" }, h("span", {}, "Відпрацьовано"), h("b", {}, `${fmtNum(Math.round(hrs * 1000) / 1000)} мотогод.`)),
-      h("div", { class: "sum-line" }, h("span", {}, `Бензин ${fmtNum(Math.round(fuel * 100) / 100)} л × ${money(st.fuel_price)}`), h("span", {}, money(fuelCost))),
+      h("div", { class: "sum-line" }, h("span", {}, "Відпрацьовано"), h("b", {}, `${fmtNum(Math.round(hrs * 1000) / 1000)}\u00a0мотогод.`)),
+      h("div", { class: "sum-line" }, h("span", {}, `Бензин ${fmtNum(Math.round(fuel * 100) / 100)}\u00a0л × ${money(st.fuel_price)}`), h("span", {}, money(fuelCost))),
       h("div", { class: "sum-line" }, h("span", {}, `Амортизація ${money(st.amort_per_hour)} × мотогод.`), h("span", {}, money(amort))),
       h("div", { class: "sum-line total" }, h("span", {}, "Разом витрати"), h("b", {}, money(fuelCost + amort))));
   };
   val.addEventListener("input", calc);
-  const modeSeg = seg([["meter", "Показник лічильника"], ["hours", "Відпрацьовано годин"]], mode, (v) => { mode = v; lbl.textContent = v === "meter" ? "Показник лічильника мотогодин" : "Відпрацьовано мотогодин"; val.value = ""; calc(); });
+  const modeSeg = seg([["meter", "Показник лічильника"], ["hours", "Відпрацьовано годин"]], mode, (v) => { mode = v; lbl.textContent = v === "meter" ? "Показник лічильника" : "Відпрацьовано, мотогод."; val.value = ""; calc(); });
   calc();
   openSheet("Внести мотогодини", h("div", { class: "stack" },
     modeSeg,
-    h("div", { class: "form-grid" }, h("label", { class: "f" }, lbl, val), field("Дата", on)),
+    h("div", { class: "ap-grid ap-grid-2" }, h("label", { class: "f" }, lbl, val), field("Дата", on)),
     hint, preview, field("Примітка", note),
     !g.configured ? h("p", { class: "muted small" }, "Вартість мотогодини не задано — витрати будуть 0 ₴. Задайте витрату бензину й амортизацію в «Налаштуваннях».") : null,
     h("button", { class: "btn primary big", onclick: async () => {
@@ -2487,7 +2512,7 @@ function generatorCard(g, onChange) {
     h("div", { class: "row", style: { alignItems: "center", gap: "14px", flexWrap: "wrap" } },
       h("span", { class: "gen-ico" }, icon("gauge")),
       h("div", { class: "grow" }, h("div", { class: "muted small" }, "Лічильник мотогодин"),
-        h("div", { class: "kpi-value" }, `${fmtNum(g.motohours)} мотогод.`),
+        h("div", { class: "kpi-value" }, `${fmtNum(g.motohours)}\u00a0мотогод.`),
         h("div", { class: "muted small" }, hourCostText(g.settings))),
       h("button", { class: "btn primary", onclick: () => generatorHoursForm(g, onChange) }, icon("plus", "sm"), "Внести мотогодини")),
     !g.configured ? h("div", { class: "callout", style: { marginTop: "10px", marginBottom: 0 } }, icon("alert"),
@@ -2495,7 +2520,7 @@ function generatorCard(g, onChange) {
 }
 function genHistoryChart(hist) {
   const max = Math.max(1, ...hist.map((x) => x.total));
-  return h("div", { class: "gen-bars" }, hist.map((x) => h("div", { class: "gen-bar", title: `${monthTitle(x.month)}: ${fmtNum(x.hours)} мотогод., ${fmtNum(x.fuel_l)} л, ${money(x.total)}` },
+  return h("div", { class: "gen-bars" }, hist.map((x) => h("div", { class: "gen-bar", title: `${monthTitle(x.month)}: ${fmtNum(x.hours)}\u00a0мотогод., ${fmtNum(x.fuel_l)}\u00a0л, ${money(x.total)}` },
     h("span", { class: "v" }, x.total ? money(x.total) : "—"),
     h("div", { class: "col" }, h("i", { class: "fuel", style: { height: (x.fuel_cost / max) * 100 + "%" } }), h("i", { class: "amort", style: { height: (x.amort_cost / max) * 100 + "%" } })),
     h("b", {}, MONTHS_UA[+x.month.slice(5, 7) - 1].slice(0, 3)), h("span", { class: "muted" }, `${fmtNum(x.hours)} год`))));
@@ -2504,7 +2529,7 @@ function genRunsTable(runs, onEdit) {
   return runs.length ? h("div", { class: "table-wrap" }, h("table", {},
     h("tr", {}, h("th", {}, "Дата"), h("th", { class: "num" }, "Мотогод."), h("th", { class: "num" }, "Бензин"), h("th", { class: "num m-hide" }, "Амортизація"), h("th", { class: "num" }, "Разом"), h("th", { class: "m-hide" }, "Примітка"), onEdit ? h("th", {}, "") : null),
     runs.map((x) => h("tr", {}, h("td", {}, dmy(x.started_at), x.corrected ? h("span", { class: "chip plain", style: { marginLeft: "6px" } }, "виправлено") : null),
-      h("td", { class: "num" }, fmtNum(x.hours)), h("td", { class: "num" }, `${fmtNum(x.fuel_l)} л · ${money(x.fuel_cost)}`), h("td", { class: "num" }, money(x.amort_cost)),
+      h("td", { class: "num" }, fmtNum(x.hours)), h("td", { class: "num" }, `${fmtNum(x.fuel_l)}\u00a0л · ${money(x.fuel_cost)}`), h("td", { class: "num" }, money(x.amort_cost)),
       h("td", { class: "num" }, h("b", {}, money(x.total_cost))), h("td", { class: "small muted" }, x.note || ""),
       onEdit ? h("td", { class: "right" }, x.running ? null : h("button", { class: "btn sm ghost", "aria-label": "Виправити", onclick: () => onEdit(x) }, icon("edit", "sm"))) : null))))
     : emptyState("Цього місяця генератор не використовувався", "gauge");
@@ -2627,15 +2652,15 @@ VIEWS.utilities = async (main) => {
 
   const e = sum.electricity, gen = sum.generator;
   const kpis = h("div", { class: "grid kpi", style: { marginTop: "12px" } },
-    kpi("Електроенергія", e.cost, "", { ico: "zap", sub: `${fmtNum(e.kwh)} кВт·год${e.has_reading && !e.confirmed ? " · не підтверджено" : ""}` }),
-    kpi("Генератор", gen.total, "", { ico: "gauge", sub: `${fmtNum(gen.hours)} мотогод. · ${fmtNum(gen.fuel_l)} л` }),
+    kpi("Електроенергія", e.cost, "", { ico: "zap", sub: `${fmtNum(e.kwh)}\u00a0кВт·год${e.has_reading && !e.confirmed ? " · не підтверджено" : ""}` }),
+    kpi("Генератор", gen.total, "", { ico: "gauge", sub: `${fmtNum(gen.hours)}\u00a0мотогод. · ${fmtNum(gen.fuel_l)}\u00a0л` }),
     kpi("Разом витрати", sum.total, "dark", { ico: "wallet", sub: sum.charged_to_masters ? `з майстрів ${money(sum.charged_to_masters)}` : "" }),
     kpi("Вплив на чистий прибуток", sum.net_impact, "accent", { ico: "trend", sub: "витрати мінус компенсація майстрів" }));
   const detail = h("div", { class: "card" }, h("div", { class: "card-head" }, h("h3", {}, "Деталі місяця")),
-    h("div", { class: "sum-line" }, h("span", {}, "Електроенергія"), h("span", {}, `${fmtNum(e.kwh)} кВт·год × ${e.tariff ? money(e.tariff) : "—"}`), h("b", {}, money(e.cost))),
+    h("div", { class: "sum-line" }, h("span", {}, "Електроенергія"), h("span", {}, `${fmtNum(e.kwh)}\u00a0кВт·год × ${e.tariff ? money(e.tariff) : "—"}`), h("b", {}, money(e.cost))),
     e.paid !== null ? h("div", { class: "sum-line muted" }, h("span", {}, "Фактично сплачено"), h("span", {}, money(e.paid))) : null,
-    h("div", { class: "sum-line" }, h("span", {}, "Бензин"), h("span", {}, fmtNum(gen.fuel_l) + " л"), h("b", {}, money(gen.fuel_cost))),
-    h("div", { class: "sum-line" }, h("span", {}, "Амортизація генератора"), h("span", {}, fmtNum(gen.hours) + " мотогод."), h("b", {}, money(gen.amort_cost))),
+    h("div", { class: "sum-line" }, h("span", {}, "Бензин"), h("span", {}, fmtNum(gen.fuel_l) + "\u00a0л"), h("b", {}, money(gen.fuel_cost))),
+    h("div", { class: "sum-line" }, h("span", {}, "Амортизація генератора"), h("span", {}, fmtNum(gen.hours) + "\u00a0мотогод."), h("b", {}, money(gen.amort_cost))),
     h("div", { class: "sum-line total" }, h("span", {}, "Разом"), h("b", {}, money(sum.total))),
     sum.by_master.map((m) => h("div", { class: "sum-line" }, h("span", { class: "muted" }, "− списано: " + m.master_name), h("span", {}, money(m.amount)))),
     sum.other_utilities ? h("p", { class: "muted small" }, `Інші комунальні витрати (внесені вручну): ${money(sum.other_utilities)}`) : null,
@@ -2645,8 +2670,8 @@ VIEWS.utilities = async (main) => {
   const elecCard = h("div", { class: "card stack" }, h("div", { class: "card-head" }, h("h3", {}, "Лічильник електроенергії"),
     cur ? h("span", { class: "chip " + (cur.confirmed ? "st-completed" : "st-pending") }, cur.confirmed ? "підтверджено" : "не підтверджено") : null),
     cur ? h("div", { class: "stack" },
-      h("div", { class: "sum-line" }, h("span", {}, "Показники"), h("b", {}, `${fmtNum(cur.prev)} → ${fmtNum(cur.curr)} = ${fmtNum(cur.used)} кВт·год`)),
-      h("div", { class: "sum-line" }, h("span", {}, "Тариф"), h("b", {}, money(cur.tariff) + " / кВт·год")),
+      h("div", { class: "sum-line" }, h("span", {}, "Показники"), h("b", {}, `${fmtNum(cur.prev)} → ${fmtNum(cur.curr)} = ${fmtNum(cur.used)}\u00a0кВт·год`)),
+      h("div", { class: "sum-line" }, h("span", {}, "Тариф"), h("b", {}, money(cur.tariff) + "\u00a0/\u00a0кВт·год")),
       h("div", { class: "sum-line total" }, h("span", {}, "Вартість"), h("b", {}, money(cur.cost))),
       cur.paid_amount !== null ? h("div", { class: "sum-line" }, h("span", {}, "Сплачено"), h("b", {}, money(cur.paid_amount)),
         cur.difference ? h("span", { class: "muted small" }, cur.difference > 0 ? ` переплата ${money(cur.difference)}` : ` борг ${money(-cur.difference)}`) : null) : null,
@@ -2668,18 +2693,18 @@ VIEWS.utilities = async (main) => {
     const calc = () => {
       const used = parseFloat(String(currIn.value).replace(",", ".")) - parseFloat(String(prevIn.value).replace(",", "."));
       const t = toKop(tariffIn.value);
-      preview.replaceChildren(h("span", {}, used >= 0 ? `${fmtNum(used)} кВт·год` : "Перевірте показники"), h("b", {}, used >= 0 && t > 0 ? money(Math.round(used * t)) : "—"));
+      preview.replaceChildren(h("span", {}, used >= 0 ? `${fmtNum(used)}\u00a0кВт·год` : "Перевірте показники"), h("b", {}, used >= 0 && t > 0 ? money(Math.round(used * t)) : "—"));
     };
     [prevIn, currIn, tariffIn].forEach((x) => x.addEventListener("input", calc));
     calc();
     openSheet(r ? "Показники: " + monthTitle(month) : "Нові показники: " + monthTitle(month), h("div", { class: "stack" },
-      h("div", { class: "form-grid" }, field("Попередній показник", prevIn), field("Поточний показник", currIn)),
-      h("div", { class: "form-grid" }, field("Ціна за 1 кВт·год, ₴", tariffIn), field("Дата зняття", readOn)),
+      h("div", { class: "ap-grid ap-grid-2" }, field("Попередній показник", prevIn), field("Поточний показник", currIn)),
+      h("div", { class: "ap-grid ap-grid-2" }, field("Ціна за 1\u00a0кВт·год, ₴", tariffIn), field("Дата зняття", readOn)),
       preview, field("Фактично сплачено, ₴", paid), r && r.confirmed ? field("Причина виправлення", reason) : null,
       h("button", { class: "btn primary big", onclick: async () => {
         const body = { prev: prevIn.value.replace(",", "."), curr: currIn.value.replace(",", "."), tariff: toKop(tariffIn.value), read_on: readOn.value,
           paid_amount: paid.value.trim() ? toKop(paid.value) : null };
-        if (!(body.tariff > 0)) return toast("Вкажіть ціну за 1 кВт·год", true);
+        if (!(body.tariff > 0)) return toast("Вкажіть ціну за 1\u00a0кВт·год", true);
         if (r) await run(() => api.patch(`/api/utilities/readings/${r.id}`, { ...body, reason: reason.value.trim() || null }), "Збережено");
         else await run(() => api.post("/api/utilities/readings", { ...body, month }), "Показники внесено");
         closeSheet(); reload();
@@ -2691,12 +2716,12 @@ VIEWS.utilities = async (main) => {
     h("div", { class: "card-head" }, h("h3", { class: "row", style: { gap: "8px" } }, icon("gauge"), "Генератор: " + monthTitle(month).toLowerCase())),
     h("div", { class: "gen-stats" },
       h("div", {}, h("span", {}, "Мотогодини"), h("b", {}, fmtNum(gen.hours))),
-      h("div", {}, h("span", {}, "Бензин"), h("b", {}, `${fmtNum(gen.fuel_l)} л`), h("small", {}, money(gen.fuel_cost))),
+      h("div", {}, h("span", {}, "Бензин"), h("b", {}, `${fmtNum(gen.fuel_l)}\u00a0л`), h("small", {}, money(gen.fuel_cost))),
       h("div", {}, h("span", {}, "Амортизація"), h("b", {}, money(gen.amort_cost))),
       h("div", {}, h("span", {}, "Разом"), h("b", {}, money(gen.total))),
       h("div", {}, h("span", {}, "Записів"), h("b", {}, String(gen.runs))),
       gen.hours ? h("div", {}, h("span", {}, "Середня мотогодина"), h("b", {}, money(Math.round(gen.total / gen.hours)))) : null),
-    f && f.hours_so_far && month === today().slice(0, 7) + "-01" ? h("p", { class: "muted small" }, `Прогноз на місяць: ${fmtNum(f.projected_hours)} мотогод. ≈ ${money(f.projected_cost)}.`) : null,
+    f && f.hours_so_far && month === today().slice(0, 7) + "-01" ? h("p", { class: "muted small" }, `Прогноз на місяць: ${fmtNum(f.projected_hours)}\u00a0мотогод. ≈ ${money(f.projected_cost)}.`) : null,
     hist.length ? h("div", {}, h("div", { class: "row small muted", style: { justifyContent: "space-between" } }, h("span", {}, "Останні 6 місяців"),
       h("span", { class: "row", style: { gap: "10px" } }, h("span", { class: "lg fuel" }, "бензин"), h("span", { class: "lg amort" }, "амортизація"))), genHistoryChart(hist)) : null,
     h("h3", { style: { marginTop: "6px" } }, "Записи мотогодин"),
