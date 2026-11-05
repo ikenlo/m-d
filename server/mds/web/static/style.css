@@ -1126,3 +1126,20 @@ label.row > input[type="checkbox"], label.row > input[type="radio"] { flex: 0 0 
 .perf-row:last-child { border-bottom: 0; }
 .perf-name { min-width: 0; overflow-wrap: anywhere; }
 .perf-meta { grid-column: 1 / -1; font-size: var(--fs-xs); }
+
+/* «Замовлення»: фільтри. Комп'ютер — усе в один рядок; телефон — період + пошук + кнопка «Фільтри» */
+.ord-extra { display: contents; }
+.filt-btn { display: none; position: relative; flex: 0 0 auto; padding: 0 12px; min-height: 36px; }
+.filt-btn.on { background: var(--surface-3); }
+.filt-btn .filt-n { font-style: normal; font-size: var(--fs-2xs); font-weight: 800; min-width: 18px; height: 18px; line-height: 18px; border-radius: var(--r-pill);
+  background: var(--brand); color: #fff; display: none; padding: 0 5px; }
+.filt-btn.has .filt-n { display: inline-block; }
+:root[data-theme="dark"] .filt-btn .filt-n { background: var(--gold); color: #17120a; }
+@media (max-width: 760px) {
+  .ord-filters { flex-wrap: wrap; gap: 8px; }
+  .ord-filters > .search-box { flex: 1 1 0; min-width: 0 !important; }
+  .filt-btn { display: inline-flex; }
+  .ord-extra { display: none; order: 3; flex: 1 1 100%; flex-direction: column; gap: 8px; }
+  .ord-extra.open { display: flex; }
+  .ord-extra select { width: 100% !important; }
+}

@@ -200,6 +200,7 @@ const ICONS = {
   phone: '<path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.3 1.8.6 2.7a2 2 0 0 1-.5 2.1L8 9.8a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.5 2.7.6a2 2 0 0 1 1.7 2z"/>',
   x: '<path d="M18 6L6 18M6 6l12 12"/>',
   search: '<circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/>',
+  sliders: '<path d="M4 6h9M17 6h3M4 12h3M11 12h9M4 18h11M19 18h1"/><circle cx="15" cy="6" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="17" cy="18" r="2"/>',
   more: '<circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/>',
   trend: '<path d="M23 6l-9.5 9.5-5-5L1 18"/><path d="M17 6h6v6"/>',
   card: '<rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/>',
@@ -2866,9 +2867,16 @@ VIEWS.shifts = async (main) => {
 VIEWS.orders = async (main) => {
   const body = h("div");
   const mst = select([["", "Усі майстри"], ...state.masters.map((m) => [m.id, m.full_name])], "", { style: { width: "auto" } });
-  const search = h("input", { type: "search", placeholder: "Клієнт, послуга або № замовлення", "aria-label": "Пошук", oninput: () => render() });
+  const search = h("input", { type: "search", placeholder: "Клієнт, послуга або №", "aria-label": "Пошук: клієнт, послуга або номер замовлення", oninput: () => render() });
   let q = "period=month", pay = "", list = [];
-  const paySeg = seg([["", "Усі"], ["cash", "Готівка"], ["card", "Картка"]], "", (v) => { pay = v; render(); });
+  // телефон: майстер і оплата сховані під кнопкою «Фільтри» (з лічильником), щоб блок не займав пів екрана
+  const fCount = h("i", { class: "filt-n" });
+  const extra = h("div", { class: "ord-extra" });
+  const fBtn = h("button", { class: "btn filt-btn", type: "button", "aria-expanded": "false", "aria-label": "Фільтри: майстер і оплата",
+    onclick: () => { const open = extra.classList.toggle("open"); fBtn.classList.toggle("on", open); fBtn.setAttribute("aria-expanded", String(open)); } },
+  icon("sliders", "sm"), fCount);
+  const syncCount = () => { const n = (mst.value ? 1 : 0) + (pay ? 1 : 0); fCount.textContent = n ? String(n) : ""; fBtn.classList.toggle("has", !!n); };
+  const paySeg = seg([["", "Усі"], ["cash", "Готівка"], ["card", "Картка"]], "", (v) => { pay = v; syncCount(); render(); });
   const payIco = (m) => (m === "cash" ? "banknote" : m === "card" ? "card" : "transfer");
   const load = async () => {
     body.replaceChildren(h("div", { class: "skeleton" }, h("i"), h("i"), h("i")));
@@ -2924,9 +2932,10 @@ VIEWS.orders = async (main) => {
         h("div", { class: "ord-amt" }, h("b", {}, money(o.amount)), h("span", { class: "small muted row", style: { gap: "4px" } }, icon(payIco(o.payment_method), "sm"), PAY[o.payment_method]))))))));
     body.replaceChildren(kpis, table, cards);
   };
-  mst.addEventListener("change", load);
+  mst.addEventListener("change", () => { syncCount(); load(); });
   main.append(topbar("Замовлення", "Закриті замовлення: оплата, частка майстра і салону"),
-    h("div", { class: "filters" }, periodPicker((x) => { q = x; load(); }), h("div", { class: "row filters-2" }, mst, paySeg, h("div", { class: "search-box grow" }, icon("search", "sm"), search))), body);
+    h("div", { class: "filters" }, periodPicker((x) => { q = x; load(); }),
+      h("div", { class: "row filters-2 ord-filters" }, (extra.append(mst, paySeg), extra), h("div", { class: "search-box grow" }, icon("search", "sm"), search), fBtn)), body);
   await load();
 };
 
