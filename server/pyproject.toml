@@ -1,6 +1,6 @@
 [project]
 name = "mds-connect"
-version = "0.1.54"
+version = "0.1.55"
 description = "MDS Connect — внутрішня система салону M&D (записи, зарплати, фінанси, Telegram-бот)"
 requires-python = ">=3.11"
 dependencies = [
