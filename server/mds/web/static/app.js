@@ -2138,10 +2138,16 @@ VIEWS.clients = async (main) => {
     confirmSheet("Видалити клієнтів без номера?", `Буде прибрано: ${total}. ${r.merged ? `Візити ${r.merged} з них збережуться в картці «Клієнти без номера». ` : ""}`, "Видалити",
       async () => { await run(() => api.post("/api/clients/purge-no-phone"), "Готово"); reload(); }, { danger: true });
   };
+  const doExport = () => run(() => downloadFile("/api/clients/export.csv", "klienty.csv"));
+  // телефон: три дії сховані під «⋯» біля пошуку, щоб не займати рядок
+  const actionsSheet = () => openSheet("Дії з базою", h("div", { class: "stack" },
+    isDir ? h("button", { class: "btn big", onclick: () => { closeSheet(); doExport(); } }, icon("filetext", "sm"), "Експорт у CSV") : null,
+    h("button", { class: "btn big", onclick: () => { closeSheet(); dupSheet(); } }, icon("users", "sm"), "Знайти дублікати"),
+    isDir ? h("button", { class: "btn big danger", onclick: () => { closeSheet(); purge(); } }, icon("trash", "sm"), "Видалити клієнтів без номера") : null));
   main.append(topbar("Клієнти", "Єдина база: картка, візити, витрати, сегменти",
-    isDir ? h("button", { class: "btn", onclick: () => run(() => downloadFile("/api/clients/export.csv", "klienty.csv")) }, icon("filetext", "sm"), "Експорт") : null,
-    h("button", { class: "btn", onclick: dupSheet }, icon("users", "sm"), "Дублікати"),
-    isDir ? h("button", { class: "btn ghost", onclick: purge }, icon("trash", "sm"), "Без номера") : null));
+    isDir ? h("button", { class: "btn only-desk", onclick: doExport }, icon("filetext", "sm"), "Експорт") : null,
+    h("button", { class: "btn only-desk", onclick: dupSheet }, icon("users", "sm"), "Дублікати"),
+    isDir ? h("button", { class: "btn ghost only-desk", onclick: purge }, icon("trash", "sm"), "Без номера") : null));
   // аналітика бази (директор)
   if (isDir) {
     const box = h("div");
@@ -2159,15 +2165,17 @@ VIEWS.clients = async (main) => {
         a.top_clients.length ? h("details", { class: "card", style: { marginBottom: "12px" } }, h("summary", { class: "row", style: { cursor: "pointer" } }, icon("trend", "sm"), h("b", {}, "Найприбутковіші клієнти за період")),
           h("div", { style: { marginTop: "10px" } }, barList(a.top_clients.map((x) => [x.name, x.spent, `${x.visits} віз.`]), a.top_clients[0].spent))) : null);
     };
-    main.append(h("div", { class: "filters" }, seg([[30, "30 днів"], [90, "90 днів"], [365, "Рік"]], 30, (v) => loadA(Number(v)))), box);
+    box.className = "cl-analytics";
+    main.append(h("div", { class: "filters cl-period" }, seg([[30, "30 днів"], [90, "90 днів"], [365, "Рік"]], 30, (v) => loadA(Number(v)))), box);
     loadA(30);
   }
-  const search = h("input", { type: "search", placeholder: "Пошук: ім'я, прізвище або телефон", id: "client-search" });
-  const sort = select([["name", "За ім'ям"], ["visits", "За візитами"], ...(isDir ? [["spent", "За витратами"]] : []), ["last_visit", "Нещодавні візити"], ["created", "Нові картки"]], "name", { style: { width: "auto" } });
-  const chips = h("div", { class: "chips-row" });
+  const search = h("input", { type: "search", placeholder: "Ім'я або телефон", "aria-label": "Пошук: ім'я, прізвище або телефон", id: "client-search" });
+  const sort = select([["name", "За ім'ям"], ["visits", "За візитами"], ...(isDir ? [["spent", "За витратами"]] : []), ["last_visit", "Нещодавні візити"], ["created", "Нові картки"]], "name", { style: { width: "auto" }, "aria-label": "Сортування" });
+  const chips = h("div", { class: "chips-row cl-chips" });
   const list = h("div");
   const more = h("button", { class: "btn", style: { width: "100%", marginTop: "10px" } }, "Показати ще");
-  main.append(h("div", { class: "row filters-2", style: { marginBottom: "10px" } }, h("div", { class: "search-box grow" }, icon("search", "sm"), search), sort), chips, list, more);
+  main.append(h("div", { class: "row filters-2 cl-search", style: { marginBottom: "10px" } }, h("div", { class: "search-box grow" }, icon("search", "sm"), search), sort,
+    h("button", { class: "btn only-mob-flex cl-more", type: "button", "aria-label": "Дії: експорт, дублікати, без номера", onclick: actionsSheet }, icon("more"))), chips, list, more);
   let req = 0, items = [];
   async function load(append = false) {
     const my = ++req;
