@@ -1212,30 +1212,9 @@ label.row > input[type="checkbox"], label.row > input[type="radio"] { flex: 0 0 
 }
 
 /* =====================================================================
- * РЕДИЗАЙН v2 — яскравий і зрозумілий.
- * Чиста світла основа, у кожного розділу свій колір (data-hue): іконка в меню, плитка «Ще», заголовок сторінки.
- * Бренд M&D лишається: смарагдовий для основних дій, золото — для акцентів.
+ * Кольори розділів (data-hue): іконка в меню, плитка «Ще», заголовок сторінки, нижня вкладка.
+ * Палітра — як у 0.1.55 (темно-зелений M&D, золото).
  * ===================================================================== */
-:root {
-  --brand: #0d6e4c; --brand-2: #12936a; --brand-ink: #ffffff;
-  --gold: #d99a2b; --gold-soft: #f6d58f; --gold-tint: #fff5df;
-  --bg: #f4f5f8; --surface: #ffffff; --surface-2: #f7f8fa; --surface-3: #eef0f4;
-  --ink: #161b26; --ink-2: #485164; --ink-3: #8a93a5;
-  --line: #e6e9ef; --line-strong: #d4d9e2; --focus: rgba(18, 147, 106, .3);
-  --ok: #12936a; --ok-bg: #e3f6ee; --warn: #c27a0e; --warn-bg: #fff3dc;
-  --danger: #d9443a; --danger-bg: #fdeaea; --info: #2f6fe0; --info-bg: #e8f0fd;
-  --prog: #7b4fe0; --prog-bg: #f0eafd; --muted-bg: #eef0f4;
-  --shadow-sm: 0 1px 2px rgba(22, 27, 38, .05);
-  --shadow: 0 1px 2px rgba(22, 27, 38, .04), 0 6px 20px rgba(22, 27, 38, .07);
-}
-:root[data-theme="dark"] {
-  --brand: #12936a; --brand-2: #17a878; --gold: #f0b54a; --gold-tint: rgba(240, 181, 74, .14);
-  --bg: #0e1116; --surface: #161a22; --surface-2: #1b202a; --surface-3: #232937;
-  --ink: #eef1f6; --ink-2: #c3c9d5; --ink-3: #8992a3; --line: #262c39; --line-strong: #323a4a;
-  --ok: #4fd1a0; --ok-bg: rgba(79, 209, 160, .14); --info: #7fb0ff; --info-bg: rgba(127, 176, 255, .14);
-  --muted-bg: rgba(255, 255, 255, .06);
-}
-
 /* кольори розділів */
 [data-hue] { --hue: #64708a; --hue-bg: #eef0f5; }
 [data-hue="violet"] { --hue: #7b4fe0; --hue-bg: #efe9fd; }
@@ -1256,23 +1235,12 @@ label.row > input[type="checkbox"], label.row > input[type="radio"] { flex: 0 0 
 :root[data-theme="dark"] [data-hue] { --hue-bg: color-mix(in srgb, var(--hue) 20%, transparent); }
 :root[data-theme="dark"] [data-hue] .nav-ico, :root[data-theme="dark"] [data-hue] .tile-ico, :root[data-theme="dark"] [data-hue] .title-ico { color: color-mix(in srgb, var(--hue) 70%, white); }
 
-/* бічне меню — світле, з кольоровими іконками */
-.sidebar { background: var(--surface); color: var(--ink); border-right: 1px solid var(--line); }
-.brand-name { color: var(--ink); }
-.brand-sub, .brand-ver { color: var(--ink-3); }
-.brand-mark { background: linear-gradient(145deg, #1bb07f, #0d6e4c); color: #fff; box-shadow: 0 4px 12px rgba(13, 110, 76, .3); }
-.nav-group { color: var(--ink-3); }
-.nav a { color: var(--ink-2); padding: 6px 10px; gap: 10px; border-radius: var(--r-md); }
-.nav a:hover { background: var(--surface-2); color: var(--ink); }
-.nav a.active { background: var(--hue-bg); color: var(--ink); box-shadow: none; font-weight: 700; }
-.nav-ico { width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center; background: var(--hue-bg); color: var(--hue); flex: 0 0 auto; }
+/* бічне меню лишається темно-зеленим (палітра 0.1.55); іконки розділів — у своєму кольорі */
+.nav a { gap: 10px; padding: 6px 10px; }
+.nav-ico { width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center; flex: 0 0 auto;
+  background: rgba(255, 255, 255, .07); color: color-mix(in srgb, var(--hue) 55%, white); }
 .nav-ico .i { width: 16px; height: 16px; }
-.nav a.active .nav-ico { background: var(--hue); color: #fff; box-shadow: 0 3px 8px color-mix(in srgb, var(--hue) 40%, transparent); }
-.side-foot { border-top-color: var(--line); }
-.side-foot .who b { color: var(--ink); }
-.side-foot .who span { color: var(--ink-3); }
-.side-foot .icon-btn { color: var(--ink-3); }
-
+.nav a.active .nav-ico { background: var(--hue); color: #fff; }
 /* заголовок сторінки з кольоровою іконкою розділу */
 .tb-title { display: flex; align-items: center; gap: 12px; min-width: 0; }
 .title-ico { width: 42px; height: 42px; border-radius: 12px; display: grid; place-items: center; flex: 0 0 auto;
@@ -1281,51 +1249,15 @@ label.row > input[type="checkbox"], label.row > input[type="radio"] { flex: 0 0 
 .topbar h1 { font-size: var(--fs-2xl); font-weight: 800; letter-spacing: -.02em; }
 @media (max-width: 900px) { .title-ico { display: none; } }
 
-/* картки та показники */
-.card { border-color: var(--line); border-radius: 16px; }
-.kpi-tile { border-radius: 16px; }
-.kpi-ico { border-radius: 10px; }
-.grid.kpi > .kpi-tile:not(.dark):not(.accent):nth-child(6n+1) .kpi-ico { background: #e7effd; color: #2f6fe0; }
-.grid.kpi > .kpi-tile:not(.dark):not(.accent):nth-child(6n+2) .kpi-ico { background: #fde9e5; color: #e5533f; }
-.grid.kpi > .kpi-tile:not(.dark):not(.accent):nth-child(6n+3) .kpi-ico { background: #efe9fd; color: #7b4fe0; }
-.grid.kpi > .kpi-tile:not(.dark):not(.accent):nth-child(6n+4) .kpi-ico { background: #e1f5ec; color: #12936a; }
-.grid.kpi > .kpi-tile:not(.dark):not(.accent):nth-child(6n+5) .kpi-ico { background: #fff2d9; color: #d98b06; }
-.grid.kpi > .kpi-tile:not(.dark):not(.accent):nth-child(6n) .kpi-ico { background: #e2f2fb; color: #0b8fd4; }
-:root[data-theme="dark"] .grid.kpi > .kpi-tile:not(.dark):not(.accent) .kpi-ico { background: var(--surface-3); }
-.kpi-tile.dark { background: linear-gradient(150deg, #17a878 0%, #0d6e4c 100%); border-color: transparent; color: #fff; box-shadow: 0 8px 22px -8px rgba(13, 110, 76, .55); }
-.kpi-tile.dark .kpi-label, .kpi-tile.dark .kpi-top { color: rgba(255, 255, 255, .82); }
-.kpi-tile.dark .kpi-ico { background: rgba(255, 255, 255, .2); color: #fff; }
-.kpi-tile.accent { background: linear-gradient(160deg, #fff5df, var(--surface) 75%); border-color: #f3d79b; }
-.kpi-tile.accent .kpi-ico { background: var(--gold); color: #fff; }
-:root[data-theme="dark"] .kpi-tile.accent { background: linear-gradient(160deg, rgba(240, 181, 74, .16), var(--surface) 75%); border-color: rgba(240, 181, 74, .35); }
-
-/* кнопки: основна — яскравий смарагд */
-.btn.gold, .btn.primary { background: linear-gradient(180deg, #17a878, #0f8a61); border-color: #0f8a61; color: #fff;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .18), 0 2px 8px -2px rgba(15, 138, 97, .5); }
-.btn.gold:hover, .btn.primary:hover { background: #12936a; border-color: #12936a; }
-:root[data-theme="dark"] .btn.gold, :root[data-theme="dark"] .btn.primary { background: linear-gradient(180deg, #1bb886, #12936a); border-color: #12936a; color: #fff; }
-:root[data-theme="dark"] .btn.gold:hover, :root[data-theme="dark"] .btn.primary:hover { background: #17a878; border-color: #17a878; }
-.seg button.on { color: var(--brand); }
-:root[data-theme="dark"] .seg button.on { color: var(--ink); }
-.chip-btn.on { background: var(--brand); border-color: var(--brand); }
-a { color: var(--brand-2); }
-:root[data-theme="dark"] a { color: var(--ok); }
-/* посилання-навігація не фарбуються як звичайні посилання */
-:root[data-theme="dark"] .more-tile, :root[data-theme="dark"] .nav a { color: var(--ink-2); }
-:root[data-theme="dark"] .nav a.active, :root[data-theme="dark"] .more-tile { color: var(--ink); }
-:root[data-theme="dark"] .tabbar a { color: var(--ink-3); }
-
 /* телефон: верхня панель і нижні вкладки */
 @media (max-width: 900px) {
   .mbar { background: color-mix(in srgb, var(--surface) 92%, transparent); -webkit-backdrop-filter: saturate(1.4) blur(12px); backdrop-filter: saturate(1.4) blur(12px); }
-  .mbar .brand-mark { background: linear-gradient(145deg, #1bb07f, #0d6e4c); color: #fff; }
   .mbar b { font-weight: 800; letter-spacing: -.01em; }
   .tabbar { background: color-mix(in srgb, var(--surface) 94%, transparent); -webkit-backdrop-filter: saturate(1.4) blur(12px); backdrop-filter: saturate(1.4) blur(12px); }
   .tabbar a.active { color: var(--hue); }
   :root[data-theme="dark"] .tabbar a.active { color: color-mix(in srgb, var(--hue) 70%, white); }
   .tabbar a.active svg { background: var(--hue-bg); border-radius: 10px; padding: 3px 10px; width: 42px; height: 26px; box-sizing: border-box; }
 }
-:root[data-theme="dark"] .mbar .back-btn { color: var(--ok); }
 
 /* меню «Ще» — кольорові плитки за групами */
 .more-group { font-size: var(--fs-xs); font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-3); margin: 16px 2px 8px; }
@@ -1335,6 +1267,7 @@ a { color: var(--brand-2); }
   background: var(--surface); border: 1px solid var(--line); color: var(--ink); text-decoration: none; box-shadow: var(--shadow-sm);
   transition: transform var(--dur-1) var(--ease), box-shadow var(--dur-2) var(--ease); min-height: 92px; }
 .more-tile:hover { text-decoration: none; box-shadow: var(--shadow); }
+:root[data-theme="dark"] .more-tile { color: var(--ink); }
 .more-tile:active { transform: scale(.97); }
 .more-tile b { font-size: var(--fs-sm); line-height: 1.25; }
 .tile-ico { width: 38px; height: 38px; border-radius: 11px; display: grid; place-items: center; background: var(--hue-bg); color: var(--hue); }

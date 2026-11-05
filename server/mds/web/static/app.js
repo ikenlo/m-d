@@ -616,7 +616,7 @@ function setThemeColor(c) {
 
 function renderLogin() {
   window.onhashchange = null;
-  setThemeColor(document.documentElement.getAttribute("data-theme") === "dark" ? "#0e1116" : "#f4f5f8"); // як основна сторінка
+  setThemeColor(document.documentElement.getAttribute("data-theme") === "dark" ? "#0b1a15" : "#f4f3ee"); // як основна сторінка
   const root = document.getElementById("root");
   const lastUser = store.get("mds_last_user") || "";
   const user = h("input", { autocomplete: "username", autocapitalize: "none", spellcheck: "false", placeholder: "Ваш логін", id: "login-user", value: lastUser });
@@ -740,7 +740,7 @@ function renderLogin() {
 
 let renderSeq = 0; // кожне перемикання сторінки/дня — новий номер; запізнілі помилки старих не показуються
 function renderApp() {
-  setThemeColor(document.documentElement.getAttribute("data-theme") === "dark" ? "#0e1116" : "#f4f5f8");
+  setThemeColor(document.documentElement.getAttribute("data-theme") === "dark" ? "#0b1a15" : "#f4f3ee");
   const role = state.user.role;
   const items = NAV[role];
   let route = currentRoute();
