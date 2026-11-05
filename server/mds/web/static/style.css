@@ -1023,15 +1023,14 @@ tr.no-mat td { background: var(--danger-bg); }
 @media (max-width: 900px) {
   .fab { display: none; }
   /* кругла «+» по центру меню, виступає над лінією — щоб легко натиснути великим пальцем */
-  .tab-plus { display: flex; flex: 1; align-items: flex-start; justify-content: center; border: 0; background: none; padding: 0; cursor: pointer; position: relative; }
-  /* зелений «вогник»: світиться й ледь пульсує */
-  .tab-plus span { width: 60px; height: 60px; border-radius: 50%; display: grid; place-items: center; color: #fff; margin-top: -24px; border: 0;
-    background: radial-gradient(circle at 35% 30%, #4fbf86 0%, #1f8a5b 45%, #14392c 100%);
-    box-shadow: 0 0 0 6px rgba(31, 138, 91, .14), 0 8px 22px rgba(31, 138, 91, .45), inset 0 1px 1px rgba(255, 255, 255, .35);
-    animation: plus-glow 2.6s ease-in-out infinite; transition: transform .12s; }
-  @keyframes plus-glow { 50% { box-shadow: 0 0 0 10px rgba(31, 138, 91, .08), 0 8px 28px rgba(31, 138, 91, .6), inset 0 1px 1px rgba(255, 255, 255, .35); } }
-  .tab-plus:active span { transform: scale(.92); }
-  .tab-plus svg { width: 30px; height: 30px; stroke-width: 2.6; }
+  .tab-plus { display: flex; flex: 1; align-items: center; justify-content: center; border: 0; background: none; padding: 0; cursor: pointer; position: relative; -webkit-tap-highlight-color: transparent; }
+  /* зелена кнопка в самій панелі: не налазить на вміст, без розмитого ореолу; лише легкий відблиск зверху */
+  .tab-plus span { width: 56px; height: 40px; border-radius: 14px; display: grid; place-items: center; color: #fff; border: 0;
+    background: linear-gradient(160deg, #3fb07a 0%, #1f8a5b 60%, #176f49 100%);
+    box-shadow: 0 4px 12px -2px rgba(23, 111, 73, .45), inset 0 1px 0 rgba(255, 255, 255, .25);
+    transition: transform var(--dur-1) var(--ease), box-shadow var(--dur-1) var(--ease); }
+  .tab-plus:active span { transform: scale(.94); box-shadow: 0 2px 6px -2px rgba(23, 111, 73, .5), inset 0 1px 0 rgba(255, 255, 255, .2); }
+  .tab-plus svg { width: 24px; height: 24px; stroke-width: 2.6; }
   :root[data-theme="dark"] .tab-plus span { color: #fff; }
 }
 .qb-presets { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
@@ -1074,13 +1073,12 @@ label.row > input[type="checkbox"], label.row > input[type="radio"] { flex: 0 0 
   .btn { padding-left: 12px; padding-right: 12px; }
   .callout { gap: 10px; }
 }
-.fab { background: radial-gradient(circle at 35% 30%, #4fbf86 0%, #1f8a5b 45%, #14392c 100%); box-shadow: 0 0 0 6px rgba(31, 138, 91, .14), 0 10px 28px rgba(31, 138, 91, .45); }
-:root[data-theme="dark"] .fab { background: radial-gradient(circle at 35% 30%, #4fbf86 0%, #1f8a5b 45%, #14392c 100%); color: #fff; }
+.fab { width: 56px; height: 56px; border-radius: 18px; background: linear-gradient(160deg, #3fb07a 0%, #1f8a5b 60%, #176f49 100%); box-shadow: 0 8px 20px -4px rgba(23, 111, 73, .5), inset 0 1px 0 rgba(255, 255, 255, .25); }
+:root[data-theme="dark"] .fab { background: linear-gradient(160deg, #3fb07a 0%, #1f8a5b 60%, #176f49 100%); color: #fff; }
 .qb-empty { grid-column: 1 / -1; display: flex; gap: 8px; align-items: flex-start; padding: 10px 12px; border-radius: var(--r-md); background: var(--surface-2); color: var(--ink-2); font-size: var(--fs-sm); }
 .qb-empty svg { color: var(--ink-3); flex: 0 0 auto; margin-top: 2px; }
 .sched-actions { display: flex; gap: 6px; flex-wrap: wrap; }
 @media (max-width: 760px) { .sched-actions { flex: 1 1 100%; } .sched-actions .btn { flex: 1; justify-content: center; } }
-@media (prefers-reduced-motion: reduce) { .tab-plus span { animation: none; } }
 
 /* ================================================================ 0.1.40: клієнтська база */
 .cl-item { align-items: center; }
