@@ -1164,3 +1164,23 @@ label.row > input[type="checkbox"], label.row > input[type="radio"] { flex: 0 0 
   .cl-chips::-webkit-scrollbar { display: none; }
   .cl-chips .chip-btn { flex: 0 0 auto; white-space: nowrap; }
 }
+
+/* «Календар» на телефоні: керування в один рядок, підсумок дня — один рядок, вузька колонка годин */
+.pend-chip { display: inline-flex; align-items: center; gap: 6px; border: 1px solid color-mix(in srgb, var(--warn) 40%, transparent); background: var(--warn-bg); color: var(--warn);
+  border-radius: var(--r-pill); padding: 4px 10px; font: inherit; font-size: var(--fs-xs); font-weight: 700; cursor: pointer; white-space: nowrap; }
+@media (max-width: 760px) {
+  .cal-top { margin-bottom: 10px; }
+  .topbar.cal-top > div:first-child { display: none; }
+  .topbar.cal-top > .row { flex-wrap: nowrap; gap: 6px; width: 100%; }
+  .topbar.cal-top > .row .btn.primary { display: none; }
+  .topbar.cal-top > .row .btn-group { flex: 1 1 auto; display: flex; }
+  .topbar.cal-top > .row .btn-group .btn { flex: 0 0 auto; }
+  .topbar.cal-top > .row .btn-group .btn:nth-child(2) { flex: 1 1 auto; }
+  .topbar.cal-top > .row .date-pick { flex: 0 0 auto; padding: 0 12px; }
+  .topbar.cal-top > .row .seg.icons { width: auto; flex: 0 0 auto; flex-wrap: nowrap; }
+  .topbar.cal-top > .row .seg.icons button { flex: 0 0 auto; min-width: 0; padding: 4px 10px; }
+  .topbar.cal-top > .row .seg.icons span { display: none; }
+  .day-sum { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; gap: 12px; margin-bottom: 10px; white-space: nowrap; }
+  .day-sum::-webkit-scrollbar { display: none; }
+  .cal-time { padding: 0 4px; font-size: var(--fs-micro); }
+}
