@@ -264,3 +264,30 @@ def test_availability_with_custom_duration(client):
     long = client.get(url + "&duration_min=180", headers=d).json()
     assert base and long and len(long) < len(base) and long[-1] < base[-1]  # 3 год не влазять наприкінці дня
     clock.set_now(None)
+
+
+def test_static_cache_gzip_and_perf_monitoring(client):
+    """Швидкодія: версійована статика кешується, відповіді стискаються, час запитів збирається."""
+    from mds import perf
+
+    perf.reset()
+    html = client.get("/").text
+    assert "__V__" not in html and "fonts.googleapis" not in html
+    src = html.split('src="')[1].split('"')[0]  # /static/app.js?v=...
+    r = client.get(src, headers={"Accept-Encoding": "gzip"})
+    assert r.status_code == 200 and "immutable" in r.headers["cache-control"]
+    assert r.headers.get("content-encoding") == "gzip"
+    assert "no-cache" in client.get("/static/icon.svg").headers["cache-control"]
+
+    d = login(client, "director", "Director123")
+    m1 = login(client, "olena", "Master123")
+    r = client.get("/api/settings", headers=d)
+    assert "app;dur=" in r.headers["server-timing"]
+    # RUM: приймаються лише назви сторінок/метрик, сміття відкидається
+    r = client.post("/api/perf/rum", headers=m1, json={"items": [
+        {"name": "view:today", "ms": 420}, {"name": "nav:fcp", "ms": 900}, {"name": "view:Іван Петренко", "ms": 5}]})
+    assert r.status_code == 204
+    assert client.get("/api/perf", headers=m1).status_code == 403
+    snap = client.get("/api/perf", headers=d).json()
+    assert {x["name"] for x in snap["client"]} == {"view:today", "nav:fcp"}
+    assert any(x["name"] == "GET /api/settings" for x in snap["server"])

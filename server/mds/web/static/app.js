@@ -74,6 +74,38 @@ const api = {
   del(p) { return this.req("DELETE", p); },
 };
 
+// ============================================================ RUM — швидкодія в реальних браузерах
+// Лише назви сторінок і мілісекунди (без даних клієнтів); пачкою раз на хвилину або при згортанні вкладки.
+const rum = {
+  buf: [],
+  sentNav: false,
+  add(name, ms) {
+    if (!/^(nav|view):[a-z0-9_-]{1,32}$/.test(name) || !(ms >= 0)) return;
+    this.buf.push({ name, ms: Math.min(Math.round(ms), 300000) });
+    if (this.buf.length >= 30) this.flush();
+  },
+  nav() {
+    if (this.sentNav || !window.performance || !performance.getEntriesByType) return;
+    const n = performance.getEntriesByType("navigation")[0];
+    if (!n || !n.loadEventEnd) return;
+    this.sentNav = true;
+    this.add("nav:ttfb", n.responseStart);
+    this.add("nav:dom", n.domContentLoadedEventEnd);
+    this.add("nav:load", n.loadEventEnd);
+    const fcp = performance.getEntriesByType("paint").find((e) => e.name === "first-contentful-paint");
+    if (fcp) this.add("nav:fcp", fcp.startTime);
+  },
+  flush() {
+    if (!state.user || !api.token) return;
+    this.nav();
+    if (!this.buf.length) return;
+    const items = this.buf.splice(0, 30);
+    api.post("/api/perf/rum", { items }).catch(() => { /* не критично */ });
+  },
+};
+setInterval(() => rum.flush(), 60000);
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") rum.flush(); });
+
 const state = { user: null, services: [], masters: [], materials: [], settings: null };
 
 // ============================================================ утиліти
@@ -749,7 +781,9 @@ function renderApp() {
   closeSheet();
   const view = route === "more" ? viewMore : VIEWS[route];
   const seq = ++renderSeq;
-  return Promise.resolve(view(main)).catch((e) => { if (seq === renderSeq) main.replaceChildren(emptyState(e.message, "alert")); })
+  const t0 = performance.now();
+  return Promise.resolve(view(main)).then(() => rum.add("view:" + route, performance.now() - t0))
+    .catch((e) => { if (seq === renderSeq) main.replaceChildren(emptyState(e.message, "alert")); })
     .finally(() => skel.remove());
 }
 
@@ -2489,6 +2523,36 @@ function stockSettingsCard(st) {
       state.settings = await run(() => api.put("/api/settings", { stock_auto_writeoff_milli: Number(sel.value) }), "Збережено"); reload();
     } }, "Зберегти"));
 }
+// Швидкодія: найповільніші запити API і сторінки в браузерах (з моменту останнього запуску сервера)
+const RUM_NAMES = { "nav:ttfb": "Відповідь сервера (перший байт)", "nav:fcp": "Перший малюнок на екрані",
+  "nav:dom": "Сторінка розібрана", "nav:load": "Повне завантаження" };
+function perfCard() {
+  const box = h("div", { class: "stack" });
+  const ms = (v) => (v >= 1000 ? (v / 1000).toFixed(1).replace(".", ",") + " с" : v + " мс");
+  // компактний список (на телефоні таблиця розтягується на кілька екранів)
+  const table = (rows, _label, slowMs) => rows.length
+    ? h("div", { class: "perf-list" }, rows.map((r) => h("div", { class: "perf-row" },
+      h("span", { class: "perf-name" }, r.label),
+      h("b", { class: "num" + (r.p95 >= slowMs ? " neg" : "") }, ms(r.p95)),
+      h("span", { class: "perf-meta num muted small" }, `${r.count} ${plural(r.count, "раз", "рази", "разів")} · звичайно ${ms(r.p50)}` + (r.slow ? ` · повільних ${r.slow}` : "")))))
+    : h("p", { class: "muted small" }, "Ще немає вимірів.");
+  const load = async (btn) => {
+    const d = await run(() => api.get("/api/perf"));
+    if (!d) return;
+    const viewName = (id) => ((NAV[state.user.role] || []).find((i) => i[0] === id) || [])[2] || id;
+    const client = d.client.map((r) => ({ ...r, label: r.name.startsWith("view:") ? "Сторінка «" + viewName(r.name.slice(5)) + "»" : (RUM_NAMES[r.name] || r.name) }));
+    const server = d.server.slice(0, 12).map((r) => ({ ...r, label: r.name }));
+    box.replaceChildren(
+      h("p", { class: "muted small", style: { margin: 0 } }, `З ${dmy(d.since)} ${hm(d.since)} (після кожного оновлення програми рахується заново). Жирне число — 95% випадків швидші за нього; червоне — повільно.`),
+      h("h4", { style: { margin: "4px 0 0" } }, "У браузерах (телефони й комп'ютери)"), table(client, "Що", d.slow_client_ms),
+      h("h4", { style: { margin: "4px 0 0" } }, "Сервер (найповільніші запити)"), table(server, "Запит", d.slow_api_ms));
+    if (btn) btn.textContent = "Оновити";
+  };
+  const btn = h("button", { class: "btn", onclick: (e) => load(e.currentTarget) }, "Показати");
+  return h("div", { class: "card stack" }, h("h3", { class: "row", style: { gap: "8px" } }, icon("zap"), "Швидкодія"),
+    h("p", { class: "muted small", style: { margin: 0 } }, "Як швидко відкриваються сторінки в працівників і відповідає сервер. Без персональних даних — лише час."),
+    box, btn);
+}
 function twofaSettingsCard(st) {
   const roles = st.twofa_roles || [];
   const dir = h("input", { type: "checkbox", checked: roles.includes("director") });
@@ -3429,9 +3493,9 @@ VIEWS.schedule = async (main) => {
 
 // ---------- Налаштування
 VIEWS.settings = async (main) => {
-  const s = await api.get("/api/settings");
-  const backups = await api.get("/api/backups").catch(() => []);
-  const drive = await api.get("/api/gdrive").catch(() => null);
+  // паралельно, а не по черзі
+  const [s, backups, drive] = await Promise.all([api.get("/api/settings"),
+    api.get("/api/backups").catch(() => []), api.get("/api/gdrive").catch(() => null)]);
   const gq = new URLSearchParams(location.hash.split("?")[1] || "").get("gdrive");
   if (gq) {
     const msg = { ok: "Google Drive підключено — копії зберігатимуться автоматично", cancelled: "Підключення Google Drive скасовано",
@@ -3468,6 +3532,7 @@ VIEWS.settings = async (main) => {
       h("p", { class: "muted small" }, "Індивідуальні умови задаються в картці майстра (розділ «Персонал»). Зміни діють для нових замовлень; закриті замовлення зберігають умови на момент закриття.")),
     twofaSettingsCard(s),
     stockSettingsCard(s),
+    perfCard(),
     antispamSettingsCard(s),
     generatorSettingsCard(s),
     h("div", { class: "card stack" }, h("h3", {}, "Запис клієнтів"), field("Назва салону", name),
@@ -3813,8 +3878,8 @@ VIEWS.taxes = async (main) => {
   }
 
   // офіційна зарплата
-  const data = await api.get("/api/payroll?month=" + month);
-  const staff = (await api.get("/api/employees")).filter((u) => u.is_employee).map((e) => ({ id: e.user_id, full_name: e.full_name }));
+  const [data, emps] = await Promise.all([api.get("/api/payroll?month=" + month), api.get("/api/employees")]);
+  const staff = emps.filter((u) => u.is_employee).map((e) => ({ id: e.user_id, full_name: e.full_name }));
   if (!staff.length) {
     body.append(h("div", { class: "card" }, emptyState("Немає найманих працівників — заповніть кадрові дані у вкладці «Працівники»", "users")));
   }

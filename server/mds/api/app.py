@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -13,7 +14,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.gzip import GZipMiddleware
 
-from .. import __version__, clock
+from .. import __version__, clock, perf
 from ..config import Config
 from ..db import Database
 from ..errors import DomainError
@@ -166,6 +167,23 @@ def create_app(
         if allowed:
             resp.headers["Access-Control-Allow-Origin"] = origin
             resp.headers["Vary"] = "Origin"
+        return resp
+
+    @app.middleware("http")
+    async def timing(request: Request, call_next):
+        """Час відповіді API: заголовок Server-Timing (видно в DevTools), статистика для «Налаштування →
+        Швидкодія», повільні запити — у журнал сервера (лише шаблон маршруту, без параметрів і даних)."""
+        if not request.url.path.startswith("/api/"):
+            return await call_next(request)
+        t0 = time.perf_counter()
+        resp = await call_next(request)
+        ms = (time.perf_counter() - t0) * 1000
+        route = request.scope.get("route")
+        name = f"{request.method} {getattr(route, 'path', None) or 'other'}"
+        perf.record("server", name, ms, perf.SLOW_API_MS)
+        if ms >= perf.SLOW_API_MS:
+            log.warning("повільний запит %s: %.0f мс", name, ms)
+        resp.headers["Server-Timing"] = f"app;dur={ms:.1f}"
         return resp
 
     @app.middleware("http")
