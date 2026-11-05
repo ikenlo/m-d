@@ -17,7 +17,7 @@ from ..config import Config
 from ..db import Database
 from ..errors import DomainError
 from ..services import backup
-from .routers import auth, calendar, card_terminal, callbacks, catalog, clients, money, public, staff, stock_schedule, system, tax_report, taxes, utilities
+from .routers import auth, calendar, card_terminal, callbacks, catalog, clients, money, public, sms, staff, stock_schedule, system, tax_report, taxes, utilities
 
 log = logging.getLogger("mds")
 STATIC = Path(__file__).resolve().parent.parent / "web" / "static"
@@ -45,6 +45,12 @@ async def _reminders_loop(db: Database) -> None:
         try:
             with db.session() as s:
                 n = reminders.send_due(s) + reminders.remind_unclosed(s)
+                from ..services import sms_center  # SMS: автоматизація, черга, статуси доставки
+
+                sms_center.run_automations(s)
+                sms_center.process_queue(s)
+                if tick % 3 == 0:
+                    sms_center.refresh_statuses(s)
                 if tick % 12 == 0:  # щогодини — строки сплати податків ФОП (директору)
                     taxes.tax_reminders(s)
             if n:
@@ -100,7 +106,7 @@ def create_app(
             {"error": "validation", "detail": f"Невірні дані: {field} — {first.get('msg', '')}"}, status_code=422
         )
 
-    for r in (auth, card_terminal, staff, clients, catalog, calendar, callbacks, money, public, stock_schedule, system, tax_report, taxes, utilities):
+    for r in (auth, card_terminal, staff, clients, catalog, calendar, callbacks, money, public, sms, stock_schedule, system, tax_report, taxes, utilities):
         app.include_router(r.router)
 
     app.mount("/static", StaticFiles(directory=STATIC), name="static")

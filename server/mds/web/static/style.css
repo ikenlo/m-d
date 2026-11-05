@@ -1029,3 +1029,7 @@ label.row > input[type="checkbox"], label.row > input[type="radio"] { flex: 0 0 
 .chip-n { margin-left: 6px; font-size: 11px; opacity: .7; }
 .card-tabs { width: 100%; overflow-x: auto; flex-wrap: nowrap; }
 .card-tabs button { white-space: nowrap; }
+.rec-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px; }
+.rec { display: flex; flex-direction: column; gap: 8px; padding: 12px; border-radius: 12px; background: var(--surface-2); border: 1px solid var(--line); }
+.rec .btn { align-self: flex-start; }
+.sms-text { white-space: pre-wrap; word-break: break-word; }

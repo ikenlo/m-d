@@ -732,3 +732,42 @@ class TrustedDevice(Base):
 @event.listens_for(Client, "before_update")
 def _client_search_name(_mapper, _conn, c: Client) -> None:
     c.search_name = " ".join((c.name or "").lower().split()) or None
+
+
+class SmsCampaign(Base):
+    """Одноразова SMS/Viber-розсилка директора (лише клієнтам зі згодою на рекламу)."""
+
+    __tablename__ = "sms_campaigns"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    title: Mapped[str] = mapped_column(String(120))
+    text: Mapped[str] = mapped_column(Text)
+    audience: Mapped[str] = mapped_column(String(32))  # all | new | regular | vip | lapsed | inactive | birthdays | return_due
+    status: Mapped[str] = mapped_column(String(16), default="queued")  # queued | done
+    recipients: Mapped[int] = mapped_column(Integer, default=0)
+    cost: Mapped[int] = mapped_column(Integer, default=0)  # копійки (оцінка: кількість × ціна SMS)
+    expense_id: Mapped[int | None] = mapped_column(Integer)
+    created_by: Mapped[int | None] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
+
+
+class SmsMessage(Base):
+    """Історія SMS/Viber: кожне повідомлення клієнту зі статусом доставки."""
+
+    __tablename__ = "sms_messages"
+    __table_args__ = (Index("ix_sms_status_created", "status", "created_at"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    client_id: Mapped[int | None] = mapped_column(ForeignKey("clients.id", name="fk_sms_messages_client_id", ondelete="SET NULL"), index=True)
+    campaign_id: Mapped[int | None] = mapped_column(ForeignKey("sms_campaigns.id", name="fk_sms_messages_campaign_id"), index=True)
+    phone: Mapped[str] = mapped_column(String(32))
+    text: Mapped[str] = mapped_column(Text)
+    kind: Mapped[str] = mapped_column(String(16))  # service | marketing
+    reason: Mapped[str | None] = mapped_column(String(32))  # shift | birthday | return | campaign | test …
+    # queued → sent → delivered | failed; not_configured — TurboSMS не підключено
+    status: Mapped[str] = mapped_column(String(16), default="queued")
+    provider_id: Mapped[str | None] = mapped_column(String(64))
+    error: Mapped[str | None] = mapped_column(String(200))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime)
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime)

@@ -84,3 +84,8 @@
   зсунути цей і наступні записи майстра на сьогодні; майстер — лише свої.
 - `GET /api/appointments/unclosed[?master_id]` — час минув, замовлення не закрито (7 днів); майстер — лише свої.
 - `GET /api/sms/status` (директор) — чи задано ключ TurboSMS.
+- `GET /api/sms/summary` (директор) — баланс, витрати, кількість надісланих, статуси, клієнтів зі згодою.
+- `GET /api/sms/insights` (директор) — найкращий час і рекомендації за сегментами.
+- `GET /api/sms/campaigns`, `POST /api/sms/campaigns?dry_run=1 {title, text, audience}` — розсилки
+  (dry_run — лише розрахунок отримувачів і вартості).
+- `GET /api/sms/messages[?client_id]` (директор/адмін) — історія повідомлень; `POST /api/sms/test {phone}` — тестове SMS.

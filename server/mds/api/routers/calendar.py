@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import date
 
-from fastapi import APIRouter, BackgroundTasks, Depends
+from fastapi import APIRouter, BackgroundTasks, Depends, Request
 from sqlalchemy.orm import Session
 
 from ...services import bookings, orders
@@ -28,20 +28,20 @@ class ShiftIn(BaseModel):
 
 
 @router.post("/appointments/shift")
-def shift_appointments(body: ShiftIn, background: BackgroundTasks, actor: Actor = Depends(get_actor),
+def shift_appointments(body: ShiftIn, background: BackgroundTasks, request: Request, actor: Actor = Depends(get_actor),
                        s: Session = Depends(get_session)):
     """Запізнення: зсунути наступні записи майстра на N хв і повідомити клієнтів
     (Telegram — одразу через чергу бота; SMS/Viber — після збереження, якщо TurboSMS налаштовано)."""
-    from ...services import sms
-    from ...services.common import get_setting
+    from ...services import sms_center
 
     r = bookings.shift_appointments(s, actor, master_id=body.master_id, minutes=body.minutes,
                                     from_appt_id=body.from_appt_id, notify_clients=body.notify_clients)
     to_sms = r.pop("sms")
-    can_sms = bool(get_setting(s, "sms_enabled")) and sms.configured()
-    if to_sms and can_sms:
-        for x in to_sms:  # кожному свій текст (свій новий час)
-            background.add_task(sms.send, [x["phone"]], x["text"])
+    can_sms = sms_center.ready(s)
+    if to_sms and can_sms:  # сервісні SMS — у чергу й історію; надсилаються у фоні після відповіді
+        for x in to_sms:
+            sms_center.enqueue(s, phone=x["phone"], text=x["text"], kind="service", reason="shift", client_id=x.get("client_id"))
+        background.add_task(sms_center.flush, request.app.state.db)
     r["sms_sent"] = len(to_sms) if can_sms else 0
     r["call"] = [] if can_sms else [x for x in r["shifted"] if x["channel"] == "sms"]  # кому подзвонити
     return r

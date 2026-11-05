@@ -1,9 +1,8 @@
-"""SMS / Viber клієнтам через TurboSMS (український сервіс; Viber з запасним SMS).
+"""Провайдер SMS / Viber — TurboSMS (окремий модуль: вмикається й вимикається незалежно).
 
-Ключ — лише змінна сервера MDS_TURBOSMS_TOKEN (кабінет TurboSMS → API), відправник — MDS_TURBOSMS_SENDER
-(зареєстроване в TurboSMS ім'я, напр. «MD Salon»). Без ключа нічого не надсилається: панель показує,
-кому подзвонити. Вмикається налаштуванням `sms_enabled`. Ключ не логується.
-Документація API: https://turbosms.ua/api.html (POST /message/send.json, Authorization: Bearer).
+Ключ — лише змінні сервера MDS_TURBOSMS_TOKEN і MDS_TURBOSMS_SENDER (альфа-ім'я з кабінету TurboSMS).
+Не логується. Усі запити з тайм-аутом; помилки не кидаються — повертаються як результат, щоб недоступність
+TurboSMS не блокувала роботу салону. Документація: https://turbosms.ua/api.html
 """
 
 from __future__ import annotations
@@ -14,34 +13,71 @@ import os
 import urllib.request
 
 log = logging.getLogger("mds.sms")
-API = "https://api.turbosms.ua/message/send.json"
+BASE = "https://api.turbosms.ua"
+TIMEOUT = 10.0
+OK_CODES = (0, 800, 801, 802, 803)  # прийнято до надсилання
 
 
 def configured() -> bool:
     return bool(os.environ.get("MDS_TURBOSMS_TOKEN") and os.environ.get("MDS_TURBOSMS_SENDER"))
 
 
-def send(phones: list[str], text: str, channel: str = "viber_sms", timeout: float = 10.0) -> dict:
-    """Надіслати один текст кільком номерам. channel: sms | viber | viber_sms (Viber, а хто не має — SMS).
-    Повертає {"ok": bool, "sent": n, "error": str|None}. Не кидає винятків — запис уже зсунуто."""
-    token, sender = os.environ.get("MDS_TURBOSMS_TOKEN"), os.environ.get("MDS_TURBOSMS_SENDER")
-    recipients = sorted({p.lstrip("+") for p in phones if p})
-    if not (token and sender) or not recipients:
-        return {"ok": False, "sent": 0, "error": "SMS не налаштовано" if recipients else None}
-    body: dict = {"recipients": recipients}
+def _call(path: str, body: dict) -> dict:
+    token = os.environ.get("MDS_TURBOSMS_TOKEN", "")
+    req = urllib.request.Request(BASE + path, data=json.dumps(body).encode(), method="POST",
+                                 headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"})
+    with urllib.request.urlopen(req, timeout=TIMEOUT) as r:  # noqa: S310 — фіксована https-адреса
+        return json.loads(r.read().decode() or "{}")
+
+
+def send_one(phone: str, text: str, channel: str = "viber_sms") -> dict:
+    """{"ok": bool, "message_id": str|None, "error": str|None}. Viber, а хто не має — SMS."""
+    if not configured():
+        return {"ok": False, "message_id": None, "error": "not_configured"}
+    sender = os.environ.get("MDS_TURBOSMS_SENDER", "")
+    body: dict = {"recipients": [phone.lstrip("+")]}
     if channel in ("sms", "viber_sms"):
         body["sms"] = {"sender": sender, "text": text}
     if channel in ("viber", "viber_sms"):
         body["viber"] = {"sender": sender, "text": text}
-    req = urllib.request.Request(API, data=json.dumps(body).encode(), method="POST",
-                                 headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"})
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as r:  # noqa: S310 — фіксована https-адреса
-            data = json.loads(r.read().decode() or "{}")
+        data = _call("/message/send.json", body)
     except Exception as e:  # noqa: BLE001
-        log.warning("TurboSMS: помилка надсилання (%s номерів): %s", len(recipients), type(e).__name__)
-        return {"ok": False, "sent": 0, "error": "Сервіс SMS недоступний"}
-    ok = data.get("response_code") in (0, 800, 801, 802, 803)  # 0/80x — прийнято до надсилання
-    if not ok:
-        log.warning("TurboSMS: %s %s", data.get("response_code"), data.get("response_status"))
-    return {"ok": ok, "sent": len(recipients) if ok else 0, "error": None if ok else str(data.get("response_status") or "помилка")}
+        log.warning("TurboSMS: помилка надсилання: %s", type(e).__name__)
+        return {"ok": False, "message_id": None, "error": "Сервіс SMS недоступний"}
+    res = (data.get("response_result") or [{}])[0] or {}
+    ok = data.get("response_code") in OK_CODES and res.get("response_code", 0) in OK_CODES
+    return {"ok": ok, "message_id": res.get("message_id"), "error": None if ok else str(res.get("response_status") or data.get("response_status") or "помилка")[:200]}
+
+
+def balance() -> float | None:
+    """Залишок на рахунку TurboSMS (грн) або None, якщо не підключено / недоступно."""
+    if not configured():
+        return None
+    try:
+        data = _call("/user/balance.json", {})
+        return float((data.get("response_result") or {}).get("balance"))
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def statuses(message_ids: list[str]) -> dict[str, str]:
+    """Статуси доставки: {message_id: delivered | sent | failed}."""
+    if not configured() or not message_ids:
+        return {}
+    try:
+        data = _call("/message/status.json", {"messages": message_ids[:200]})
+    except Exception:  # noqa: BLE001
+        return {}
+    out = {}
+    for r in data.get("response_result") or []:
+        st = str(r.get("status") or "").lower()
+        out[str(r.get("message_id"))] = "delivered" if "deliver" in st or "read" in st else (
+            "failed" if any(x in st for x in ("fail", "reject", "expired", "undeliv", "error")) else "sent")
+    return out
+
+
+# сумісність: старий виклик із зсуву записів
+def send(phones: list[str], text: str, channel: str = "viber_sms", timeout: float = TIMEOUT) -> dict:
+    sent = sum(1 for p in phones if send_one(p, text, channel)["ok"])
+    return {"ok": bool(sent), "sent": sent, "error": None if sent else "не надіслано"}

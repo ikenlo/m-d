@@ -638,7 +638,7 @@ def shift_appointments(s: Session, actor: Actor, *, master_id: int, minutes: int
             row["channel"] = "telegram"
             telegram += 1
         elif notify_clients and a.client.phone:
-            sms.append({"phone": a.client.phone, "text": text})
+            sms.append({"phone": a.client.phone, "text": text, "client_id": a.client_id})
             row["channel"] = "sms"
         else:
             no_contact.append(row)
