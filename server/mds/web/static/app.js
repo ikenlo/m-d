@@ -549,6 +549,14 @@ const NAV = {
     ["profile", "user", "Профіль"],
   ],
 };
+// Редизайн v2: у кожного розділу свій колір — легше орієнтуватися (меню, плитки «Ще», заголовок сторінки)
+const HUE = {
+  dashboard: "violet", today: "blue", calendar: "blue", schedule: "teal", clients: "pink", stock: "amber", generator: "orange",
+  orders: "green", shifts: "emerald", earnings: "green", shift: "emerald", expenses: "coral", utilities: "orange",
+  taxreport: "indigo", taxes: "indigo", sms: "sky", staff: "purple", catalog: "rose", settings: "slate", journal: "brown",
+  profile: "slate", more: "slate",
+};
+const navIcon = (id) => (Object.values(NAV).flat().find((i) => i[0] === id) || [])[1];
 // по 2 пункти з кожного боку — кругла «+» точно по центру (решта — у «Ще»)
 const MOBILE_TABS = { director: ["dashboard", "calendar", "orders", "more"], admin: ["calendar", "schedule", "clients", "more"],
   master: ["today", "calendar", "earnings", "more"] };
@@ -608,7 +616,7 @@ function setThemeColor(c) {
 
 function renderLogin() {
   window.onhashchange = null;
-  setThemeColor(document.documentElement.getAttribute("data-theme") === "dark" ? "#0b1a15" : "#f4f3ee"); // як основна сторінка
+  setThemeColor(document.documentElement.getAttribute("data-theme") === "dark" ? "#0e1116" : "#f4f5f8"); // як основна сторінка
   const root = document.getElementById("root");
   const lastUser = store.get("mds_last_user") || "";
   const user = h("input", { autocomplete: "username", autocapitalize: "none", spellcheck: "false", placeholder: "Ваш логін", id: "login-user", value: lastUser });
@@ -732,7 +740,7 @@ function renderLogin() {
 
 let renderSeq = 0; // кожне перемикання сторінки/дня — новий номер; запізнілі помилки старих не показуються
 function renderApp() {
-  setThemeColor(document.documentElement.getAttribute("data-theme") === "dark" ? "#0b1a15" : "#f4f3ee");
+  setThemeColor(document.documentElement.getAttribute("data-theme") === "dark" ? "#0e1116" : "#f4f5f8");
   const role = state.user.role;
   const items = NAV[role];
   let route = currentRoute();
@@ -743,7 +751,7 @@ function renderApp() {
   let group = null;
   for (const [id, ico, label, grp] of items.filter((i) => i[0] !== "profile")) {
     if (grp && grp !== group) { navLinks.push(h("div", { class: "nav-group" }, grp)); group = grp; }
-    navLinks.push(h("a", { href: "#/" + id, class: id === route ? "active" : "" }, icon(ico), label));
+    navLinks.push(h("a", { href: "#/" + id, class: id === route ? "active" : "", "data-hue": HUE[id] || "slate" }, h("span", { class: "nav-ico" }, icon(ico)), label));
   }
   const dark = document.documentElement.getAttribute("data-theme") === "dark";
   const sidebar = h("aside", { class: "sidebar" },
@@ -762,7 +770,7 @@ function renderApp() {
   const tabLinks = tabIds.map((id) => {
     const it = items.find((i) => i[0] === id) || ["more", "more", "Ще"];
     const active = id === route || (id === "more" && !tabIds.includes(route));
-    return h("a", { href: "#/" + id, class: active ? "active" : "" }, icon(it[1]), it[2]);
+    return h("a", { href: "#/" + id, class: active ? "active" : "", "data-hue": HUE[id] || "slate" }, icon(it[1]), it[2]);
   });
   // велика кругла «+» — швидкий запис з будь-якої сторінки (як у TikTok — по центру)
   const plus = () => h("button", { class: "tab-plus", type: "button", "aria-label": "Швидкий запис", onclick: () => quickBook({}) }, h("span", {}, icon("plus")));
@@ -842,8 +850,10 @@ async function refreshView(btn) {
 function topbar(title, ...actions) {
   let sub = null;
   if (actions.length && typeof actions[0] === "string") sub = actions.shift();
+  const r = currentRoute() || "", ico = navIcon(r);
   return h("div", { class: "topbar" },
-    h("div", {}, h("h1", {}, title), sub ? h("div", { class: "sub" }, sub) : null),
+    h("div", { class: "tb-title", "data-hue": HUE[r] || "slate" }, ico ? h("span", { class: "title-ico" }, icon(ico)) : null,
+      h("div", {}, h("h1", {}, title), sub ? h("div", { class: "sub" }, sub) : null)),
     h("div", { class: "row" }, actions,
       h("button", { class: "icon-btn refresh-desk", title: "Оновити сторінку", "aria-label": "Оновити сторінку", onclick: (e) => refreshView(e.currentTarget) }, icon("refresh"))));
 }
@@ -852,11 +862,24 @@ function viewMore(main) {
   main.append(topbar("Меню"));
   const dark = document.documentElement.getAttribute("data-theme") === "dark";
   const tabs = MOBILE_TABS[state.user.role] || [];
-  main.append(h("div", { class: "card", style: { padding: "6px" } }, NAV[state.user.role].filter(([id]) => !tabs.includes(id)).map(([id, ico, label]) =>
-    h("a", { href: "#/" + id, class: "row", style: { padding: "12px", color: "var(--ink)" } }, icon(ico), h("span", { class: "grow" }, label), icon("right", "sm"))),
-    h("button", { class: "btn ghost", style: { width: "100%", justifyContent: "flex-start", padding: "12px" }, onclick: bugReportForm }, icon("bug"), "Повідомити про помилку"),
-    h("button", { class: "btn ghost", style: { width: "100%", justifyContent: "flex-start", padding: "12px" }, onclick: toggleTheme }, icon(dark ? "sun" : "moon"), dark ? "Світла тема" : "Темна тема"),
-    h("button", { class: "btn ghost", style: { width: "100%", justifyContent: "flex-start", padding: "12px", color: "var(--danger)" }, onclick: logout }, icon("logout"), "Вийти")),
+  const rest = NAV[state.user.role].filter(([id]) => !tabs.includes(id));
+  // плитки по групах (Робота / Фінанси / Салон) — видно всі розділи одразу, кожен своїм кольором
+  const groups = [];
+  for (const it of rest) {
+    const g = it[3] || "Інше";
+    let grp = groups.find((x) => x.name === g);
+    if (!grp) { grp = { name: g, items: [] }; groups.push(grp); }
+    grp.items.push(it);
+  }
+  for (const g of groups) {
+    if (groups.length > 1) main.append(h("div", { class: "more-group" }, g.name));
+    main.append(h("div", { class: "more-grid" }, g.items.map(([id, ico, label]) =>
+      h("a", { href: "#/" + id, class: "more-tile", "data-hue": HUE[id] || "slate" }, h("span", { class: "tile-ico" }, icon(ico)), h("b", {}, label)))));
+  }
+  main.append(h("div", { class: "card more-actions" },
+    h("button", { class: "more-act", onclick: bugReportForm }, icon("bug"), "Повідомити про помилку"),
+    h("button", { class: "more-act", onclick: toggleTheme }, icon(dark ? "sun" : "moon"), dark ? "Світла тема" : "Темна тема"),
+    h("button", { class: "more-act danger", onclick: logout }, icon("logout"), "Вийти")),
     h("p", { class: "muted small", style: { textAlign: "center", marginTop: "14px" } }, "MDS Connect · ", versionTag()));
 }
 
