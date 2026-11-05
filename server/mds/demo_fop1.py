@@ -302,7 +302,8 @@ def seed_fop1(db: Database, start: date = date(2025, 1, 1), end: date | None = N
                     if R.random() < (0.7 if k <= 7 else 0.35):
                         ph, nm = R.choice(phones)
                         bookings.create_appointment(s, da, master_id=fid, service_id=sid, starts_at=t, client_name=nm,
-                                                    client_phone=ph, status="pending" if R.random() < 0.15 else "confirmed")
+                                                    client_phone=ph, status="pending" if R.random() < 0.15 else "confirmed",
+                                                    confirm_off_hours=True)
                         st["future"] += 1
                     t += timedelta(minutes=dur + 30)
     finally:
