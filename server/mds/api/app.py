@@ -9,8 +9,9 @@ from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.gzip import GZipMiddleware
 
 from .. import __version__, clock
 from ..config import Config
@@ -21,6 +22,17 @@ from .routers import auth, calendar, card_terminal, callbacks, catalog, clients,
 
 log = logging.getLogger("mds")
 STATIC = Path(__file__).resolve().parent.parent / "web" / "static"
+
+
+def _asset_version() -> str:
+    """Мітка для ?v= у index.html: версія + хеш app.js/style.css — новий файл = нова адреса,
+    тож браузер може кешувати статику «назавжди» (immutable) і не перевіряти її щоразу."""
+    import hashlib
+
+    digest = hashlib.sha256()
+    for name in ("app.js", "style.css"):
+        digest.update((STATIC / name).read_bytes())
+    return f"{__version__}-{digest.hexdigest()[:10]}"
 
 
 async def _backup_loop(cfg: Config, db: Database) -> None:
@@ -123,9 +135,11 @@ def create_app(
         app.mount("/site", StaticFiles(directory=root / "site", html=True), name="site")
         app.mount("/shared", StaticFiles(directory=root / "shared"), name="shared")
 
+    index_html = (STATIC / "index.html").read_text(encoding="utf-8").replace("__V__", _asset_version())
+
     @app.get("/", include_in_schema=False)
     def index():
-        return FileResponse(STATIC / "index.html", headers={"Cache-Control": "no-cache"})
+        return HTMLResponse(index_html, headers={"Cache-Control": "no-cache"})
 
     @app.get("/sw.js", include_in_schema=False)
     def service_worker():
@@ -160,8 +174,18 @@ def create_app(
         resp.headers.setdefault("X-Content-Type-Options", "nosniff")
         resp.headers.setdefault("X-Frame-Options", "DENY")
         resp.headers.setdefault("Referrer-Policy", "same-origin")
-        if request.url.path.startswith("/api/"):
+        path = request.url.path
+        if path.startswith("/api/"):
             resp.headers.setdefault("Cache-Control", "no-store")
+        elif path.startswith("/static/") and resp.status_code in (200, 304):
+            # версійовані файли (?v=…) і шрифти не змінюються — кешуємо на рік; решта — з перевіркою ETag
+            if request.query_params.get("v") or path.startswith("/static/fonts/"):
+                resp.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+            else:
+                resp.headers.setdefault("Cache-Control", "no-cache")
         return resp
+
+    # стиснення відповідей (JS/CSS/JSON) — у 3–5 разів менше трафіку на мобільному інтернеті
+    app.add_middleware(GZipMiddleware, minimum_size=1024, compresslevel=6)
 
     return app

@@ -27,8 +27,21 @@ const store = {
 };
 const api = {
   token: store.get("mds_token"),
-  async req(method, path, body) {
-    const opts = { method, headers: {} };
+  inflight: new Map(),
+  // однакові GET, що летять одночасно (кілька блоків сторінки, подвійний тап), — один запит до сервера
+  req(method, path, body) {
+    if (method !== "GET") return this.send(method, path, body);
+    const key = path + "|" + (this.token || "");
+    if (this.inflight.has(key)) return this.inflight.get(key);
+    const p = this.send(method, path).finally(() => this.inflight.delete(key));
+    this.inflight.set(key, p);
+    return p;
+  },
+  async send(method, path, body) {
+    // таймаут: на поганому зв'язку запит не «висить» вічно — показуємо зрозумілу помилку
+    const ctl = typeof AbortController !== "undefined" ? new AbortController() : null;
+    const timer = ctl && setTimeout(() => ctl.abort(), method === "GET" ? 20000 : 30000);
+    const opts = { method, headers: {}, signal: ctl ? ctl.signal : undefined };
     if (this.token) opts.headers.Authorization = "Bearer " + this.token;
     if (body !== undefined) {
       opts.headers["Content-Type"] = "application/json";
@@ -38,7 +51,9 @@ const api = {
     try {
       res = await fetch(path, opts);
     } catch (e) {
-      throw new Error("Немає з'єднання з сервером");
+      throw new Error(e && e.name === "AbortError" ? "Сервер довго не відповідає — спробуйте ще раз" : "Немає з'єднання з сервером");
+    } finally {
+      clearTimeout(timer);
     }
     if (res.status === 401 && path !== "/api/auth/login") {
       logout();
@@ -727,12 +742,15 @@ function renderApp() {
   const mbar = h("header", { class: "mbar" }, lead, h("b", { class: "grow" }, title),
     h("button", { class: "icon-btn", "aria-label": "Оновити сторінку", onclick: (e) => refreshView(e.currentTarget) }, icon("refresh")),
     h("button", { class: "icon-btn", "aria-label": "Повідомити про помилку", onclick: bugReportForm }, icon("bug")));
-  main.append(mbar);
+  // заглушка-«скелет», поки сторінка вантажить дані: зникає, щойно вид додасть свій вміст (CSS) або завершиться
+  const skel = h("div", { class: "skeleton view-skel", "aria-hidden": "true" }, h("i"), h("i"), h("i"), h("i"));
+  main.append(mbar, skel);
   document.getElementById("root").replaceChildren(h("div", { class: "app" }, sidebar, main), tabbar, fab);
   closeSheet();
   const view = route === "more" ? viewMore : VIEWS[route];
   const seq = ++renderSeq;
-  return Promise.resolve(view(main)).catch((e) => { if (seq === renderSeq) main.replaceChildren(emptyState(e.message, "alert")); });
+  return Promise.resolve(view(main)).catch((e) => { if (seq === renderSeq) main.replaceChildren(emptyState(e.message, "alert")); })
+    .finally(() => skel.remove());
 }
 
 // «Оновити»: свіжі довідники (майстри, послуги, налаштування) і перемальована сторінка без перезавантаження застосунку

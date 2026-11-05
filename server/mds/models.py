@@ -234,7 +234,8 @@ class Client(Base):
 
 class Appointment(Base):
     __tablename__ = "appointments"
-    __table_args__ = (Index("ix_appt_master_time", "master_id", "starts_at"),)
+    # швидкі вибірки: календар, історія клієнта
+    __table_args__ = (Index("ix_appt_master_time", "master_id", "starts_at"), Index("ix_appt_starts", "starts_at"), Index("ix_appt_client", "client_id"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
     client_id: Mapped[int] = mapped_column(ForeignKey("clients.id"))
@@ -284,6 +285,8 @@ class Order(Base):
     """Закрите замовлення — фінансовий факт наданої послуги."""
 
     __tablename__ = "orders"
+    # індекси для звітів і списків за датою
+    __table_args__ = (Index("ix_order_closed", "closed_at"), Index("ix_order_master_closed", "master_id", "closed_at"), Index("ix_order_client", "client_id"), Index("ix_order_shift", "shift_id"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
     # unique: одне замовлення на запис (захист від повторного проведення)
@@ -328,6 +331,8 @@ class OrderMaterial(Base):
 
 class Payout(Base):
     __tablename__ = "payouts"
+    # індекси для звітів і списків за датою
+    __table_args__ = (Index("ix_payout_cash_shift", "cash_shift_id"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
     master_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
@@ -346,6 +351,8 @@ class Payout(Base):
 
 class Expense(Base):
     __tablename__ = "expenses"
+    # індекси для звітів і списків за датою
+    __table_args__ = (Index("ix_expense_spent_on", "spent_on"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
     category: Mapped[str] = mapped_column(String(16))
@@ -453,6 +460,8 @@ class AuditLog(Base):
     """Історія змін сутностей (хто, коли, що було, що стало, чому)."""
 
     __tablename__ = "audit_log"
+    # індекси для звітів і списків за датою
+    __table_args__ = (Index("ix_audit_ts", "ts"), Index("ix_audit_entity", "entity", "entity_id"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
     ts: Mapped[datetime] = mapped_column(DateTime, default=_now)

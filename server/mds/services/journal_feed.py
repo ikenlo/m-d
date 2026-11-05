@@ -125,6 +125,29 @@ class _Names:
             self._c[key] = self.s.get(model, id_)
         return self._c[key]
 
+    def prefetch(self, rows: list) -> None:
+        """Пакетне завантаження всього, на що посилаються записи журналу, — кілька запитів замість сотень."""
+        def put(model, objs):
+            for o in objs:
+                self._c[(model, o.id)] = o
+
+        for model in (User, Service, Material):  # невеликі довідники — цілком
+            put(model, self.s.scalars(select(model)))
+        ids = {"appointment": set(), "order": set(), "client": set()}
+        for a in rows:
+            if a.entity in ids:
+                ids[a.entity].add(a.entity_id)
+        appts = list(self.s.scalars(select(Appointment).where(Appointment.id.in_(ids["appointment"])))) if ids["appointment"] else []
+        orders = list(self.s.scalars(select(Order).where(Order.id.in_(ids["order"])))) if ids["order"] else []
+        put(Appointment, appts)
+        put(Order, orders)
+        client_ids = ids["client"] | {x.client_id for x in appts + orders if x.client_id}
+        if client_ids:
+            put(Client, self.s.scalars(select(Client).where(Client.id.in_(client_ids))))
+        for model, wanted in ((Appointment, ids["appointment"]), (Order, ids["order"]), (Client, client_ids)):
+            for i in wanted:  # видалені — щоб не шукати їх повторно
+                self._c.setdefault((model, i), None)
+
     def user(self, id_) -> str:
         u = self._get(User, id_)
         return u.full_name if u else f"#{id_}"
@@ -370,7 +393,9 @@ def feed(s: Session, actor: Actor, *, date_from: date, date_to: date, category: 
     n = _Names(s)
     needle = (q or "").strip().lower()
     out = []
-    for a in s.scalars(stmt.order_by(AuditLog.id.desc()).limit(2000)):
+    rows = list(s.scalars(stmt.order_by(AuditLog.id.desc()).limit(2000)))
+    n.prefetch(rows)
+    for a in rows:
         d = describe(n, a)
         who, who_kind = _who(n, a)
         item = {"id": a.id, "ts": a.ts.isoformat(), "who": who, "who_kind": who_kind, "reason": a.reason, **d}
