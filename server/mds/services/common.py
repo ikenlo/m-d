@@ -18,6 +18,7 @@ class Actor:
     name: str
     role: str
     telegram_user_id: int | None = None
+    channel: str | None = None
 
     @classmethod
     def of(cls, user: User) -> "Actor":
@@ -26,6 +27,11 @@ class Actor:
     @classmethod
     def telegram(cls, tg_user_id: int) -> "Actor":
         return cls(None, f"telegram:{tg_user_id}", "client", tg_user_id)
+
+    @classmethod
+    def via(cls, channel: str, tg_user_id: int | None = None) -> "Actor":
+        """Клієнт, що записується через зовнішній канал (AI-помічник MDs manager)."""
+        return cls(None, f"{channel}:{tg_user_id or 'ext'}", "client", tg_user_id, channel)
 
     @classmethod
     def system(cls) -> "Actor":

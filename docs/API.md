@@ -87,3 +87,8 @@
 - `GET /api/sms/campaigns`, `POST /api/sms/campaigns?dry_run=1 {title, text, audience}` — розсилки
   (dry_run — лише розрахунок отримувачів і вартості).
 - `GET /api/sms/messages[?client_id]` (директор/адмін) — історія повідомлень; `POST /api/sms/test {phone}` — тестове SMS.
+
+
+## Службовий API для MDs manager — `/api/ext/v1`
+
+Доступ лише з заголовком `X-MDS-Integration-Token` (змінна `MDS_INTEGRATION_TOKEN`; без неї — 404). Опис і правила — [INTEGRATION.md](INTEGRATION.md).

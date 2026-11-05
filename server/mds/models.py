@@ -193,6 +193,7 @@ class Client(Base):
     phone2: Mapped[str | None] = mapped_column(String(32))
     birthday: Mapped[date | None] = mapped_column(Date)
     telegram_username: Mapped[str | None] = mapped_column(String(64))
+    instagram_user_id: Mapped[str | None] = mapped_column(String(64), unique=True)
     source: Mapped[str | None] = mapped_column(String(32))
     wishes: Mapped[str | None] = mapped_column(Text)
     marketing_consent: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
@@ -243,6 +244,23 @@ class Shift(Base):
 
     master: Mapped[User] = relationship()
     orders: Mapped[list["Order"]] = relationship(back_populates="shift")
+
+
+class AppointmentAttribution(Base):
+    """Звідки прийшов запис: канал і рекламна мітка (заповнює MDs manager через /api/ext/v1)."""
+
+    __tablename__ = "appointment_attribution"
+
+    appointment_id: Mapped[int] = mapped_column(ForeignKey("appointments.id"), primary_key=True)
+    channel: Mapped[str] = mapped_column(String(16))
+    lead_source: Mapped[str | None] = mapped_column(String(64), index=True)
+    utm_source: Mapped[str | None] = mapped_column(String(64))
+    utm_medium: Mapped[str | None] = mapped_column(String(64))
+    utm_campaign: Mapped[str | None] = mapped_column(String(128))
+    utm_content: Mapped[str | None] = mapped_column(String(128))
+    campaign_id: Mapped[str | None] = mapped_column(String(64))
+    external_ref: Mapped[str | None] = mapped_column(String(64), unique=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
 
 
 class Order(Base):

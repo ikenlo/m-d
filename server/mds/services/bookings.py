@@ -253,7 +253,7 @@ def create_appointment(
     if not service.is_active:
         raise ValidationError("Послуга недоступна")
     from_bot = actor.role == "client"
-    source = "telegram" if from_bot else "staff"
+    source = (actor.channel or "telegram") if from_bot else "staff"
     if from_bot and starts_at < clock.now():
         raise ValidationError("Не можна записатися на минулий час")
 
@@ -282,7 +282,7 @@ def create_appointment(
 
     if status is None:
         if from_bot:
-            auto = get_setting(s, "telegram_auto_confirm") and source == "telegram" and not antispam.needs_confirmation(s, client)
+            auto = get_setting(s, "telegram_auto_confirm") and source in antispam.ONLINE and not antispam.needs_confirmation(s, client)
             status = ApptStatus.CONFIRMED if auto else ApptStatus.PENDING
         else:
             status = ApptStatus.CONFIRMED

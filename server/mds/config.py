@@ -20,6 +20,7 @@ class Config:
     token_ttl_hours: int = field(default_factory=lambda: int(_env("TOKEN_TTL_HOURS", "12")))
     timezone: str = field(default_factory=lambda: _env("TIMEZONE", "Europe/Kyiv"))
     telegram_token: str = field(default_factory=lambda: _env("TELEGRAM_TOKEN", ""))
+    integration_token: str = field(default_factory=lambda: _env("INTEGRATION_TOKEN", ""))
     backup_dir: Path | None = None
     backup_interval_hours: int = field(default_factory=lambda: int(_env("BACKUP_INTERVAL_HOURS", "6")))
     backup_keep: int = field(default_factory=lambda: int(_env("BACKUP_KEEP", "40")))

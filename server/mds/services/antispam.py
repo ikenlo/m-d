@@ -11,7 +11,7 @@ from ..models import Appointment, ApptStatus, CallbackRequest, Client
 from .common import get_setting
 
 ACTIVE = (ApptStatus.PENDING, ApptStatus.CONFIRMED, ApptStatus.IN_PROGRESS)
-ONLINE = ("telegram",)
+ONLINE = ("telegram", "telegram-ai", "instagram")
 
 
 class TooMany(DomainError):
