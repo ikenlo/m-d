@@ -1199,6 +1199,13 @@ async function openMyShift(btn) {
   try { return await run(() => api.post("/api/shifts/open"), "Зміну відкрито"); } finally { if (btn) btn.disabled = false; }
 }
 
+function offTextFor(r, isMaster) {
+  if (r.working) return "У робочий час вільного немає — оберіть інший день" + (isMaster ? "" : " або майстра") + (r.off_hours?.length ? " або час поза графіком нижче." : ".");
+  if (r.off_policy === "forbid") return "За графіком роботи це вихідний. Запис у неробочий час вимкнено в налаштуваннях салону.";
+  if (r.off_policy === "if_free_place" && !r.off_hours?.length) return "За графіком роботи це вихідний, і всі робочі місця зайняті. Оберіть інший день.";
+  return "За графіком роботи це вихідний. Можна записати на час поза графіком — з підтвердженням.";
+}
+
 const RECENT_SVC = () => `mds_recent_svc_${state.user?.id}`;
 function rememberService(id) {
   let r = [];
@@ -1232,10 +1239,11 @@ function quickBook({ master_id = null, date = today(), time = null, client = nul
   const sBox = h("div", { class: "qb-chips" });
   const sSearch = h("input", { type: "search", placeholder: "Інша послуга: пошук…", class: "qb-search" });
   const sFound = h("div", { class: "qb-found" });
-  const dBox = h("div", { class: "qb-chips" });
+  const dBox = h("div", { class: "qb-chips qb-days" });
   const dPick = h("input", { type: "date", value: date, class: "qb-date", "aria-label": "Інша дата" });
   const tBox = h("div", { class: "qb-times" });
   const offBox = h("div", {});
+  const timesWrap = h("div", { class: "qb-times-wrap" }, h("div", { class: "qb-label" }, "Час"), tBox, offBox);
   const shiftBox = h("div", {});
   let offList = [];
   const name = h("input", { placeholder: "Ім'я клієнта *", autocapitalize: "words", "aria-required": "true" });
@@ -1259,7 +1267,8 @@ function quickBook({ master_id = null, date = today(), time = null, client = nul
   });
   const drawDays = () => {
     const days = [0, 1, 2].map((i) => addDays(today(), i));
-    dBox.replaceChildren(...days.map((dd, i) => chip(["Сьогодні", "Завтра", "Післязавтра"][i], dd === st.date, () => { st.date = dd; st.time = null; dPick.value = dd; drawDays(); loadTimes(); }, dm(dd))),
+    const label = (dd, i) => (i < 2 ? ["Сьогодні", "Завтра"][i] : WD_LONG[(new Date(dd + "T12:00").getDay() + 6) % 7]);
+    dBox.replaceChildren(...days.map((dd, i) => chip(label(dd, i), dd === st.date, () => { st.date = dd; st.time = null; dPick.value = dd; drawDays(); loadTimes(); }, dm(dd))),
       h("label", { class: "qb-chip" + (days.includes(st.date) ? "" : " on") }, h("b", {}, days.includes(st.date) ? "Інша" : dm(st.date)), dPick));
   };
   dPick.addEventListener("change", () => { if (dPick.value) { st.date = dPick.value; st.time = null; drawDays(); loadTimes(); } });
@@ -1268,13 +1277,20 @@ function quickBook({ master_id = null, date = today(), time = null, client = nul
     summary();
     if (!st.service || !st.master) { tBox.replaceChildren(h("div", { class: "qb-empty" }, PRESETS.length ? "Оберіть стрижку чи фарбування вгорі" : "Оберіть послугу")); return; }
     const my = ++req;
-    tBox.replaceChildren(h("div", { class: "qb-empty" }, "Шукаю вільний час…"));
+    const keepH = tBox.offsetHeight + offBox.offsetHeight;
+    timesWrap.style.minHeight = keepH ? keepH + "px" : "";
+    tBox.classList.add("loading");
     const r = await api.get(`/api/availability/detail?master_id=${st.master}&service_id=${st.service}&day=${st.date}${st.duration ? "&duration_min=" + st.duration : ""}`)
       .catch(() => ({ slots: [], off_hours: [], working: true, shift_open: null }));
     if (my !== req) return;
     const list = r.slots;
     offList = r.off_hours || [];
-    const pick = (x) => { st.time = x; loadTimes(); };
+    const pick = (x) => {
+      st.time = x;
+      timesWrap.querySelectorAll(".qb-time").forEach((b) => b.classList.toggle("on", b.textContent === x));
+      summary();
+    };
+    tBox.classList.remove("loading");
     if (time && !st.time && (list.includes(time) || offList.includes(time))) st.time = time;
     const isMe = isMaster || st.master === state.user.id;
     shiftBox.replaceChildren(...(isMe && r.shift_open === false ? [h("div", { class: "card qb-shift row" },
@@ -1282,13 +1298,14 @@ function quickBook({ master_id = null, date = today(), time = null, client = nul
         h("div", { class: "muted small" }, r.working ? "Відкрийте зміну, щоб працювати сьогодні" : "За графіком сьогодні вихідний — відкрийте зміну, і день стане робочим")),
       h("button", { type: "button", class: "btn primary sm", onclick: async (e) => { await openMyShift(e.currentTarget); loadTimes(); } }, icon("ok", "sm"), "Відкрити зміну"))] : []));
     tBox.replaceChildren(...(list.length ? list.map((x) => h("button", { type: "button", class: "qb-time" + (x === st.time ? " on" : ""), onclick: () => pick(x) }, x))
-      : [h("div", { class: "qb-empty" }, icon("calendar", "sm"), h("span", {}, r.working ? "У робочий час вільного немає — оберіть інший день" + (isMaster ? "" : " або майстра") + " або час поза графіком нижче."
-        : "За графіком роботи це вихідний. Можна записати на час поза графіком — з підтвердженням."))]));
-    const offOpen = !list.length || offList.includes(st.time);
+      : [h("div", { class: "qb-empty" }, icon("calendar", "sm"), h("span", {}, offTextFor(r, isMaster)))]));
+    const offOpen = offList.includes(st.time);
     offBox.replaceChildren(...(offList.length ? [h("details", { class: "qb-off", open: offOpen || null },
-      h("summary", {}, icon("clock", "sm"), h("span", {}, r.working ? `Поза графіком (${r.hours[0]}–${r.hours[1]})` : "Неробочий день"), h("small", { class: "muted" }, "з підтвердженням")),
+      h("summary", {}, icon("clock", "sm"), h("span", {}, r.working ? `Поза графіком (${r.hours[0]}–${r.hours[1]})` : "Неробочий день"),
+        h("small", { class: "muted" }, r.off_policy === "if_free_place" ? "є вільне місце · з підтвердженням" : "з підтвердженням")),
       h("div", { class: "qb-times" }, offList.map((x) => h("button", { type: "button", class: "qb-time off" + (x === st.time ? " on" : ""), onclick: () => pick(x) }, x))))] : []));
     summary();
+    requestAnimationFrame(() => { timesWrap.style.minHeight = ""; });
   }
   function summary() {
     const s = svcById(st.service);
@@ -1333,7 +1350,7 @@ function quickBook({ master_id = null, date = today(), time = null, client = nul
     masters.length > 1 ? h("div", {}, h("div", { class: "qb-label" }, "Майстер"), mBox) : null,
     PRESETS.length ? pBox : h("div", {}, h("div", { class: "qb-label" }, "Послуга"), sBox, sSearch, sFound),
     h("div", {}, h("div", { class: "qb-label" }, "День"), dBox),
-    h("div", {}, h("div", { class: "qb-label" }, "Час"), tBox, offBox),
+    timesWrap,
     h("div", {}, h("div", { class: "qb-label" }, "Клієнт"), h("div", { class: "form-grid" }, name, phone)), found,
     save,
     ));
@@ -3761,6 +3778,9 @@ VIEWS.settings = async (main) => {
   const step = h("input", { type: "number", min: 5, step: 5, value: s.slot_step_min });
   const horizon = h("input", { type: "number", min: 1, value: s.booking_horizon_days });
   const lead = h("input", { type: "number", min: 0, value: s.booking_min_lead_min });
+  const offPolicy = select([["forbid", "Заборонити"], ["if_free_place", "Лише якщо є вільне робоче місце"], ["allow", "Дозволити (з підтвердженням)"]], s.off_hours_booking || "if_free_place");
+  const places = h("input", { type: "number", min: 1, max: 20, value: s.workplaces || 2 });
+  const maxM = h("input", { type: "number", min: 1, max: 50, value: s.max_masters || 4 });
   const auto = h("input", { type: "checkbox", checked: s.telegram_auto_confirm });
   const takesCash = h("input", { type: "checkbox", checked: s.master_takes_cash !== false });
   const favVisits = h("input", { type: "number", min: 1, max: 50, value: s.favorite_master_visits || 3 });
@@ -3789,6 +3809,8 @@ VIEWS.settings = async (main) => {
     generatorSettingsCard(s),
     h("div", { class: "card stack" }, h("h3", {}, "Запис клієнтів"), field("Назва салону", name),
       h("div", { class: "form-grid" }, field("Крок слотів, хв", step), field("Запис наперед, днів", horizon), field("Мін. хв до запису (бот)", lead)),
+      field("Запис персоналом у неробочий час", offPolicy),
+      h("div", { class: "form-grid" }, field("Робочих місць (одночасно майстрів)", places), field("Майстрів у салоні, максимум", maxM)),
       h("label", { class: "row" }, auto, "Записи з Telegram одразу підтверджені"),
       field("Улюблений майстер клієнта — після скількох візитів", favVisits),
       h("label", { class: "row" }, remind, "Нагадування клієнтам у Telegram за добу і за 2 години (бот питає згоду)")),
@@ -3810,6 +3832,7 @@ VIEWS.settings = async (main) => {
       const body = {
         salon_name: name.value, default_share_bp: Math.round(parseFloat(share.value) * 100), default_materials_mode: mode.value,
         slot_step_min: +step.value, booking_horizon_days: +horizon.value, booking_min_lead_min: +lead.value, telegram_auto_confirm: auto.checked,
+        off_hours_booking: offPolicy.value, workplaces: Math.max(1, parseInt(places.value || "2", 10)), max_masters: Math.max(1, parseInt(maxM.value || "4", 10)),
         master_takes_cash: takesCash.checked, reminders_enabled: remind.checked, card_terminal_mode: termMode.value, favorite_master_visits: Math.max(1, parseInt(favVisits.value || "3", 10)),
         bot_staff_code: staffCode.value.trim(), salon_address: addr.value.trim(), salon_phone: phone.value.trim(), salon_instagram: insta.value.trim(),
         schedule: Object.fromEntries(days.map((d) => [String(d.i), d.on.checked ? [d.a.value, d.b.value] : null])),

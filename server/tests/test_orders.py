@@ -226,7 +226,7 @@ def test_master_takes_earning_from_till_rest_paid_by_director(db, seed):
         for i in range(12):
             a = bookings.create_appointment(s, seed["actors"]["admin"], master_id=seed["m1"], service_id=seed["haircut"],
                                             starts_at=datetime(2026, 11, 2, 8) + timedelta(hours=i), client_name=f"К{i}",
-                                            client_phone=f"05000000{i:02d}")
+                                            client_phone=f"05000000{i:02d}", confirm_off_hours=True)
             orders.close_order(s, m1, a.id, amount=50000, payment_method="cash" if i < 7 else "card")
         sh = orders.close_shift(s, m1, seed["m1"])
         c = sh.report["cash"]

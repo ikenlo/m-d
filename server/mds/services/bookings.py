@@ -63,6 +63,45 @@ def working_hours(s: Session, master: User, day: date) -> tuple[datetime, dateti
 EXTENDED_DAY = ("08:00", "21:00")
 
 
+def _candidates(lo: datetime, hi: datetime, step: timedelta, busy: list, dur: timedelta) -> list[datetime]:
+    out = set()
+    t = lo
+    while t + dur <= hi:
+        out.add(t)
+        t += step
+    for b in busy:
+        if lo <= b.ends_at and b.ends_at + dur <= hi:
+            out.add(b.ends_at)
+    return sorted(out)
+
+
+def masters_present(s: Session, start: datetime, end: datetime, exclude_id: int | None = None) -> set[int]:
+    masters = list(s.scalars(select(User).where(User.role == Role.MASTER, User.is_active.is_(True))))
+    out = set()
+    for m in masters:
+        if m.id == exclude_id:
+            continue
+        hours = working_hours(s, m, start.date())
+        if hours and hours[0] < end and hours[1] > start:
+            out.add(m.id)
+    busy = s.scalars(select(Appointment.master_id).where(
+        Appointment.status.in_(ApptStatus.OCCUPYING), Appointment.starts_at < end, Appointment.ends_at > start))
+    out.update(mid for mid in busy if mid != exclude_id)
+    return out
+
+
+def place_free(s: Session, master_id: int, start: datetime, end: datetime) -> bool:
+    return len(masters_present(s, start, end, master_id)) < int(get_setting(s, "workplaces"))
+
+
+def check_off_hours(s: Session, master: User, start: datetime, end: datetime) -> None:
+    policy = get_setting(s, "off_hours_booking")
+    if policy == "forbid":
+        raise Conflict("Запис у неробочий час вимкнено в налаштуваннях салону", code="off_hours_forbidden")
+    if policy == "if_free_place" and not place_free(s, master.id, start, end):
+        raise Conflict("У цей час усі робочі місця зайняті — записати поза графіком не можна", code="no_place")
+
+
 def staff_hours(s: Session, master: User, day: date) -> tuple[datetime, datetime] | None:
     hours = working_hours(s, master, day)
     if hours is None and day == clock.now().date():
@@ -98,13 +137,15 @@ def booking_options(s: Session, actor: Actor, master_id: int, service_id: int, d
         Appointment.master_id == master_id, Appointment.status.in_(ApptStatus.OCCUPYING),
         Appointment.starts_at < hi, Appointment.ends_at > lo)))
     earliest = clock.now() - timedelta(minutes=10)
+    policy = get_setting(s, "off_hours_booking")
     slots, off = [], []
-    t = lo
-    while t + dur <= hi:
-        if t >= earliest and not any(b.starts_at < t + dur and b.ends_at > t for b in busy):
-            inside = hours is not None and t >= hours[0] and t + dur <= hours[1]
-            (slots if inside else off).append(t.strftime("%H:%M"))
-        t += step
+    for t in _candidates(lo, hi, step, busy, dur):
+        if t < earliest or any(b.starts_at < t + dur and b.ends_at > t for b in busy):
+            continue
+        if hours is not None and t >= hours[0] and t + dur <= hours[1]:
+            slots.append(t.strftime("%H:%M"))
+        elif policy == "allow" or (policy == "if_free_place" and place_free(s, master_id, t, t + dur)):
+            off.append(t.strftime("%H:%M"))
     if not master.is_active:
         slots, off = [], []
     return {
@@ -113,6 +154,7 @@ def booking_options(s: Session, actor: Actor, master_id: int, service_id: int, d
         "working": hours is not None,
         "hours": [hours[0].strftime("%H:%M"), hours[1].strftime("%H:%M")] if hours else None,
         "shift_open": current_shift(s, master_id) is not None if day == clock.now().date() else None,
+        "off_policy": policy,
     }
 
 
@@ -158,13 +200,8 @@ def free_slots(
             )
         )
     )
-    out = []
-    t = start
-    while t + dur <= end:
-        if t >= earliest and not any(b.starts_at < t + dur and b.ends_at > t for b in busy):
-            out.append(t)
-        t += step
-    return out
+    return [t for t in _candidates(start, end, step, busy, dur)
+            if t >= earliest and not any(b.starts_at < t + dur and b.ends_at > t for b in busy)]
 
 
 def _check_access(actor: Actor, master_id: int) -> None:
@@ -237,8 +274,10 @@ def create_appointment(
     if price is not None and price < 0:
         raise ValidationError("Ціна не може бути від'ємною")
     ends_at = starts_at + timedelta(minutes=dur)
-    if actor.is_master and not confirm_off_hours and is_off_hours(s, master, starts_at, ends_at):
-        raise Conflict("Цей час поза графіком роботи. Підтвердіть запис у неробочий час", code="off_hours")
+    if not from_bot and is_off_hours(s, master, starts_at, ends_at):
+        check_off_hours(s, master, starts_at, ends_at)
+        if not confirm_off_hours:
+            raise Conflict("Цей час поза графіком роботи. Підтвердіть запис у неробочий час", code="off_hours")
     _check_slot(s, master, starts_at, ends_at, None, strict_hours=from_bot)
 
     if status is None:

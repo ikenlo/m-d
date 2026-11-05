@@ -94,6 +94,8 @@ def create_user(
     _validate_schedule(schedule)
     if s.scalar(select(User).where(func.lower(User.username) == username)):
         raise Conflict("Такий логін уже існує")
+    if role == Role.MASTER:
+        _check_master_limit(s)
     u = User(
         username=username,
         password_hash=hash_password(password),
@@ -114,6 +116,15 @@ def create_user(
     return u
 
 
+def _check_master_limit(s: Session) -> None:
+    from .common import get_setting
+
+    n = s.scalar(select(func.count(User.id)).where(User.role == Role.MASTER, User.is_active.is_(True))) or 0
+    limit = int(get_setting(s, "max_masters"))
+    if n >= limit:
+        raise ValidationError(f"У салоні вже {n} активних майстрів — максимум {limit} (Налаштування → Запис клієнтів)")
+
+
 UPDATABLE = ("full_name", "phone", "is_active", "share_bp", "materials_mode", "schedule", "role")
 
 
@@ -129,6 +140,9 @@ def update_user(s: Session, actor: Actor, user_id: int, data: dict) -> User:
         raise ValidationError("Невідома роль")
     if u.id == actor.user_id and (data.get("is_active") is False or data.get("role", u.role) != u.role):
         raise Forbidden("Не можна деактивувати себе або змінити собі роль")
+    becomes_master = data.get("role", u.role) == Role.MASTER and data.get("is_active", u.is_active)
+    if becomes_master and not (u.role == Role.MASTER and u.is_active):
+        _check_master_limit(s)
     for k in UPDATABLE:
         if k in data:
             setattr(u, k, data[k])

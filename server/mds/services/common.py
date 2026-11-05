@@ -122,6 +122,9 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "slot_step_min": 30,
     "booking_horizon_days": 30,
     "booking_min_lead_min": 60,
+    "off_hours_booking": "if_free_place",
+    "workplaces": 2,
+    "max_masters": 4,
     "telegram_auto_confirm": False,
     "bot_staff_code": "0000",
     "master_takes_cash": True,
@@ -284,6 +287,12 @@ def update_settings(s: Session, actor: Actor, data: dict[str, Any]) -> dict[str,
             from .tax_declaration import validate_profile_value
 
             value = validate_profile_value(key, value)
+        if key == "off_hours_booking" and value not in ("forbid", "if_free_place", "allow"):
+            raise ValidationError("Запис у неробочий час: заборонити, лише якщо є вільне місце, або дозволити")
+        if key == "workplaces" and not (isinstance(value, int) and not isinstance(value, bool) and 1 <= value <= 20):
+            raise ValidationError("Робочих місць — від 1 до 20")
+        if key == "max_masters" and not (isinstance(value, int) and not isinstance(value, bool) and 1 <= value <= 50):
+            raise ValidationError("Майстрів у салоні — від 1 до 50")
         if key == "slot_step_min" and value < 5:
             raise ValidationError("Крок слотів — щонайменше 5 хвилин")
         set_setting(s, actor, key, value)
