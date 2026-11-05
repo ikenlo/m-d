@@ -1549,7 +1549,7 @@ VIEWS.calendar = async (main) => {
   // вибір дати: справжнє поле дати поверх кнопки — відкриває системний календар і на iPhone, і на Android
   const datePick = h("span", { class: "btn date-pick", title: "Обрати дату" }, icon("calendar", "sm"), h("span", { class: "m-hide" }, "Дата"),
     h("input", { type: "date", value: day, "aria-label": "Обрати дату", onchange: (e) => e.target.value && go(e.target.value) }));
-  main.append(topbar("Календар", `${WD_LONG[(new Date(day + "T12:00").getDay() + 6) % 7]}, ${dmy(day)}`,
+  const calTop = topbar("Календар", `${WD_LONG[(new Date(day + "T12:00").getDay() + 6) % 7]}, ${dmy(day)}`,
     h("div", { class: "btn-group" },
       h("button", { class: "btn", "aria-label": "Попередній день", onclick: () => go(addDays(day, -1)) }, icon("left", "sm")),
       h("button", { class: "btn" + (day === today() ? " on" : ""), onclick: () => go(today()) }, "Сьогодні"),
@@ -1558,7 +1558,10 @@ VIEWS.calendar = async (main) => {
     h("div", { class: "seg icons", role: "tablist" },
       h("button", { class: mode === "grid" ? "on" : "", title: "Сітка по майстрах", "aria-label": "Сітка", onclick: () => setMode("grid") }, icon("grid", "sm"), h("span", {}, "Сітка")),
       h("button", { class: mode === "list" ? "on" : "", title: "Список записів", "aria-label": "Список", onclick: () => setMode("list") }, icon("rows", "sm"), h("span", {}, "Список"))),
-    h("button", { class: "btn primary", onclick: () => quickBook({ date: day }) }, icon("plus", "sm"), "Новий запис")));
+    h("button", { class: "btn primary", onclick: () => quickBook({ date: day }) }, icon("plus", "sm"), "Новий запис"));
+  // телефон: усе керування — один рядок (дата видно в стрічці днів, «Новий запис» — кнопка «+» унизу)
+  calTop.classList.add("cal-top");
+  main.append(calTop);
 
   // стрічка днів (тиждень довкола) з кількістю записів — одним запитом на весь діапазон
   const wdIdx = (iso) => String((new Date(iso + "T12:00").getDay() + 6) % 7);
@@ -1603,11 +1606,13 @@ VIEWS.calendar = async (main) => {
   const activeList = list.filter(isActive).sort((a, b) => a.starts_at.localeCompare(b.starts_at));
   // непідтверджені: на телефоні — компактна кнопка (список відкривається знизу), щоб не витісняти календар
   const pend = await pendingBlock(reload);
+  let pendChip = null;
   if (pend) {
     if (narrow) {
+      // на телефоні — маленька кнопка в рядку підсумку дня, а не окремий банер
       const n = pend.querySelectorAll(":scope > .row").length;
-      main.append(h("button", { class: "callout pend-btn", onclick: () => openSheet("Непідтверджені записи", pend) },
-        icon("alert"), h("b", { class: "grow" }, `Непідтверджені записи: ${n}`), h("span", { class: "small" }, "Відкрити"), icon("right", "sm")));
+      pendChip = h("button", { class: "pend-chip", type: "button", onclick: () => openSheet("Непідтверджені записи", pend) },
+        icon("alert", "sm"), `${n} ${plural(n, "непідтверджений", "непідтверджені", "непідтверджених")}`);
     } else main.append(pend);
   }
   if (!isMaster) {
@@ -1639,11 +1644,11 @@ VIEWS.calendar = async (main) => {
   const waiting = activeList.filter((a) => a.status === "pending").length;
   const planned = activeList.reduce((s, a) => s + (a.price || 0), 0);
   const working = masters.filter((m) => spanOf(m)).length;
-  main.append(h("div", { class: "day-sum" },
+  main.append(h("div", { class: "day-sum" }, pendChip,
     h("span", {}, icon("calendar", "sm"), h("b", {}, activeList.length), " ", plural(activeList.length, "запис", "записи", "записів")),
-    waiting ? h("span", { class: "warn" }, icon("alert", "sm"), "очікують: ", h("b", {}, waiting)) : null,
-    !isMaster ? h("span", {}, icon("users", "sm"), working ? `працюють: ${working} з ${masters.length}` : "усі майстри вихідні") : null,
-    planned ? h("span", {}, icon("banknote", "sm"), "за прайсом ", h("b", {}, money(planned))) : null));
+    waiting && !pendChip ? h("span", { class: "warn" }, icon("alert", "sm"), "очікують: ", h("b", {}, waiting)) : null,
+    !isMaster ? h("span", {}, icon("users", "sm"), working ? (narrow ? `${working} з ${masters.length}` : `працюють: ${working} з ${masters.length}`) : "усі вихідні") : null,
+    planned ? h("span", {}, icon("banknote", "sm"), narrow ? "" : "за прайсом ", h("b", {}, money(planned))) : null));
 
   if (mode === "list") {
     const agenda = h("div", { class: "agenda anim-in" });
@@ -1670,7 +1675,7 @@ VIEWS.calendar = async (main) => {
     main.append(agenda);
   } else {
     // 30 хв = 46 px: у найкоротшому записі вміщаються два рядки (час+клієнт, послуга+ціна)
-    const STEP = 30, ROW = 46, HEAD = 60, TIMEW = 52, GAP = 30;
+    const STEP = 30, ROW = 46, HEAD = 60, TIMEW = narrow ? 40 : 52, GAP = 30;
     const fmt = (x) => `${pad(Math.floor(x / 60))}:${pad(x % 60)}`;
     // показуємо лише години графіка та години з записами; порожні проміжки між ними згортаються в тонкий рядок
     const hrs = new Set();
