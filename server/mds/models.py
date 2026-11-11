@@ -162,6 +162,7 @@ class Material(Base):
     pack_name: Mapped[str] = mapped_column(String(16), default="шт", server_default="шт")
     pack_size: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
     unit_cost: Mapped[int] = mapped_column(Integer)
+    markup_bp: Mapped[int] = mapped_column(Integer, default=10000, server_default="10000")
     stock_milli: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     min_stock_milli: Mapped[int | None] = mapped_column(Integer)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
@@ -173,14 +174,74 @@ class StockMove(Base):
     __table_args__ = (Index("ix_stock_material", "material_id", "ts"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    material_id: Mapped[int] = mapped_column(ForeignKey("materials.id"))
+    item_type: Mapped[str] = mapped_column(String(16), default="material", server_default="material")
+    material_id: Mapped[int | None] = mapped_column(ForeignKey("materials.id"))
+    product_id: Mapped[int | None] = mapped_column(ForeignKey("products.id", name="fk_stock_moves_product_id"))
     ts: Mapped[datetime] = mapped_column(DateTime, default=_now)
     kind: Mapped[str] = mapped_column(String(16))
+    reason: Mapped[str | None] = mapped_column(String(16))
     qty_milli: Mapped[int] = mapped_column(Integer)
+    unit_price: Mapped[int | None] = mapped_column(Integer)
     cost: Mapped[int] = mapped_column(Integer, default=0)
     order_id: Mapped[int | None] = mapped_column(ForeignKey("orders.id"))
     user_id: Mapped[int | None] = mapped_column(Integer)
     note: Mapped[str | None] = mapped_column(Text)
+
+
+class Product(Base):
+
+    __tablename__ = "products"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(128))
+    sku: Mapped[str | None] = mapped_column(String(64), unique=True)
+    barcode: Mapped[str | None] = mapped_column(String(64), unique=True)
+    category: Mapped[str | None] = mapped_column(String(64))
+    cost_price_cents: Mapped[int] = mapped_column(Integer, default=0)
+    sale_price_cents: Mapped[int] = mapped_column(Integer)
+    markup_bp: Mapped[int] = mapped_column(Integer, default=10000, server_default="10000")
+    stock_qty: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    active: Mapped[bool] = mapped_column(Boolean, default=True, server_default="1")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
+
+
+class OrderProduct(Base):
+
+    __tablename__ = "order_products"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    order_id: Mapped[int] = mapped_column(ForeignKey("orders.id", name="fk_order_products_order_id"), index=True)
+    product_id: Mapped[int] = mapped_column(ForeignKey("products.id", name="fk_order_products_product_id"))
+    name: Mapped[str] = mapped_column(String(128))
+    qty: Mapped[int] = mapped_column(Integer)
+    sale_price_snapshot_cents: Mapped[int] = mapped_column(Integer)
+    cost_price_snapshot_cents: Mapped[int] = mapped_column(Integer, default=0)
+    master_bonus_cents: Mapped[int] = mapped_column(Integer)
+    refunded: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
+    created_by: Mapped[int | None] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
+
+    product: Mapped["Product"] = relationship()
+
+    @property
+    def total(self) -> int:
+        return self.sale_price_snapshot_cents * self.qty
+
+
+class BonusAccrual(Base):
+
+    __tablename__ = "bonus_accruals"
+    __table_args__ = (Index("ix_bonus_master_unpaid", "master_id", "payout_id"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    master_id: Mapped[int] = mapped_column(ForeignKey("users.id", name="fk_bonus_accruals_master_id"))
+    order_product_id: Mapped[int | None] = mapped_column(ForeignKey("order_products.id", name="fk_bonus_accruals_op_id"))
+    amount: Mapped[int] = mapped_column(Integer)
+    accrued_on: Mapped[date] = mapped_column(Date)
+    payout_id: Mapped[int | None] = mapped_column(ForeignKey("payouts.id", name="fk_bonus_accruals_payout_id"))
+    note: Mapped[str | None] = mapped_column(Text)
+    created_by: Mapped[int | None] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
 
 
 class ScheduleDay(Base):
@@ -272,11 +333,11 @@ class Order(Base):
     __table_args__ = (Index("ix_order_closed", "closed_at"), Index("ix_order_master_closed", "master_id", "closed_at"), Index("ix_order_client", "client_id"), Index("ix_order_shift", "shift_id"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    appointment_id: Mapped[int] = mapped_column(ForeignKey("appointments.id"), unique=True)
+    appointment_id: Mapped[int | None] = mapped_column(ForeignKey("appointments.id"), unique=True)
     idempotency_key: Mapped[str | None] = mapped_column(String(64), unique=True)
     master_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
-    client_id: Mapped[int] = mapped_column(ForeignKey("clients.id"))
-    service_id: Mapped[int] = mapped_column(ForeignKey("services.id"))
+    client_id: Mapped[int | None] = mapped_column(ForeignKey("clients.id"))
+    service_id: Mapped[int | None] = mapped_column(ForeignKey("services.id"))
     shift_id: Mapped[int] = mapped_column(ForeignKey("shifts.id"))
     price_snapshot: Mapped[int] = mapped_column(Integer)
     amount: Mapped[int] = mapped_column(Integer)
@@ -297,14 +358,15 @@ class Order(Base):
     edited_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
     edited_at: Mapped[datetime | None] = mapped_column(DateTime)
 
-    appointment: Mapped[Appointment] = relationship(back_populates="order")
+    appointment: Mapped[Appointment | None] = relationship(back_populates="order")
     shift: Mapped[Shift] = relationship(back_populates="orders")
     materials: Mapped[list["OrderMaterial"]] = relationship(
         cascade="all, delete-orphan", order_by="OrderMaterial.id"
     )
+    products: Mapped[list["OrderProduct"]] = relationship(order_by="OrderProduct.id", viewonly=True)
     master: Mapped[User] = relationship(foreign_keys=[master_id])
-    client: Mapped[Client] = relationship()
-    service: Mapped[Service] = relationship()
+    client: Mapped[Client | None] = relationship()
+    service: Mapped[Service | None] = relationship()
     closer: Mapped[User] = relationship(foreign_keys=[closed_by])
     editor: Mapped[User | None] = relationship(foreign_keys=[edited_by])
 

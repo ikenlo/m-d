@@ -22,7 +22,7 @@ def raise_alert(s: Session, kind: str, text: str, *, entity: str | None = None, 
 
 
 def earnings_changed(s: Session, o: Order, before: int, reason: str) -> None:
-    text = (f"✏️ Виправлено замовлення #{o.id} ({o.service.name}).\n"
+    text = (f"✏️ Виправлено замовлення #{o.id} ({o.service.name if o.service else 'товари'}).\n"
             f"Заробіток майстра: {fmt(before)} → {fmt(o.master_earning)}\nПричина: {reason}")
     big = abs(o.master_earning - before) > EARNINGS_CHANGE_THRESHOLD
     raise_alert(s, "earnings_change", text, entity="order", entity_id=o.id, master_id=o.master_id, to_directors=big)

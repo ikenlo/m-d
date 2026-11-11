@@ -111,7 +111,7 @@ def material_public(m: Material) -> dict:
     return mp(m)
 
 
-MATERIAL_FIELDS = ("name", "tone", "category", "unit", "pack_name", "pack_size", "unit_cost", "is_active")
+MATERIAL_FIELDS = ("name", "tone", "category", "unit", "pack_name", "pack_size", "unit_cost", "markup_bp", "is_active")
 UNITS = ("г", "мл", "шт")
 PACK_NAMES = ("шт", "туба", "тюбик", "банка", "флакон", "пляшка", "каністра", "упаковка", "пачка", "набір",
               "коробка", "рулон", "пара", "ампула", "саше", "балон")
@@ -136,6 +136,11 @@ def _check_material(data: dict, creating: bool) -> dict:
             out["unit_cost"] = 0
         if int(out["unit_cost"]) < 0:
             raise ValidationError("Ціна упаковки не може бути від'ємною")
+    if "markup_bp" in out:
+        if out["markup_bp"] is None:
+            out["markup_bp"] = 10000
+        if not isinstance(out["markup_bp"], int) or not (0 <= out["markup_bp"] <= 100000):
+            raise ValidationError("Націнка — від 0 до 1000%")
     if "pack_size" in out:
         out["pack_size"] = int(out["pack_size"] or 1)
         if out["pack_size"] <= 0:

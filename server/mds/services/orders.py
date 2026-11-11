@@ -35,9 +35,9 @@ MISSING_LABELS = {"materials": "матеріали", "phone": "телефон к
 
 def order_missing(o: Order) -> list[str]:
     out = []
-    if o.service.needs_materials and not o.materials:
+    if o.service is not None and o.service.needs_materials and not o.materials:
         out.append("materials")
-    if not o.client.phone:
+    if o.client is not None and not o.client.phone:
         out.append("phone")
     return out
 
@@ -58,9 +58,9 @@ def order_public(o: Order) -> dict:
         "master_id": o.master_id,
         "master_name": o.master.full_name,
         "client_id": o.client_id,
-        "client_name": o.client.name,
+        "client_name": o.client.name if o.client else "—",
         "service_id": o.service_id,
-        "service_name": o.service.name,
+        "service_name": o.service.name if o.service else "Продаж товарів",
         "shift_id": o.shift_id,
         "price_snapshot": o.price_snapshot,
         "amount": o.amount,
@@ -80,14 +80,22 @@ def order_public(o: Order) -> dict:
         "salon_earning": o.salon_earning,
         "closed_at": o.closed_at.isoformat(),
         "revision": o.revision,
-        "needs_materials": bool(o.service.needs_materials) and not o.materials,
-        "client_phone": o.client.phone,
+        "needs_materials": bool(o.service and o.service.needs_materials) and not o.materials,
+        "client_phone": o.client.phone if o.client else None,
+        "products": [_line_public(x) for x in o.products],
+        "products_total": sum(x.total for x in o.products if not x.refunded),
         "missing": order_missing(o),
         "shift_open": master_can_edit(o),
         "closed_by_name": o.closer.full_name if o.closer else None,
         "edited_by_name": o.editor.full_name if o.editor else None,
         "edited_at": o.edited_at.isoformat() if o.edited_at else None,
     }
+
+
+def _line_public(x) -> dict:
+    from .products import line_public
+
+    return line_public(x)
 
 
 def _order_snapshot(o: Order) -> dict:
@@ -193,6 +201,7 @@ def close_order(
     client_name: str | None = None,
     price: int | None = None,
     status: str = OrderStatus.COMPLETED,
+    products: list[dict] | None = None,
 ) -> Order:
     if idempotency_key:
         existing = s.scalar(select(Order).where(Order.idempotency_key == idempotency_key))
@@ -277,6 +286,11 @@ def close_order(
                  "status": status, "appointment_id": a.id},
     )
     audit(s, actor, "order", o.id, "close", None, _order_snapshot(o))
+    if products:
+        from .products import sell
+
+        for it in products:
+            sell(s, actor, o.id, int(it["product_id"]), it.get("qty", 1))
     _alert_salon_negative(s, o)
     return o
 
@@ -346,7 +360,7 @@ def correct_order(s: Session, actor: Actor, order_id: int, data: dict, reason: s
     _repost(s, actor, o, "correct", reason)
     o.price_snapshot, o.amount, o.payment_method = p_snapshot, amount, payment_method
     o.materials_cost, o.master_earning, o.salon_earning = mat_total, split.master, split.salon
-    o.materials_not_entered = bool(o.service.needs_materials) and not o.materials
+    o.materials_not_entered = bool(o.service and o.service.needs_materials) and not o.materials
     o.revision += 1
     _touch(o, actor)
     s.flush()
@@ -423,9 +437,12 @@ def _void(s: Session, actor: Actor, order_id: int, status: str, reason: str, exp
            salon_amount=-o.amount + o.master_earning - mat,
            details={"reason": reason, "status_before": o.status})
     o.status = status
-    if status == OrderStatus.CANCELLED:
+    if status == OrderStatus.CANCELLED and o.appointment is not None:
         o.appointment.status = ApptStatus.CANCELLED
         o.appointment.cancel_reason = reason
+    from .products import refund_all_lines
+
+    refund_all_lines(s, actor, o, reason)
     _touch(o, actor)
     s.flush()
     audit(s, actor, "order", o.id, status, before, _order_snapshot(o), reason)
@@ -537,14 +554,21 @@ def shift_report(s: Session, sh: Shift) -> dict:
     by_service: dict[str, dict] = {}
     by_payment: dict[str, int] = {}
     for o in orders:
-        row = by_service.setdefault(o.service.name, {"service": o.service.name, "count": 0, "revenue": 0})
+        name = o.service.name if o.service else "Продаж товарів"
+        row = by_service.setdefault(name, {"service": name, "count": 0, "revenue": 0})
         row["count"] += 1
         row["revenue"] += o.amount if o.status == OrderStatus.COMPLETED else 0
+    products_revenue = 0
+    products_bonus = 0
     for o in paid_orders:
-        by_payment[o.payment_method] = by_payment.get(o.payment_method, 0) + o.amount
+        prod = sum(x.total for x in o.products if not x.refunded)
+        products_revenue += prod
+        products_bonus += sum(x.master_bonus_cents for x in o.products if not x.refunded)
+        by_payment[o.payment_method] = by_payment.get(o.payment_method, 0) + o.amount + prod
     master_earning = sum(o.master_earning for o in orders)
     revenue = sum(o.amount for o in paid_orders)
     cash = by_payment.get("cash", 0)
+    till_total = revenue + products_revenue
     takes_cash = bool(get_setting(s, "master_takes_cash"))
     take = min(master_earning, cash) if takes_cash else 0
     director_pays = max(master_earning - take, 0)
@@ -562,6 +586,8 @@ def shift_report(s: Session, sh: Shift) -> dict:
         "master_earning": master_earning,
         "salon_earning": sum(o.salon_earning for o in paid_orders),
         "price_total": sum(o.price_snapshot for o in paid_orders),
+        "products_revenue": products_revenue,
+        "products_bonus": products_bonus,
         "discounts": sum(o.price_snapshot - o.amount for o in paid_orders),
         "unpaid": {"count": len(unpaid), "amount": sum(o.amount for o in unpaid)},
         "voided": len(voided),
@@ -569,7 +595,7 @@ def shift_report(s: Session, sh: Shift) -> dict:
         "cancellations": cancellations,
         "cash": {
             "from_clients": cash,
-            "noncash": revenue - cash,
+            "noncash": till_total - cash,
             "master_takes": take,
             "leave_in_till": cash - take,
             "director_pays": director_pays,
@@ -621,8 +647,14 @@ def close_shift(s: Session, actor: Actor, master_id: int, *, force: bool = False
     if sh is None:
         raise Conflict("Немає відкритої зміни")
     bad = incomplete_orders(s, sh)
-    if bad and not (force and actor.is_director):
-        lines = "; ".join(f"#{o.id} {o.client.name} — {', '.join(MISSING_LABELS[k] for k in order_missing(o))}" for o in bad[:5])
+    if force and actor.is_director:
+        no_mats = [o for o in bad if "materials" in order_missing(o)]
+        if no_mats:
+            lines = "; ".join(f"#{o.id} {o.service.name if o.service else ''}" for o in no_mats[:5])
+            raise Conflict(f"Примусове закриття: спершу внесіть матеріали ({lines})", code="materials_required")
+    elif bad:
+        lines = "; ".join(f"#{o.id} {o.client.name if o.client else ''} — {', '.join(MISSING_LABELS[k] for k in order_missing(o))}"
+                          for o in bad[:5])
         raise Conflict(f"Не можна закрити зміну: заповніть замовлення ({lines})", code="incomplete_orders")
     sh.closed_at = clock.now()
     sh.status = ShiftStatus.CLOSED
@@ -737,7 +769,8 @@ def confirm_payout(
 def master_balance(s: Session, master_id: int) -> dict:
     accrued = s.scalar(select(func.coalesce(func.sum(Order.master_earning), 0)).where(
         Order.master_id == master_id, Order.status.in_(OrderStatus.ACCRUING))) or 0
-    paid = s.scalar(select(func.coalesce(func.sum(Payout.amount), 0)).where(Payout.master_id == master_id)) or 0
+    paid = s.scalar(select(func.coalesce(func.sum(Payout.amount), 0)).where(
+        Payout.master_id == master_id, or_(Payout.tag.is_(None), Payout.tag != "product_bonus"))) or 0
     return {"accrued": int(accrued), "paid": int(paid),
             "balance": int(accrued) - int(paid)}
 

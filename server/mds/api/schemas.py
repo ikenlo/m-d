@@ -102,6 +102,7 @@ class MaterialIn(BaseModel):
     category: str | None = None
     pack_name: str | None = None
     pack_size: int = 1
+    markup_bp: int | None = None
     min_stock: float | None = None
     stock: float | None = None
 
@@ -114,6 +115,7 @@ class MaterialPatch(BaseModel):
     category: str | None = None
     pack_name: str | None = None
     pack_size: int | None = None
+    markup_bp: int | None = None
     min_stock: float | None = None
     is_active: bool | None = None
 
@@ -168,12 +170,18 @@ class MaterialLine(BaseModel):
     unit_cost: int | None = None
 
 
+class ProductLine(BaseModel):
+    product_id: int
+    qty: int = Field(default=1, ge=1, le=1000)
+
+
 class CloseOrderIn(BaseModel):
     amount: int
     payment_method: str
     price: int | None = None
     status: str = "completed"
     materials: list[MaterialLine] = []
+    products: list[ProductLine] = []
     idempotency_key: str | None = Field(default=None, max_length=64)
     client_name: str | None = Field(default=None, max_length=128)
 

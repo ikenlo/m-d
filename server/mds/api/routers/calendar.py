@@ -122,6 +122,7 @@ def close_order(appt_id: int, body: CloseOrderIn, actor: Actor = Depends(get_act
         s, actor, appt_id, amount=body.amount, payment_method=body.payment_method,
         materials=[m.model_dump() for m in body.materials], idempotency_key=body.idempotency_key,
         client_name=body.client_name, price=body.price, status=body.status,
+        products=[x.model_dump() for x in body.products],
     )
     return orders.order_public(o)
 
