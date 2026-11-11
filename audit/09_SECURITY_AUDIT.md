@@ -9,10 +9,11 @@
 - Mitigation: **rotate both** (BotFather `/revoke`, regenerate the AI Studio key) and pass them only through environment settings, never through chat. Not fixed by this audit.
 - The values are deliberately **not** reproduced in these reports.
 
-### S-2 · HIGH · Bot PIN brute force (staff Telegram login)
-- Evidence: `services/users.py:269-281` `verify_bot_pin`. A wrong PIN only writes an audit row; there is no counter or lock (unlike web login, `users.py:186-200`, 5 tries / 15 min). Default staff code is `"0000"` (`services/common.py:135`). PINs are 4+ digits.
-- Impact: anyone who finds the bot, with the default staff code still unchanged, can try PINs without limit and log in as a master or **director**. That exposes earnings and alerts and lets them close orders (bot can close orders).
-- Mitigation: lockout 5 / 15 min per user and per chat; force the staff code to change from the default; this is canon §0.15.
+### S-2 · MEDIUM (corrected from HIGH in Phase 1) · Bot PIN lockout is per chat and in memory only
+- Evidence: `bot/staff.py:23-61` `StaffSessions.fail/locked` locks a **chat** for 15 min after 5 wrong codes or PINs (tested: `tests/test_bot.py:274 test_staff_pin_bruteforce_lock`). The service `services/users.py:269` `verify_bot_pin` has no counter. The lock lives in **process memory**, keyed by `chat_id`, not by the target user. Default staff code is `"0000"` (`services/common.py:135`). PINs are 4+ digits.
+- Correction: the Phase 0 audit said there was no limit at all. That was wrong; the in-memory per-chat limit was missed.
+- Impact: a restart (each deploy) resets the counters, and every new Telegram account gets 5 fresh attempts at the same director PIN. With the default `0000` code, a slow distributed guess of a 4-digit PIN is feasible.
+- Mitigation (director decision 2026-11-11): persistent lockout **per target user** (and per chat) in the DB, 5 attempts / 15 min; staff code must be changed from the default.
 
 ### S-3 · HIGH · Destructive env switches in the production entrypoint
 - Evidence: `mds/__main__.py:106-119` `cmd_start`. `MDS_WIPE_DATA=<mark>` deletes orders, payouts, ledger, audit, shifts, expenses… once per mark (`mds/wipe.py:10-12`). `MDS_DEMO_FOP1=yes` replaces data with demo data. Both run on **every** start of the production container.
@@ -49,7 +50,7 @@
 
 ## Telegram bot
 - Clients: anti-spam limits (`services/antispam.py`).
-- Staff: staff code + PIN (scrypt). See S-2.
+- Staff: staff code + PIN (scrypt), in-memory per-chat lockout. See S-2.
 - Role taken from the user record. Masters see only their own data (verified in `bot/staff.py` via services, which check `actor`).
 
 ## Admin access paths

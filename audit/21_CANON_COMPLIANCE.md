@@ -222,7 +222,7 @@ No setting, `permission_requests` table, endpoints or bot flow.
 | Data Connect → Manager: purchase prices, expenses by service/master, consumption, stock | MISSING | only visits and ad-spend |
 | Bot: role auto, master views earnings/history | MATCHES | `bot/staff.py` |
 | Bot login: staff code + personal PIN (scrypt) | MATCHES | `users.check_staff_code`, `verify_bot_pin` (scrypt via `hash_password`) |
-| Bot PIN lockout 5 attempts / 15 min | **MISSING** | `verify_bot_pin` (`users.py:269`) only writes an audit row; there is no counter (web login has one) |
+| Bot PIN lockout 5 attempts / 15 min | PARTIAL (corrected) | per chat, in memory: `bot/staff.py:23-61`, tested `test_bot.py:274`; resets on restart, not per target user |
 | Bot: view + confirm only, no create/edit | **MISMATCH** | staff bot can **close orders** (`bot/staff.py:456`, `idempotency_key=f"tg-close-…"`) |
 | PrivatBank POS manual now, auto later | EXTRA / conflict | auto-closing card payment via "Термінал" already exists (`services/card_terminal*.py`, `docs/TERMINAL.md`) |
 | Connect does not send SMS (Manager does) | **MISMATCH** | `services/sms.py`, `sms_center.py` (TurboSMS, campaigns, automations), Director "SMS-розсилки" tab |

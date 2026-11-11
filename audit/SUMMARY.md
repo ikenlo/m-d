@@ -4,7 +4,7 @@ Repo `ikenlo/m-d` @ `2d25bce` (branch `feat/ext-api-md-manager`; `main` = `f834c
 
 ## ⚠️ Urgent (reported, not fixed)
 - **S-1 HIGH**: a Telegram bot token and a Google AI key for MDs Manager were pasted into chat and are stored in transcripts on the container. They are not in git. **Rotate both.**
-- **S-2 HIGH**: staff bot PIN has no attempt limit; default staff code `0000`. Brute-force could give director access in Telegram.
+- **S-2 MEDIUM** (corrected in Phase 1, was HIGH): the bot PIN lockout (5 / 15 min) exists but is per chat and in memory. It resets on every deploy, and new Telegram accounts get fresh attempts. Default staff code is `0000`.
 - **S-3 HIGH**: env vars `MDS_WIPE_DATA` / `MDS_DEMO_FOP1` on production start delete or replace financial data.
 
 ## 1. What we built
@@ -35,10 +35,10 @@ Taxes and payroll, FOP XML, card terminal auto-close, SMS centre, client base, 2
 ## 8. Conflicting requirements → `04_CONFLICTING_REQUIREMENTS.md` (27 items)
 
 ## 9. Technical / security risks
-3 HIGH (above); MEDIUM: 12 h token in localStorage without CSP, per-user lockout enables director lockout, unencrypted Drive backups with HR/PII, unpinned deps, static ext token; single-process background jobs; 4.4 k-line `app.js`; migration head conflict if the ext-API branch merges after Phase 2 migrations.
+2 HIGH (S-1, S-3); MEDIUM: bot PIN lock in memory/per chat (S-2), 12 h token in localStorage without CSP, per-user lockout enables director lockout, unencrypted Drive backups with HR/PII, unpinned deps, static ext token; single-process background jobs; 4.4 k-line `app.js`; migration head conflict if the ext-API branch merges after Phase 2 migrations.
 
 ## 10. Production ready?
-**No.** The money rules don't match the approved canon, there are 3 HIGH security issues, and there is no proven restore or encrypted off-site copy.
+**No.** The money rules don't match the approved canon, there are 2 HIGH security issues, and there is no proven restore or encrypted off-site copy.
 
 ## 11. Must-do before v1.0 → `16_V1.0_RECOMMENDATIONS.md`
 
@@ -68,7 +68,7 @@ FEFO, local LLM activation, VPS move, native apps, Manager hourly sync extras, c
 20. Mermaid view: data source `/api/finance/logic-stats` (director only), lazy-loaded, built after the canon split? (C-23, C-24)
 
 ## 14. Priorities
-- **First**: security HIGHs (S-1 rotate now; S-2/S-3 in Phase 2 batch 0), then canon split + legacy removal + order statuses (2.1, 2.2, 2.17) with tests.
+- **First**: security (S-1 rotate now; S-2/S-3 in Phase 2 batch 0), then canon split + legacy removal + order statuses (2.1, 2.2, 2.17) with tests.
 - **Second**: reports/dashboard per §0.5 (2.11), version lock + idempotency (2.15), backups (2.10), alerts (2.4), security extras (2.12).
 - **Third**: products (2.3), vacation (2.5), PIN/login journal (2.6, 2.7), AI abstraction (2.8), UI (2.9, 2.16, 2.16.1).
 

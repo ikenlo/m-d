@@ -22,7 +22,7 @@ Run on 2026-11-11 in this container: `python -m pytest -q` → **207 passed, 0 f
 1. **Role matrix**: only 2 dedicated permission tests; admin rights are not systematically tested.
 2. **Concurrent corrections** of the same order (ledger desync, 07 §3). Untested.
 3. **Backup restore**: only creation/rotation/Drive mocked; no restore test.
-4. **Bot PIN brute force / staff code**: no test (and no protection).
+4. **Bot PIN lockout across restarts / per target user**: the in-memory per-chat lock is tested (`test_bot.py:274`), but persistence and per-user locking are not (and not implemented).
 5. **Dashboard by payment method / cash-card separation**: indirectly tested.
 6. **Net profit composition** (equipment/household not subtracted). No test pins the intended behaviour.
 7. **Wipe on start** (`MDS_WIPE_DATA`): `test_wipe.py` covers the function, not the start-up guard.

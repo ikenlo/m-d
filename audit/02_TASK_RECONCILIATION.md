@@ -66,6 +66,6 @@ Each item was checked against the code (file:line). Dependencies refer to other 
 | 2.16.1 | "Логіка системи" Mermaid view, `/api/finance/logic-stats`, vendored mermaid v11 | NOT IMPLEMENTED | — | — | 2.1 (numbers must be canon), C-23, C-24 | low; mermaid.min.js ≈ 2.5–3 MB affects PWA cache and the perf budget in `docs/PERFORMANCE.md` |
 | 2.17 | `orders.status` unpaid/refunded/cancelled | NOT IMPLEMENTED | — | — | — | **high** (touches every report query) |
 | 2.18 | FINANCE.md = canon | CANON_MISMATCH (doc describes old model) | `docs/FINANCE.md` | Phase 1 | — | — |
-| 0.15 | Bot PIN lockout | NOT IMPLEMENTED | `users.py:269` | counter + lock | — | **high** (security) |
+| 0.15 | Bot PIN lockout | PARTIALLY COMPLETED (in-memory, per chat) | `bot/staff.py:23-61`, `test_bot.py:274` | persist per user in DB | — | medium (security) |
 | 0.15 | Bot view-only | CANON_MISMATCH | `bot/staff.py:456` | C-7 | — | — |
 | 0.15 | Manager pull: purchase prices, expenses, consumption, stock | NOT IMPLEMENTED | `integration.py` | new ext endpoints | C-5 | low |

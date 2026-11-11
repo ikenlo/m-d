@@ -30,7 +30,7 @@ Phase 0 rule respected: **only files under `audit/` were created**. No source, D
 | `06_BUSINESS_LOGIC_CATALOG.md` | function catalogue |
 | `07_FINANCIAL_FORMULAS.md` | financial audit |
 | `08_DATABASE_AUDIT.md` | DB |
-| `09_SECURITY_AUDIT.md` | security (3 HIGH) |
+| `09_SECURITY_AUDIT.md` | security (2 HIGH: S-1, S-3) |
 | `10_ROLES_AUDIT.md` | roles |
 | `11_CLAUDE_INSTRUCTIONS_AUDIT.md` | Claude instructions |
 | `12_SKILLS_INVENTORY.md` | skills |
