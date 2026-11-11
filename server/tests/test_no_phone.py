@@ -11,7 +11,7 @@ from mds.services.common import Actor
 
 def test_staff_can_book_without_phone_client_cannot(db, seed):
     clock.set_now(datetime(2026, 11, 2, 8))
-    adm = seed["actors"]["admin"]
+    adm = seed["actors"]["director"]
     with db.session() as s:
         a = bookings.create_appointment(s, adm, master_id=seed["m1"], service_id=seed["haircut"],
                                         starts_at=datetime(2026, 11, 2, 10), client_name="Перехожий")
@@ -29,7 +29,7 @@ def test_staff_can_book_without_phone_client_cannot(db, seed):
 
 def test_purge_clients_without_phone_keeps_history_and_future(db, seed):
     clock.set_now(datetime(2026, 11, 2, 8))
-    adm, d = seed["actors"]["admin"], seed["actors"]["director"]
+    adm, d = seed["actors"]["director"], seed["actors"]["director"]
     with db.session() as s:
         past = bookings.create_appointment(s, adm, master_id=seed["m1"], service_id=seed["haircut"],
                                            starts_at=datetime(2026, 11, 2, 9), client_name="Був")
@@ -44,7 +44,7 @@ def test_purge_clients_without_phone_keeps_history_and_future(db, seed):
         oid = o.id
     with db.session() as s:
         with pytest.raises(Forbidden):
-            catalog.purge_clients_without_phone(s, adm)
+            catalog.purge_clients_without_phone(s, seed["actors"]["m1"])
         assert catalog.purge_clients_without_phone(s, d, dry_run=True) == {"deleted": 1, "merged": 1, "kept_future": 1}
         r = catalog.purge_clients_without_phone(s, d)
         assert r == {"deleted": 1, "merged": 1, "kept_future": 1}
@@ -67,7 +67,7 @@ def test_coloring_without_materials_flagged_and_master_adds_materials(db, seed):
         svc = catalog.create_service(s, d, {"name": "Фарбування в один тон", "duration_min": 60, "price": 150000, "needs_materials": True})
         dye = catalog.create_material(s, d, {"name": "Igora", "tone": "7-1", "unit": "г", "pack_name": "туба", "pack_size": 60,
                                              "unit_cost": 30000, "stock": 120})
-        a = bookings.create_appointment(s, seed["actors"]["admin"], master_id=seed["m1"], service_id=svc.id,
+        a = bookings.create_appointment(s, seed["actors"]["director"], master_id=seed["m1"], service_id=svc.id,
                                         starts_at=datetime(2026, 11, 2, 9), client_name="К", client_phone="0671239999")
         aid, dye_id = a.id, dye.id
     clock.set_now(datetime(2026, 11, 2, 10, 5))

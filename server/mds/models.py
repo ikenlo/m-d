@@ -27,9 +27,8 @@ from .db import Base
 
 class Role:
     DIRECTOR = "director"
-    ADMIN = "admin"
     MASTER = "master"
-    ALL = (DIRECTOR, ADMIN, MASTER)
+    ALL = (DIRECTOR, MASTER)
 
 
 class MaterialsMode:
@@ -58,6 +57,24 @@ class PaymentMethod:
     CARD = "card"
     TRANSFER = "transfer"
     ALL = (CASH, CARD, TRANSFER)
+
+
+class OrderStatus:
+    COMPLETED = "completed"
+    UNPAID = "unpaid"
+    CANCELLED = "cancelled"
+    REFUNDED = "refunded"
+    ALL = (COMPLETED, UNPAID, CANCELLED, REFUNDED)
+    ACCRUING = (COMPLETED, UNPAID)
+    CLOSE_AS = (COMPLETED, UNPAID)
+
+
+class PayoutTag:
+    ADVANCE = "advance"
+    BONUS = "bonus"
+    PRODUCT_BONUS = "product_bonus"
+    CORRECTION_OVERPAYMENT = "correction_overpayment"
+    ALL = (ADVANCE, BONUS, PRODUCT_BONUS, CORRECTION_OVERPAYMENT)
 
 
 class ShiftStatus:
@@ -102,7 +119,7 @@ class User(Base):
     phone: Mapped[str | None] = mapped_column(String(32))
     role: Mapped[str] = mapped_column(String(16))
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
-    share_bp: Mapped[int | None] = mapped_column(Integer)
+    master_rate_bp: Mapped[int] = mapped_column(Integer, default=5000, server_default="5000")
     materials_mode: Mapped[str | None] = mapped_column(String(16))
     schedule: Mapped[dict | None] = mapped_column(JSON)
     telegram_chat_id: Mapped[int | None] = mapped_column(BigInteger)
@@ -223,6 +240,8 @@ class Appointment(Base):
     created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=_now, onupdate=_now)
+    version: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
+    __mapper_args__ = {"version_id_col": version}
 
     client: Mapped[Client] = relationship()
     master: Mapped[User] = relationship(foreign_keys=[master_id])
@@ -240,6 +259,8 @@ class Shift(Base):
     closed_at: Mapped[datetime | None] = mapped_column(DateTime)
     report: Mapped[dict | None] = mapped_column(JSON)
     payout_due: Mapped[int | None] = mapped_column(Integer)
+    version: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
+    __mapper_args__ = {"version_id_col": version}
 
     master: Mapped[User] = relationship()
     orders: Mapped[list["Order"]] = relationship(back_populates="shift")
@@ -257,11 +278,17 @@ class Order(Base):
     client_id: Mapped[int] = mapped_column(ForeignKey("clients.id"))
     service_id: Mapped[int] = mapped_column(ForeignKey("services.id"))
     shift_id: Mapped[int] = mapped_column(ForeignKey("shifts.id"))
+    price_snapshot: Mapped[int] = mapped_column(Integer)
     amount: Mapped[int] = mapped_column(Integer)
     materials_cost: Mapped[int] = mapped_column(Integer, default=0)
     payment_method: Mapped[str] = mapped_column(String(16))
-    share_bp: Mapped[int] = mapped_column(Integer)
-    materials_mode: Mapped[str] = mapped_column(String(16))
+    master_rate_bp: Mapped[int] = mapped_column(Integer, default=5000, server_default="5000")
+    status: Mapped[str] = mapped_column(String(16), default=OrderStatus.COMPLETED, server_default="completed", index=True)
+    materials_not_entered: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
+    version: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
+    __mapper_args__ = {"version_id_col": version}
+    share_bp: Mapped[int | None] = mapped_column(Integer)
+    materials_mode: Mapped[str | None] = mapped_column(String(16))
     master_earning: Mapped[int] = mapped_column(Integer)
     salon_earning: Mapped[int] = mapped_column(Integer)
     closed_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
@@ -290,7 +317,7 @@ class OrderMaterial(Base):
     material_id: Mapped[int | None] = mapped_column(ForeignKey("materials.id"))
     name: Mapped[str] = mapped_column(String(128))
     qty: Mapped[int] = mapped_column(Integer, default=1)
-    unit_cost: Mapped[int] = mapped_column(Integer)
+    unit_price_snapshot: Mapped[int] = mapped_column(Integer)
     total: Mapped[int] = mapped_column(Integer)
 
 
@@ -307,6 +334,9 @@ class Payout(Base):
     note: Mapped[str | None] = mapped_column(Text)
     paid_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
     confirmed_by: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    tag: Mapped[str | None] = mapped_column(String(32))
+    version: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
+    __mapper_args__ = {"version_id_col": version}
 
     master: Mapped[User] = relationship(foreign_keys=[master_id])
 
@@ -324,6 +354,8 @@ class Expense(Base):
     is_deleted: Mapped[bool] = mapped_column(Boolean, default=False)
     created_by: Mapped[int] = mapped_column(ForeignKey("users.id"))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
+    version: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
+    __mapper_args__ = {"version_id_col": version}
 
 
 class MeterReading(Base):
@@ -640,6 +672,16 @@ class ExpenseFile(Base):
     data: Mapped[bytes] = mapped_column(LargeBinary)
     created_by: Mapped[int | None] = mapped_column(Integer)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
+
+
+class IdempotencyKey(Base):
+
+    __tablename__ = "idempotency_keys"
+
+    key: Mapped[str] = mapped_column(String(96), primary_key=True)
+    request_hash: Mapped[str | None] = mapped_column(String(64))
+    response_json: Mapped[dict | None] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_now, index=True)
 
 
 class AuthThrottle(Base):

@@ -13,7 +13,7 @@ from .test_api import client, login  # noqa: F401
 
 
 def _appt(s, seed, hour, minute=0, phone="0671110000", actor=None, tg=None):
-    a = bookings.create_appointment(s, actor or seed["actors"]["admin"], master_id=seed["m1"], service_id=seed["haircut"],
+    a = bookings.create_appointment(s, actor or seed["actors"]["director"], master_id=seed["m1"], service_id=seed["haircut"],
                                     starts_at=datetime(2026, 11, 2, hour, minute), client_name="Клієнт", client_phone=phone)
     if tg:
         a.client.telegram_user_id = tg

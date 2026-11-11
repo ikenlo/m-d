@@ -5,27 +5,26 @@ from sqlalchemy import func, select
 
 from mds import clock
 from mds.models import LedgerEntry, Order, Payout
-from mds.services import analytics, bookings, orders, users
+from mds.services import analytics, bookings, orders
 from mds.services.finance import compute_split
 
 
 def test_compute_split_invariant_random():
     rnd = random.Random(1)
     for _ in range(5000):
-        amount = rnd.randint(0, 5_000_000)
+        price = rnd.randint(0, 5_000_000)
+        amount = rnd.randint(0, price)
         materials = rnd.randint(0, amount)
-        share = rnd.randint(0, 10000)
-        for mode in ("salon", "master", "split"):
-            sp = compute_split(amount, materials, share, mode)
-            assert sp.amount == sp.master + sp.materials + sp.salon
-            assert all(isinstance(x, int) for x in (sp.master, sp.salon, sp.materials))
+        rate = rnd.randint(0, 10000)
+        sp = compute_split(price, amount, materials, rate)
+        assert sp.amount == sp.master + sp.materials + sp.salon
+        assert sp.master == price * rate // 10000
+        assert all(isinstance(x, int) for x in (sp.master, sp.salon, sp.materials))
 
 
 def test_ledger_orders_dashboard_consistent(db, seed):
     rnd = random.Random(7)
     d = seed["actors"]["director"]
-    with db.session() as s:
-        users.update_user(s, d, seed["m2"], {"materials_mode": "split"})
     order_ids = []
     day = datetime(2026, 11, 2, 9, 0)
     for i in range(40):
@@ -54,7 +53,8 @@ def test_ledger_orders_dashboard_consistent(db, seed):
     with db.session() as s:
         for o in s.scalars(select(Order)):
             assert o.amount == o.master_earning + o.materials_cost + o.salon_earning
-        kinds = ("order_closed", "order_reversal", "order_corrected")
+            assert o.master_earning == o.price_snapshot * o.master_rate_bp // 10000
+        kinds = ("order_closed", "order_reversal", "order_corrected", "order_refunded", "order_cancelled")
         lg = s.execute(select(func.sum(LedgerEntry.amount), func.sum(LedgerEntry.master_amount),
                               func.sum(LedgerEntry.salon_amount), func.sum(LedgerEntry.materials_amount))
                        .where(LedgerEntry.kind.in_(kinds))).one()

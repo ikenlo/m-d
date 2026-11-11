@@ -57,6 +57,11 @@ class TestIn(BaseModel):
 def test_sms(body: TestIn, background: BackgroundTasks, request: Request, actor: Actor = Depends(get_actor),
              s: Session = Depends(get_session)):
     actor.require(Role.DIRECTOR)
+    from ...errors import Conflict
+    from ...services import sms
+
+    if not sms.SENDING_ENABLED:
+        raise Conflict(sms.DISABLED_REASON, code="sms_disabled")
     m = sms_center.enqueue(s, phone=catalog.normalize_phone(body.phone), text=body.text, kind="service", reason="test")
     s.flush()
     background.add_task(sms_center.flush, request.app.state.db)

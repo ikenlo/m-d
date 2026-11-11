@@ -63,7 +63,7 @@ def _move(s: Session, actor: Actor, m: Material, kind: str, qty_milli: int, *, c
 
 def receive(s: Session, actor: Actor, material_id: int, qty, *, cost: int | None = None,
             as_expense: bool = False, note: str | None = None) -> StockMove:
-    actor.require(Role.DIRECTOR, Role.ADMIN)
+    actor.require(Role.DIRECTOR)
     m: Material = get_or_404(s, Material, material_id, "Матеріал")
     q = to_milli(qty)
     if q <= 0:
@@ -85,7 +85,7 @@ def receive(s: Session, actor: Actor, material_id: int, qty, *, cost: int | None
 
 
 def adjust(s: Session, actor: Actor, material_id: int, actual_qty, note: str | None = None) -> StockMove | None:
-    actor.require(Role.DIRECTOR, Role.ADMIN)
+    actor.require(Role.DIRECTOR)
     m: Material = get_or_404(s, Material, material_id, "Матеріал")
     target = to_milli(actual_qty)
     if target < 0:
@@ -99,7 +99,7 @@ def adjust(s: Session, actor: Actor, material_id: int, actual_qty, note: str | N
 
 
 def writeoff(s: Session, actor: Actor, material_id: int, qty, note: str | None = None) -> StockMove:
-    actor.require(Role.DIRECTOR, Role.ADMIN)
+    actor.require(Role.DIRECTOR)
     m: Material = get_or_404(s, Material, material_id, "Матеріал")
     q = to_milli(qty)
     if q <= 0:
@@ -166,7 +166,7 @@ def list_materials(s: Session, active_only: bool = True) -> list[Material]:
 
 
 def moves(s: Session, actor: Actor, material_id: int | None = None, limit: int = 200) -> list[dict]:
-    actor.require(Role.DIRECTOR, Role.ADMIN)
+    actor.require(Role.DIRECTOR)
     q = select(StockMove)
     if material_id:
         q = q.where(StockMove.material_id == material_id)

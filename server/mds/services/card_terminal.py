@@ -40,7 +40,7 @@ def _appointment(s, actor: Actor, appt_id: int) -> Appointment:
     a = s.get(Appointment, appt_id)
     if a is None:
         raise NotFound(f"Запис #{appt_id} не знайдено")
-    if not (actor.is_staff_manager or actor.user_id == a.master_id):
+    if not (actor.is_director or actor.user_id == a.master_id):
         raise Forbidden("Можна приймати оплату лише за власні записи")
     return a
 

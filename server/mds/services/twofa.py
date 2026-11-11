@@ -18,7 +18,7 @@ from .common import Actor, audit, get_setting
 CODE_TTL = timedelta(minutes=5)
 MAX_ATTEMPTS = 5
 DEVICE_TTL = timedelta(days=30)
-ROLES = (Role.DIRECTOR, Role.ADMIN)
+ROLES = (Role.DIRECTOR,)
 
 
 def _hash(value: str) -> str:

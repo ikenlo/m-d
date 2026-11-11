@@ -15,6 +15,7 @@ from ..models import (
     Material,
     Order,
     OrderMaterial,
+    OrderStatus,
     PaymentMethod,
     Payout,
     Role,
@@ -26,7 +27,7 @@ from ..money import fmt
 from . import notifications
 from .common import Actor, audit, get_or_404, get_setting, ledger
 from .finance import compute_split
-from .users import effective_terms
+from .users import master_rate
 
 
 MISSING_LABELS = {"materials": "матеріали", "phone": "телефон клієнта"}
@@ -61,15 +62,20 @@ def order_public(o: Order) -> dict:
         "service_id": o.service_id,
         "service_name": o.service.name,
         "shift_id": o.shift_id,
+        "price_snapshot": o.price_snapshot,
         "amount": o.amount,
+        "discount": o.price_snapshot - o.amount,
         "materials_cost": o.materials_cost,
         "materials": [
-            {"material_id": m.material_id, "name": m.name, "qty": m.qty / 1000, "unit_cost": m.unit_cost, "total": m.total}
+            {"material_id": m.material_id, "name": m.name, "qty": m.qty / 1000, "unit_price_snapshot": m.unit_price_snapshot,
+             "total": m.total}
             for m in o.materials
         ],
         "payment_method": o.payment_method,
-        "share_bp": o.share_bp,
-        "materials_mode": o.materials_mode,
+        "master_rate_bp": o.master_rate_bp,
+        "status": o.status,
+        "version": o.version,
+        "materials_not_entered": o.materials_not_entered,
         "master_earning": o.master_earning,
         "salon_earning": o.salon_earning,
         "closed_at": o.closed_at.isoformat(),
@@ -86,12 +92,14 @@ def order_public(o: Order) -> dict:
 
 def _order_snapshot(o: Order) -> dict:
     return {
+        "price_snapshot": o.price_snapshot,
         "amount": o.amount,
         "materials_cost": o.materials_cost,
-        "materials": [{"name": m.name, "qty": m.qty, "unit_cost": m.unit_cost, "total": m.total} for m in o.materials],
+        "materials": [{"name": m.name, "qty": m.qty, "unit_price_snapshot": m.unit_price_snapshot, "total": m.total}
+                      for m in o.materials],
         "payment_method": o.payment_method,
-        "share_bp": o.share_bp,
-        "materials_mode": o.materials_mode,
+        "master_rate_bp": o.master_rate_bp,
+        "status": o.status,
         "master_earning": o.master_earning,
         "salon_earning": o.salon_earning,
     }
@@ -124,7 +132,8 @@ def _build_materials(s: Session, items: list[dict]) -> list[OrderMaterial]:
             total = line_cost(mat, qty_milli)
         else:
             total = (unit_cost * qty_milli + 500) // 1000
-        out.append(OrderMaterial(material_id=mat.id if mat else None, name=name, qty=qty_milli, unit_cost=unit_cost, total=total))
+        out.append(OrderMaterial(material_id=mat.id if mat else None, name=name, qty=qty_milli, unit_price_snapshot=unit_cost,
+                                 total=total))
     return out
 
 
@@ -133,7 +142,7 @@ def current_shift(s: Session, master_id: int) -> Shift | None:
 
 
 def open_shift(s: Session, actor: Actor, master_id: int) -> Shift:
-    if not (actor.is_staff_manager or actor.user_id == master_id):
+    if not (actor.is_director or actor.user_id == master_id):
         raise Forbidden("Можна відкрити лише власну зміну")
     master: User = get_or_404(s, User, master_id, "Майстра")
     if master.role != Role.MASTER:
@@ -149,6 +158,29 @@ def open_shift(s: Session, actor: Actor, master_id: int) -> Shift:
     return sh
 
 
+def _resolve_price(actor: Actor, a: Appointment, price: int | None) -> int:
+    if price is None:
+        return int(a.price)
+    if not isinstance(price, int) or isinstance(price, bool) or price < 0:
+        raise ValidationError("Ціна (P) — ціле невід'ємне число копійок")
+    if a.service.price_from or actor.is_director or price == a.price:
+        return price
+    raise ValidationError("Ціна послуги фіксована прайсом — змінює лише директор (виправленням замовлення)")
+
+
+def _alert_salon_negative(s: Session, o: Order) -> None:
+    if o.salon_earning >= 0:
+        return
+    from . import alerts
+
+    alerts.raise_alert(
+        s, "salon_negative",
+        f"🔴 Салон у мінусі по замовленню #{o.id}: {fmt(o.salon_earning)}\n"
+        f"Ціна {fmt(o.price_snapshot)}, сплачено {fmt(o.amount)}, майстру {fmt(o.master_earning)}, матеріали {fmt(o.materials_cost)}.",
+        entity="order", entity_id=o.id,
+    )
+
+
 def close_order(
     s: Session,
     actor: Actor,
@@ -159,6 +191,8 @@ def close_order(
     materials: list[dict] | None = None,
     idempotency_key: str | None = None,
     client_name: str | None = None,
+    price: int | None = None,
+    status: str = OrderStatus.COMPLETED,
 ) -> Order:
     if idempotency_key:
         existing = s.scalar(select(Order).where(Order.idempotency_key == idempotency_key))
@@ -169,12 +203,15 @@ def close_order(
     a: Appointment | None = s.get(Appointment, appt_id)
     if a is None:
         raise NotFound(f"Запис #{appt_id} не знайдено")
-    if not (actor.is_staff_manager or actor.user_id == a.master_id):
+    if not (actor.is_director or actor.user_id == a.master_id):
         raise Forbidden("Можна закривати лише власні замовлення")
     if payment_method not in PaymentMethod.ALL:
         raise ValidationError("Оберіть спосіб оплати")
-    if amount is None or amount < 0:
+    if status not in OrderStatus.CLOSE_AS:
+        raise ValidationError("Замовлення закривається як оплачене або неоплачене")
+    if amount is None or not isinstance(amount, int) or isinstance(amount, bool) or amount < 0:
         raise ValidationError("Вкажіть фактичну вартість")
+    p_snapshot = _resolve_price(actor, a, price)
     if client_name is not None:
         client_name = " ".join(client_name.split())
         if len(client_name) < 2:
@@ -185,7 +222,7 @@ def close_order(
     res = s.execute(
         update(Appointment)
         .where(Appointment.id == appt_id, Appointment.status.in_(ApptStatus.CLOSABLE))
-        .values(status=ApptStatus.COMPLETED, updated_at=clock.now())
+        .values(status=ApptStatus.COMPLETED, updated_at=clock.now(), version=Appointment.version + 1)
         .execution_options(synchronize_session=False)
     )
     if res.rowcount != 1:
@@ -198,10 +235,10 @@ def close_order(
               "Уточнено при закритті замовлення")
 
     master: User = a.master
-    share_bp, mode = effective_terms(s, master)
+    rate = master_rate(master)
     mats = _build_materials(s, materials or [])
     mat_total = sum(m.total for m in mats)
-    split = compute_split(amount, mat_total, share_bp, mode)
+    split = compute_split(p_snapshot, amount, mat_total, rate)
     shift = open_shift(s, actor, master.id)
 
     o = Order(
@@ -211,11 +248,13 @@ def close_order(
         client_id=a.client_id,
         service_id=a.service_id,
         shift_id=shift.id,
+        price_snapshot=p_snapshot,
         amount=amount,
         materials_cost=mat_total,
         payment_method=payment_method,
-        share_bp=share_bp,
-        materials_mode=mode,
+        master_rate_bp=rate,
+        status=status,
+        materials_not_entered=bool(a.service.needs_materials) and not mats,
         master_earning=split.master,
         salon_earning=split.salon,
         closed_at=clock.now(),
@@ -234,9 +273,11 @@ def close_order(
         s, actor, "order_closed", "order", o.id,
         master_id=master.id, amount=amount, master_amount=split.master,
         salon_amount=split.salon, materials_amount=mat_total,
-        details={"payment_method": payment_method, "share_bp": share_bp, "materials_mode": mode, "appointment_id": a.id},
+        details={"payment_method": payment_method, "price_snapshot": p_snapshot, "master_rate_bp": rate,
+                 "status": status, "appointment_id": a.id},
     )
     audit(s, actor, "order", o.id, "close", None, _order_snapshot(o))
+    _alert_salon_negative(s, o)
     return o
 
 
@@ -249,30 +290,49 @@ def _check_edit(actor: Actor, o: Order) -> None:
         if not master_can_edit(o):
             raise Forbidden("Зміну закрито — замовлення виправляє директор")
         return
-    if actor.is_staff_manager:
-        if o.closed_at < clock.now() - timedelta(days=14):
-            raise Forbidden("Замовлення старше 14 днів — виправляє директор")
-        return
     raise Forbidden("Недостатньо прав")
 
 
-def correct_order(s: Session, actor: Actor, order_id: int, data: dict, reason: str) -> Order:
+def _check_version(o, expected: int | None) -> None:
+    if expected is not None and int(expected) != o.version:
+        from ..errors import VersionConflict
+
+        raise VersionConflict(o.version)
+
+
+def _repost(s: Session, actor: Actor, o: Order, kind: str, reason: str, **details) -> None:
+    ledger(
+        s, actor, "order_reversal", "order", o.id,
+        master_id=o.master_id, amount=-o.amount, master_amount=-o.master_earning,
+        salon_amount=-o.salon_earning, materials_amount=-o.materials_cost,
+        details={"revision": o.revision, "reason": reason, "for": kind},
+    )
+
+
+def correct_order(s: Session, actor: Actor, order_id: int, data: dict, reason: str,
+                  expected_version: int | None = None) -> Order:
     o: Order = get_or_404(s, Order, order_id, "Замовлення")
+    _check_version(o, expected_version)
     if not actor.is_director:
         if not (set(data) <= {"materials"} and "materials" in data):
             raise Forbidden("Майстер може лише вказати матеріали у своєму замовленні; інше виправляє директор")
         _check_edit(actor, o)
         reason = reason or "Вказано використані матеріали"
+    if o.status not in OrderStatus.ACCRUING:
+        raise Conflict("Скасоване або повернене замовлення не виправляється")
     if not reason or not reason.strip():
         raise ValidationError("Вкажіть причину виправлення")
+    if {"share_bp", "materials_mode"} & set(data):
+        raise ValidationError("Режими матеріалів і індивідуальний відсоток скасовано (канон 0.3.0)")
     before = _order_snapshot(o)
 
     amount = int(data.get("amount", o.amount))
+    p_snapshot = int(data.get("price", data.get("price_snapshot", o.price_snapshot)))
+    if amount < 0 or p_snapshot < 0:
+        raise ValidationError("Суми не можуть бути від'ємними")
     payment_method = data.get("payment_method", o.payment_method)
     if payment_method not in PaymentMethod.ALL:
         raise ValidationError("Невідомий спосіб оплати")
-    share_bp = int(data.get("share_bp", o.share_bp))
-    mode = data.get("materials_mode", o.materials_mode)
     if "materials" in data:
         from .stock import apply_order, reverse_order
 
@@ -281,16 +341,12 @@ def correct_order(s: Session, actor: Actor, order_id: int, data: dict, reason: s
         s.flush()
         apply_order(s, actor, o)
     mat_total = sum(m.total for m in o.materials)
-    split = compute_split(amount, mat_total, share_bp, mode)
+    split = compute_split(p_snapshot, amount, mat_total, o.master_rate_bp)
 
-    ledger(
-        s, actor, "order_reversal", "order", o.id,
-        master_id=o.master_id, amount=-o.amount, master_amount=-o.master_earning,
-        salon_amount=-o.salon_earning, materials_amount=-o.materials_cost,
-        details={"revision": o.revision, "reason": reason},
-    )
-    o.amount, o.payment_method, o.share_bp, o.materials_mode = amount, payment_method, share_bp, mode
+    _repost(s, actor, o, "correct", reason)
+    o.price_snapshot, o.amount, o.payment_method = p_snapshot, amount, payment_method
     o.materials_cost, o.master_earning, o.salon_earning = mat_total, split.master, split.salon
+    o.materials_not_entered = bool(o.service.needs_materials) and not o.materials
     o.revision += 1
     _touch(o, actor)
     s.flush()
@@ -298,17 +354,94 @@ def correct_order(s: Session, actor: Actor, order_id: int, data: dict, reason: s
         s, actor, "order_corrected", "order", o.id,
         master_id=o.master_id, amount=amount, master_amount=split.master,
         salon_amount=split.salon, materials_amount=mat_total,
-        details={"revision": o.revision, "reason": reason, "payment_method": payment_method},
+        details={"revision": o.revision, "reason": reason, "payment_method": payment_method, "price_snapshot": p_snapshot},
     )
     audit(s, actor, "order", o.id, "correct", before, _order_snapshot(o), reason)
-    if o.master_id == actor.user_id:
-        return o
-    notifications.enqueue(
-        s, o.master.telegram_chat_id,
-        f"✏️ Директор виправив замовлення #{o.id} ({o.service.name}).\n"
-        f"Ваш заробіток: {fmt(before['master_earning'])} → {fmt(o.master_earning)}\nПричина: {reason}",
-    )
+    _alert_salon_negative(s, o)
+    _notify_earning_change(s, actor, o, before["master_earning"], reason)
     return o
+
+
+def _notify_earning_change(s: Session, actor: Actor, o: Order, before: int, reason: str) -> None:
+    if o.master_id == actor.user_id or before == o.master_earning:
+        return
+    from . import alerts
+
+    alerts.earnings_changed(s, o, before, reason)
+
+
+def mark_paid(s: Session, actor: Actor, order_id: int, *, payment_method: str, amount: int | None = None,
+              reason: str | None = None, expected_version: int | None = None) -> Order:
+    actor.require(Role.DIRECTOR)
+    o: Order = get_or_404(s, Order, order_id, "Замовлення")
+    _check_version(o, expected_version)
+    if o.status != OrderStatus.UNPAID:
+        raise Conflict("Замовлення не має статусу «неоплачене»", code="not_unpaid")
+    if payment_method not in PaymentMethod.ALL:
+        raise ValidationError("Невідомий спосіб оплати")
+    paid = o.amount if amount is None else int(amount)
+    if paid < 0:
+        raise ValidationError("Сума не може бути від'ємною")
+    before = _order_snapshot(o)
+    if paid != o.amount or payment_method != o.payment_method:
+        split = compute_split(o.price_snapshot, paid, o.materials_cost, o.master_rate_bp)
+        _repost(s, actor, o, "mark_paid", reason or "Оплата неоплаченого замовлення")
+        o.amount, o.payment_method = paid, payment_method
+        o.master_earning, o.salon_earning = split.master, split.salon
+        o.revision += 1
+        s.flush()
+        ledger(s, actor, "order_corrected", "order", o.id, master_id=o.master_id, amount=paid,
+               master_amount=split.master, salon_amount=split.salon, materials_amount=o.materials_cost,
+               details={"revision": o.revision, "reason": "mark_paid", "payment_method": payment_method})
+    o.status = OrderStatus.COMPLETED
+    _touch(o, actor)
+    s.flush()
+    ledger(s, actor, "order_paid", "order", o.id, master_id=o.master_id,
+           details={"payment_method": payment_method, "amount": paid})
+    audit(s, actor, "order", o.id, "mark_paid", before, _order_snapshot(o), reason)
+    _alert_salon_negative(s, o)
+    return o
+
+
+def _void(s: Session, actor: Actor, order_id: int, status: str, reason: str, expected_version: int | None) -> Order:
+    actor.require(Role.DIRECTOR)
+    if not reason or not reason.strip():
+        raise ValidationError("Вкажіть причину")
+    o: Order = get_or_404(s, Order, order_id, "Замовлення")
+    _check_version(o, expected_version)
+    if o.status not in OrderStatus.ACCRUING:
+        raise Conflict("Замовлення вже скасоване або повернене", code="already_voided")
+    before = _order_snapshot(o)
+    keep_materials = status == OrderStatus.REFUNDED
+    if not keep_materials:
+        from .stock import reverse_order
+
+        reverse_order(s, actor, o, note=f"Скасування замовлення #{o.id}")
+    mat = 0 if keep_materials else -o.materials_cost
+    ledger(s, actor, f"order_{status}", "order", o.id, master_id=o.master_id,
+           amount=-o.amount, master_amount=-o.master_earning, materials_amount=mat,
+           salon_amount=-o.amount + o.master_earning - mat,
+           details={"reason": reason, "status_before": o.status})
+    o.status = status
+    if status == OrderStatus.CANCELLED:
+        o.appointment.status = ApptStatus.CANCELLED
+        o.appointment.cancel_reason = reason
+    _touch(o, actor)
+    s.flush()
+    audit(s, actor, "order", o.id, status, before, _order_snapshot(o), reason)
+    from . import alerts
+
+    alerts.order_voided(s, o, reason)
+    alerts.check_master_balance(s, o.master_id)
+    return o
+
+
+def refund_order(s: Session, actor: Actor, order_id: int, reason: str, expected_version: int | None = None) -> Order:
+    return _void(s, actor, order_id, OrderStatus.REFUNDED, reason, expected_version)
+
+
+def cancel_order(s: Session, actor: Actor, order_id: int, reason: str, expected_version: int | None = None) -> Order:
+    return _void(s, actor, order_id, OrderStatus.CANCELLED, reason, expected_version)
 
 
 def set_order_phone(s: Session, actor: Actor, order_id: int, phone: str) -> Order:
@@ -320,7 +453,7 @@ def set_order_phone(s: Session, actor: Actor, order_id: int, phone: str) -> Orde
     client = o.client
     if client.phone == phone_n:
         return o
-    if client.phone and not actor.is_staff_manager:
+    if client.phone and not actor.is_director:
         raise Forbidden("Телефон клієнта вже вказано — змінює адміністратор у картці клієнта")
     other = s.scalar(select(Client).where(or_(Client.phone == phone_n, Client.phone2 == phone_n), Client.id != client.id))
     before = {"client_id": client.id, "client_name": client.name, "phone": client.phone}
@@ -354,20 +487,29 @@ def order_history(s: Session, actor: Actor, o: Order) -> list[dict]:
 
 
 def incomplete_orders(s: Session, sh: Shift) -> list[Order]:
-    return [o for o in s.scalars(select(Order).where(Order.shift_id == sh.id).order_by(Order.closed_at)) if order_missing(o)]
+    q = select(Order).where(Order.shift_id == sh.id, Order.status.in_(OrderStatus.ACCRUING)).order_by(Order.closed_at)
+    return [o for o in s.scalars(q) if order_missing(o)]
 
 
 def list_orders(
-    s: Session, actor: Actor, *, date_from: date, date_to: date, master_id: int | None = None
+    s: Session, actor: Actor, *, date_from: date | None = None, date_to: date | None = None, master_id: int | None = None,
+    status: str | None = None, materials_not_entered: bool | None = None,
 ) -> list[Order]:
     if actor.is_master:
         master_id = actor.user_id
     else:
         actor.require(Role.DIRECTOR)
-    q = select(Order).where(
-        Order.closed_at >= datetime.combine(date_from, time.min),
-        Order.closed_at < datetime.combine(date_to + timedelta(days=1), time.min),
-    )
+    q = select(Order)
+    if date_from is not None:
+        q = q.where(Order.closed_at >= datetime.combine(date_from, time.min))
+    if date_to is not None:
+        q = q.where(Order.closed_at < datetime.combine(date_to + timedelta(days=1), time.min))
+    if status:
+        if status not in OrderStatus.ALL:
+            raise ValidationError("Невідомий статус замовлення")
+        q = q.where(Order.status == status)
+    if materials_not_entered is not None:
+        q = q.where(Order.materials_not_entered.is_(bool(materials_not_entered)))
     if master_id:
         q = q.where(Order.master_id == master_id)
     q = q.options(joinedload(Order.master), joinedload(Order.client), joinedload(Order.service), selectinload(Order.materials),
@@ -375,7 +517,7 @@ def list_orders(
     return list(s.scalars(q.order_by(Order.closed_at.desc())).unique())
 
 
-def shift_report(s: Session, sh: Shift, charge: int | None = None) -> dict:
+def shift_report(s: Session, sh: Shift) -> dict:
     orders = list(s.scalars(select(Order).where(Order.shift_id == sh.id).order_by(Order.closed_at)))
     end = sh.closed_at or clock.now()
     day_from = datetime.combine(sh.opened_at.date(), time.min)
@@ -388,24 +530,24 @@ def shift_report(s: Session, sh: Shift, charge: int | None = None) -> dict:
             Appointment.starts_at < day_to,
         )
     ) or 0
+    voided = [o for o in orders if o.status not in OrderStatus.ACCRUING]
+    unpaid = [o for o in orders if o.status == OrderStatus.UNPAID]
+    orders = [o for o in orders if o.status in OrderStatus.ACCRUING]
+    paid_orders = [o for o in orders if o.status == OrderStatus.COMPLETED]
     by_service: dict[str, dict] = {}
     by_payment: dict[str, int] = {}
     for o in orders:
         row = by_service.setdefault(o.service.name, {"service": o.service.name, "count": 0, "revenue": 0})
         row["count"] += 1
-        row["revenue"] += o.amount
+        row["revenue"] += o.amount if o.status == OrderStatus.COMPLETED else 0
+    for o in paid_orders:
         by_payment[o.payment_method] = by_payment.get(o.payment_method, 0) + o.amount
     master_earning = sum(o.master_earning for o in orders)
-    revenue = sum(o.amount for o in orders)
+    revenue = sum(o.amount for o in paid_orders)
     cash = by_payment.get("cash", 0)
-    if charge is None:
-        from .utilities import shift_charge
-
-        charge = shift_charge(s, sh.master_id, sh)[0] if sh.status == ShiftStatus.OPEN else 0
-    net_earning = master_earning - charge
     takes_cash = bool(get_setting(s, "master_takes_cash"))
-    take = min(max(net_earning, 0), cash) if takes_cash else 0
-    director_pays = max(net_earning - take, 0)
+    take = min(master_earning, cash) if takes_cash else 0
+    director_pays = max(master_earning - take, 0)
     return {
         "shift_id": sh.id,
         "master_id": sh.master_id,
@@ -416,11 +558,13 @@ def shift_report(s: Session, sh: Shift, charge: int | None = None) -> dict:
         "services_count": len(orders),
         "services": sorted(by_service.values(), key=lambda r: -r["count"]),
         "revenue": revenue,
-        "materials_cost": sum(o.materials_cost for o in orders),
+        "materials_cost": sum(o.materials_cost for o in paid_orders),
         "master_earning": master_earning,
-        "utilities_charge": charge,
-        "net_earning": net_earning,
-        "salon_earning": sum(o.salon_earning for o in orders),
+        "salon_earning": sum(o.salon_earning for o in paid_orders),
+        "price_total": sum(o.price_snapshot for o in paid_orders),
+        "discounts": sum(o.price_snapshot - o.amount for o in paid_orders),
+        "unpaid": {"count": len(unpaid), "amount": sum(o.amount for o in unpaid)},
+        "voided": len(voided),
         "by_payment": by_payment,
         "cancellations": cancellations,
         "cash": {
@@ -483,10 +627,7 @@ def close_shift(s: Session, actor: Actor, master_id: int, *, force: bool = False
     sh.closed_at = clock.now()
     sh.status = ShiftStatus.CLOSED
     s.flush()
-    from .utilities import charge_on_shift_close
-
-    charged = charge_on_shift_close(s, actor, sh)
-    report = shift_report(s, sh, charge=charged)
+    report = shift_report(s, sh)
     sh.report = {k: v for k, v in report.items() if k != "orders"} | {"order_ids": [o["id"] for o in report["orders"]]}
     sh.payout_due = report["payout_due"]
     take = report["cash"]["master_takes"]
@@ -511,7 +652,6 @@ def close_shift(s: Session, actor: Actor, master_id: int, *, force: bool = False
         f"Клієнтів: {report['clients_count']}, послуг: {report['services_count']}, скасувань: {report['cancellations']}\n"
         f"Виручка: {fmt(report['revenue'])} (готівка {fmt(report['cash']['from_clients'])}, картка/переказ {fmt(report['cash']['noncash'])})\n"
         f"Заробіток майстра: {fmt(report['master_earning'])}\n"
-        + (f"  • списано комунальні/генератор: {fmt(report['utilities_charge'])}\n" if report.get("utilities_charge") else "")
         + f"  • взяв готівкою з каси: {fmt(report['cash']['master_takes'])}\n"
         f"  • переказати на карту: {fmt(report['payout_due'])}\n"
         f"Лишилось у касі: {fmt(report['cash']['leave_in_till'])}",
@@ -595,13 +735,11 @@ def confirm_payout(
 
 
 def master_balance(s: Session, master_id: int) -> dict:
-    from .utilities import charges_total
-
-    accrued = s.scalar(select(func.coalesce(func.sum(Order.master_earning), 0)).where(Order.master_id == master_id)) or 0
+    accrued = s.scalar(select(func.coalesce(func.sum(Order.master_earning), 0)).where(
+        Order.master_id == master_id, Order.status.in_(OrderStatus.ACCRUING))) or 0
     paid = s.scalar(select(func.coalesce(func.sum(Payout.amount), 0)).where(Payout.master_id == master_id)) or 0
-    charged = charges_total(s, master_id=master_id)
-    return {"accrued": int(accrued), "paid": int(paid), "charged": charged,
-            "balance": int(accrued) - int(paid) - charged}
+    return {"accrued": int(accrued), "paid": int(paid),
+            "balance": int(accrued) - int(paid)}
 
 
 def list_payouts(s: Session, actor: Actor, *, master_id: int | None = None, limit: int = 200) -> list[Payout]:
@@ -623,6 +761,6 @@ def needing_materials(s: Session, actor: Actor, days: int = 14) -> list[Order]:
                 ~select(OrderMaterial.id).where(OrderMaterial.order_id == Order.id).exists()))
     if actor.is_master:
         q = q.where(Order.master_id == actor.user_id)
-    elif not actor.is_staff_manager:
+    elif not actor.is_director:
         raise Forbidden("Недостатньо прав")
     return list(s.scalars(q.order_by(Order.closed_at.desc())))

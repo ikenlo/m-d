@@ -1,11 +1,11 @@
 from datetime import date, datetime
 
 import pytest
-from sqlalchemy import func, select
+from sqlalchemy import select
 
 from mds import clock
 from mds.errors import Conflict, Forbidden, ValidationError
-from mds.models import Expense, LedgerEntry, MasterCharge
+from mds.models import Expense, LedgerEntry
 from mds.services import analytics, bookings, orders, utilities as u
 from mds.services.common import update_settings
 
@@ -128,112 +128,32 @@ def _october_costs(db, seed):
     clock.set_now(datetime(2026, 11, 2, 8))
 
 
-def test_month_end_allocation_once_and_reversal(db, seed):
-    d = seed["actors"]["director"]
-    _october_costs(db, seed)
-    with db.session() as s:
-        with pytest.raises(Conflict):
-            u.allocate_month(s, d, OCT)
-        update_settings(s, d, {"utilities_charge_mode": "month_end", "utilities_split": "revenue"})
-        p = u.allocation_preview(s, d, OCT)
-        assert p["costs"]["total"] == 151416 + 26750 == 178166
-        assert {r["master_id"]: r["amount"] for r in p["rows"]} == {seed["m1"]: 106900, seed["m2"]: 71266}
-        res = u.allocate_month(s, d, OCT)
-        assert res["created"] == 2
-        with pytest.raises(Conflict):
-            u.allocate_month(s, d, OCT)
-    with db.session() as s:
-        b1 = orders.master_balance(s, seed["m1"])
-        assert b1 == {"accrued": 30000, "paid": 0, "charged": 106900, "balance": 30000 - 106900}
-        dash = analytics.dashboard(s, d, OCT, date(2026, 10, 31))
-        assert dash["expenses"]["master_charges"] == 178166
-        assert dash["net_profit"] == 54000 - 151416 - 26750 + 178166
-        summ = u.month_summary(s, d, OCT)
-        assert summ["charged_to_masters"] == 178166 and summ["net_impact"] == 0
-        assert s.scalar(select(func.count()).select_from(LedgerEntry).where(LedgerEntry.kind == "master_charge")) == 2
-        with pytest.raises(ValidationError):
-            u.reverse_month(s, d, OCT, "")
-        assert u.reverse_month(s, d, OCT, "Змінили принцип розподілу") == 2
-        assert u.charges_total(s, d_from=OCT, d_to=date(2026, 10, 31)) == 0
-        update_settings(s, d, {"utilities_split": "equal"})
-        u.allocate_month(s, d, OCT)
-        assert sorted(c["amount"] for c in u.charges_list(s, d, m=OCT) if not c["reversed"] and c["amount"] > 0) == [89083, 89083]
-        assert u.charges_total(s) == 178166
-
-
-def test_allocation_not_before_month_end(db, seed):
-    d = seed["actors"]["director"]
-    _october_costs(db, seed)
-    with db.session() as s:
-        update_settings(s, d, {"utilities_charge_mode": "month_end"})
-        with pytest.raises(Conflict):
-            u.allocate_month(s, d, date(2026, 11, 1))
-
-
-def _shift_day(db, seed, day, amount, pay="cash"):
-    _visit(db, seed, datetime(2026, 11, day, 10), amount, "m1", pay=pay)
-    clock.set_now(datetime(2026, 11, day, 19))
-    with db.session() as s:
-        return orders.close_shift(s, seed["actors"]["m1"], seed["m1"]).id
-
-
-def test_fixed_per_shift_charge_and_cash(db, seed):
-    d = seed["actors"]["director"]
-    with db.session() as s:
-        update_settings(s, d, {"utilities_charge_mode": "fixed", "utilities_fixed_amount": 5000, "utilities_fixed_per": "shift"})
-    sid = _shift_day(db, seed, 3, 60000)
-    with db.session() as s:
-        sh = orders.get_shift(s, d, sid)
-        r = sh.report
-        assert (r["master_earning"], r["utilities_charge"], r["net_earning"]) == (30000, 5000, 25000)
-        assert (r["cash"]["master_takes"], r["cash"]["leave_in_till"], r["payout_due"]) == (25000, 35000, 0)
-        assert orders.master_balance(s, seed["m1"])["balance"] == 0
-        assert s.scalar(select(func.count()).select_from(MasterCharge)) == 1
-        assert u.charge_on_shift_close(s, d, sh) == 0
-    _shift_day(db, seed, 4, 10000, pay="card")
-    with db.session() as s:
-        assert u.charges_total(s, master_id=seed["m1"]) == 10000
-        assert orders.master_balance(s, seed["m1"])["balance"] == 0
-
-
-def test_fixed_per_month_charged_once_and_blocks_month_end(db, seed):
-    d = seed["actors"]["director"]
-    with db.session() as s:
-        update_settings(s, d, {"utilities_charge_mode": "fixed", "utilities_fixed_amount": 20000, "utilities_fixed_per": "month"})
-    _shift_day(db, seed, 3, 60000)
-    _shift_day(db, seed, 4, 60000)
-    with db.session() as s:
-        assert u.charges_total(s, master_id=seed["m1"]) == 20000
-        update_settings(s, d, {"utilities_charge_mode": "month_end"})
-    clock.set_now(datetime(2026, 12, 2, 9))
-    with db.session() as s:
-        with pytest.raises(Conflict):
-            u.allocate_month(s, d, date(2026, 11, 1))
-
-
 def test_permissions(client_api):
     c, ids, d = client_api
     m = {"Authorization": "Bearer " + c.post("/api/auth/login", json={"username": "olena", "password": "Master123"}).json()["token"]}
-    a = {"Authorization": "Bearer " + c.post("/api/auth/login", json={"username": "admin", "password": "Admin1234"}).json()["token"]}
     body = {"month": "2026-10-01", "read_on": "2026-10-31", "prev": 0, "curr": 10, "tariff": 432}
     assert c.post("/api/utilities/readings", headers=m, json=body).status_code == 403
-    assert c.post("/api/utilities/readings", headers=a, json=body).status_code == 403
     r = c.post("/api/utilities/readings", headers=d, json=body)
     assert r.status_code == 201 and r.json()["cost"] == 4320
-    assert c.post(f"/api/utilities/readings/{r.json()['id']}/confirm", headers=a).status_code == 403
-    for url in ("/api/utilities/summary", "/api/utilities/charges?master_id=999"):
-        assert c.get(url, headers=a).status_code == 403
-    assert c.post("/api/utilities/allocate", headers=m, json={"month": "2026-10-01"}).status_code == 403
+    assert c.post(f"/api/utilities/readings/{r.json()['id']}/confirm", headers=m).status_code == 403
+    assert c.get("/api/utilities/summary", headers=m).status_code == 403
     assert c.post("/api/generator/start", headers=m, json={}).status_code == 200
     st = c.get("/api/generator", headers=m).json()
     assert st["running"] and "forecast" not in st
-    assert c.post("/api/generator/stop", headers=a).status_code == 200
+    assert c.post("/api/generator/stop", headers=m).status_code == 200
     assert c.patch("/api/generator/runs/1", headers=m, json={"hours": 1, "reason": "x"}).status_code == 403
-    assert c.get("/api/utilities/charges", headers=m).status_code == 200
+
+
+def test_no_utility_deductions_from_masters(client_api):
+    c, ids, d = client_api
+    for method, url in (("get", "/api/utilities/allocation?month=2026-10-01"), ("post", "/api/utilities/allocate"),
+                        ("post", "/api/utilities/reverse"), ("get", "/api/utilities/charges")):
+        assert getattr(c, method)(url, headers=d).status_code in (404, 405)
+    assert c.put("/api/settings", headers=d, json={"utilities_charge_mode": "fixed"}).status_code == 422
 
 
 def test_generator_hours_by_meter_and_by_hours(db, seed):
-    d, adm, m1 = seed["actors"]["director"], seed["actors"]["admin"], seed["actors"]["m1"]
+    d, adm, m1 = seed["actors"]["director"], seed["actors"]["director"], seed["actors"]["m1"]
     _gen_settings(db, seed)
     clock.set_now(datetime(2026, 10, 20, 18, 0))
     with db.session() as s:

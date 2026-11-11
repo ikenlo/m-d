@@ -8,10 +8,11 @@ from sqlalchemy.orm import Session
 
 from .. import clock
 from ..errors import Conflict, Forbidden, ValidationError
-from ..models import MaterialsMode, Role, Service, User
+from ..models import Role, Service, User
 from ..money import BP_100
 from ..security import hash_password, validate_password_strength, verify_password
 from .common import Actor, audit, get_or_404, get_setting
+from .finance import DEFAULT_MASTER_RATE_BP
 
 MAX_FAILED_LOGINS = 5
 LOCK_MINUTES = 15
@@ -25,8 +26,8 @@ def user_public(u: User) -> dict:
         "phone": u.phone,
         "role": u.role,
         "is_active": u.is_active,
-        "share_bp": u.share_bp,
-        "materials_mode": u.materials_mode,
+        "master_rate_bp": u.master_rate_bp,
+        "master_rate_warning": u.master_rate_bp != DEFAULT_MASTER_RATE_BP,
         "schedule": u.schedule,
         "service_ids": sorted(s.id for s in u.services),
         "telegram_linked": u.telegram_chat_id is not None,
@@ -34,17 +35,15 @@ def user_public(u: User) -> dict:
     }
 
 
-def effective_terms(s: Session, master: User) -> tuple[int, str]:
-    share = master.share_bp if master.share_bp is not None else get_setting(s, "default_share_bp")
-    mode = master.materials_mode or get_setting(s, "default_materials_mode")
-    return int(share), str(mode)
+def master_rate(master: User) -> int:
+    return int(master.master_rate_bp if master.master_rate_bp is not None else DEFAULT_MASTER_RATE_BP)
 
 
-def _validate_terms(share_bp: int | None, materials_mode: str | None) -> None:
-    if share_bp is not None and not (0 <= share_bp <= BP_100):
-        raise ValidationError("Відсоток майстра має бути від 0 до 100%")
-    if materials_mode is not None and materials_mode not in MaterialsMode.ALL:
-        raise ValidationError("Невідомий режим обліку матеріалів")
+def _validate_rate(rate: int | None) -> None:
+    if rate is None:
+        return
+    if not isinstance(rate, int) or isinstance(rate, bool) or not (0 <= rate <= BP_100):
+        raise ValidationError("Ставка майстра має бути від 0 до 100%")
 
 
 def _validate_schedule(schedule: dict | None) -> None:
@@ -75,8 +74,7 @@ def create_user(
     full_name: str,
     role: str,
     phone: str | None = None,
-    share_bp: int | None = None,
-    materials_mode: str | None = None,
+    master_rate_bp: int = DEFAULT_MASTER_RATE_BP,
     schedule: dict | None = None,
     service_ids: list[int] | None = None,
     bot_pin: str | None = None,
@@ -90,7 +88,7 @@ def create_user(
         raise ValidationError("Логін: лише латинські літери, цифри, '_' та '.'")
     if err := validate_password_strength(password):
         raise ValidationError(err)
-    _validate_terms(share_bp, materials_mode)
+    _validate_rate(master_rate_bp)
     _validate_schedule(schedule)
     if s.scalar(select(User).where(func.lower(User.username) == username)):
         raise Conflict("Такий логін уже існує")
@@ -102,8 +100,7 @@ def create_user(
         full_name=full_name.strip(),
         phone=phone,
         role=role,
-        share_bp=share_bp,
-        materials_mode=materials_mode,
+        master_rate_bp=master_rate_bp,
         schedule=schedule,
     )
     if service_ids:
@@ -125,15 +122,17 @@ def _check_master_limit(s: Session) -> None:
         raise ValidationError(f"У салоні вже {n} активних майстрів — максимум {limit} (Налаштування → Запис клієнтів)")
 
 
-UPDATABLE = ("full_name", "phone", "is_active", "share_bp", "materials_mode", "schedule", "role")
+UPDATABLE = ("full_name", "phone", "is_active", "master_rate_bp", "schedule", "role")
 
 
 def update_user(s: Session, actor: Actor, user_id: int, data: dict) -> User:
     actor.require(Role.DIRECTOR)
     u: User = get_or_404(s, User, user_id, "Користувача")
     before = user_public(u)
-    if "share_bp" in data or "materials_mode" in data:
-        _validate_terms(data.get("share_bp"), data.get("materials_mode"))
+    if "master_rate_bp" in data:
+        if data["master_rate_bp"] is None:
+            data = {**data, "master_rate_bp": DEFAULT_MASTER_RATE_BP}
+        _validate_rate(data["master_rate_bp"])
     if "schedule" in data:
         _validate_schedule(data["schedule"])
     if "role" in data and data["role"] not in Role.ALL:

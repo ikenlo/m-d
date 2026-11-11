@@ -205,7 +205,7 @@ def free_slots(
 
 
 def _check_access(actor: Actor, master_id: int) -> None:
-    if actor.is_staff_manager:
+    if actor.is_director:
         return
     if actor.is_master and actor.user_id == master_id:
         return
@@ -445,7 +445,7 @@ def list_appointments(
 ) -> list[Appointment]:
     if actor.is_master:
         master_id = actor.user_id
-    elif not actor.is_staff_manager:
+    elif not actor.is_director:
         raise Forbidden("Недостатньо прав")
     q = (
         select(Appointment)
@@ -545,7 +545,7 @@ def pending_list(s: Session, actor: Actor) -> list[Appointment]:
     )
     if actor.is_master:
         q = q.where(Appointment.master_id == actor.user_id)
-    elif not actor.is_staff_manager:
+    elif not actor.is_director:
         raise Forbidden("Недостатньо прав")
     return list(s.scalars(q.order_by(Appointment.starts_at)))
 
@@ -575,7 +575,7 @@ def _when(t: datetime) -> str:
 
 
 def decline_busy(s: Session, actor: Actor, appt_id: int) -> dict:
-    actor.require(Role.DIRECTOR, Role.ADMIN, Role.MASTER)
+    actor.require(Role.DIRECTOR, Role.MASTER)
     a = get_appointment(s, actor, appt_id)
     if a.status != ApptStatus.PENDING:
         raise Conflict("Запис уже не очікує підтвердження")
@@ -590,7 +590,7 @@ def decline_busy(s: Session, actor: Actor, appt_id: int) -> dict:
 
 
 def propose_time(s: Session, actor: Actor, appt_id: int, starts_at: datetime) -> tuple[Appointment, bool]:
-    actor.require(Role.DIRECTOR, Role.ADMIN, Role.MASTER)
+    actor.require(Role.DIRECTOR, Role.MASTER)
     a = get_appointment(s, actor, appt_id)
     if a.status != ApptStatus.PENDING:
         raise Conflict("Запис уже не очікує підтвердження")
@@ -711,7 +711,7 @@ def shift_appointments(s: Session, actor: Actor, *, master_id: int, minutes: int
 def unclosed(s: Session, actor: Actor, master_id: int | None = None) -> list[Appointment]:
     if actor.is_master:
         master_id = actor.user_id
-    elif not actor.is_staff_manager:
+    elif not actor.is_director:
         raise Forbidden("Недостатньо прав")
     now = clock.now()
     q = select(Appointment).where(Appointment.status.in_(ApptStatus.CLOSABLE), Appointment.ends_at <= now,

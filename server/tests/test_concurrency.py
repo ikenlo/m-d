@@ -27,7 +27,7 @@ def _race(n, fn):
 
 
 def test_parallel_booking_same_slot(db, seed):
-    adm = seed["actors"]["admin"]
+    adm = seed["actors"]["director"]
 
     def book(i):
         with db.session() as s:
@@ -46,7 +46,7 @@ def test_parallel_close_order(db, seed):
     m1 = seed["actors"]["m1"]
     with db.session() as s:
         a = bookings.create_appointment(
-            s, seed["actors"]["admin"], master_id=seed["m1"], service_id=seed["haircut"],
+            s, seed["actors"]["director"], master_id=seed["m1"], service_id=seed["haircut"],
             starts_at=datetime(2026, 11, 2, 10), client_name="К", client_phone="0500000000",
         )
 

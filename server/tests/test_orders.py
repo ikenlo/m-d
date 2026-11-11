@@ -16,7 +16,7 @@ def at(h, m=0):
 
 def mk(s, seed, master="m1", service="manicure", h=10, phone="0671112233"):
     return bookings.create_appointment(
-        s, seed["actors"]["admin"], master_id=seed[master], service_id=seed[service],
+        s, seed["actors"]["director"], master_id=seed[master], service_id=seed[service],
         starts_at=at(h), client_name="Клієнт", client_phone=phone,
     )
 
@@ -30,25 +30,35 @@ def test_close_order_default_split_and_ledger(db, seed):
             materials=[{"material_id": seed["gel"], "qty": 2}], idempotency_key="k1",
         )
         assert o.materials_cost == 6000
-        assert o.master_earning == 35000
-        assert o.salon_earning == 70000 - 35000 - 6000
+        assert o.price_snapshot == 60000 and o.master_rate_bp == 5000 and o.status == "completed"
+        assert o.master_earning == 30000
+        assert o.salon_earning == 70000 - 30000 - 6000
         assert o.shift.status == ShiftStatus.OPEN
     with db.session() as s:
         assert s.get(Appointment, a.id).status == ApptStatus.COMPLETED
         le = s.query(LedgerEntry).filter_by(kind="order_closed").one()
-        assert (le.amount, le.master_amount, le.salon_amount, le.materials_amount) == (70000, 35000, 29000, 6000)
+        assert (le.amount, le.master_amount, le.salon_amount, le.materials_amount) == (70000, 30000, 34000, 6000)
 
 
-def test_individual_share_and_materials_mode(db, seed):
+def test_rate_snapshot_price_and_discount(db, seed):
     d = seed["actors"]["director"]
     with db.session() as s:
-        users.update_user(s, d, seed["m2"], {"materials_mode": "master"})
         a = mk(s, seed, master="m2")
-        o = orders.close_order(s, d, a.id, amount=100000, payment_method="cash",
+        o = orders.close_order(s, d, a.id, amount=80000, price=100000, payment_method="cash",
                                materials=[{"name": "Фольга", "qty": 1, "unit_cost": 2000}])
-        assert o.master_earning == 38000
-        assert o.salon_earning == 60000
-        assert o.share_bp == 4000 and o.materials_mode == "master"
+        assert o.master_rate_bp == 4000 and o.price_snapshot == 100000
+        assert o.master_earning == 40000
+        assert o.salon_earning == 80000 - 40000 - 2000
+        users.update_user(s, d, seed["m2"], {"master_rate_bp": 5000})
+    with db.session() as s:
+        assert s.get(Order, o.id).master_rate_bp == 4000
+
+
+def test_fixed_price_cannot_be_changed_by_master(db, seed):
+    m1 = seed["actors"]["m1"]
+    with db.session() as s, pytest.raises(ValidationError):
+        a = mk(s, seed)
+        orders.close_order(s, m1, a.id, amount=60000, price=1000, payment_method="cash")
 
 
 def test_double_close_is_prevented(db, seed):
@@ -69,17 +79,18 @@ def test_double_close_is_prevented(db, seed):
 
 
 def test_cannot_close_cancelled_or_foreign(db, seed):
-    adm, m2 = seed["actors"]["admin"], seed["actors"]["m2"]
+    adm, m2 = seed["actors"]["director"], seed["actors"]["m2"]
     with db.session() as s:
         a = mk(s, seed)
         b = mk(s, seed, h=14, phone="0501231231")
         bookings.set_status(s, adm, b.id, ApptStatus.CANCELLED)
     with db.session() as s, pytest.raises(Forbidden):
         orders.close_order(s, m2, a.id, amount=1, payment_method="cash")
+    d = seed["actors"]["director"]
     with db.session() as s, pytest.raises(Conflict):
-        orders.close_order(s, adm, b.id, amount=1, payment_method="cash")
+        orders.close_order(s, d, b.id, amount=1, payment_method="cash")
     with db.session() as s, pytest.raises(ValidationError):
-        orders.close_order(s, adm, a.id, amount=1, payment_method="bitcoin")
+        orders.close_order(s, d, a.id, amount=1, payment_method="bitcoin")
     with db.session() as s:
         assert s.get(Appointment, a.id).status == ApptStatus.CONFIRMED
 
@@ -91,7 +102,7 @@ def _director_pays_all(db):
 
 
 def test_shift_close_report_and_payout(db, seed):
-    m1, d, adm = seed["actors"]["m1"], seed["actors"]["director"], seed["actors"]["admin"]
+    m1, d, adm = seed["actors"]["m1"], seed["actors"]["director"], seed["actors"]["director"]
     _director_pays_all(db)
     with db.session() as s:
         a = mk(s, seed, h=9)
@@ -121,7 +132,7 @@ def test_shift_close_report_and_payout(db, seed):
     with db.session() as s, pytest.raises(Conflict):
         orders.confirm_payout(s, d, master_id=seed["m1"], amount=55000, shift_id=shift_id)
     with db.session() as s:
-        assert orders.master_balance(s, seed["m1"]) == {"accrued": 55000, "paid": 55000, "charged": 0, "balance": 0}
+        assert orders.master_balance(s, seed["m1"]) == {"accrued": 55000, "paid": 55000, "balance": 0}
 
 
 def test_director_correction_reverses_and_updates_balance(db, seed):
@@ -138,10 +149,12 @@ def test_director_correction_reverses_and_updates_balance(db, seed):
         orders.correct_order(s, d, o.id, {"amount": 80000}, "  ")
     with db.session() as s:
         o2 = orders.correct_order(s, d, o.id, {"amount": 80000, "payment_method": "card"}, "Майстер ввів не ту суму")
-        assert o2.master_earning == 40000 and o2.revision == 2
+        assert o2.master_earning == 30000 and o2.revision == 2
+        o2 = orders.correct_order(s, d, o.id, {"price": 80000}, "Ціна була вища")
+        assert o2.master_earning == 40000 and o2.revision == 3
     with db.session() as s:
         kinds = [e.kind for e in s.query(LedgerEntry).filter_by(ref_type="order").order_by(LedgerEntry.id)]
-        assert kinds == ["order_closed", "order_reversal", "order_corrected"]
+        assert kinds == ["order_closed", "order_reversal", "order_corrected", "order_reversal", "order_corrected"]
         net = sum(e.amount for e in s.query(LedgerEntry).filter_by(ref_type="order"))
         assert net == 80000
         assert orders.master_balance(s, seed["m1"])["balance"] == 10000
@@ -190,7 +203,7 @@ def test_dashboard(db, seed):
         with pytest.raises(Forbidden):
             analytics.dashboard(s, m1, f, t)
         with pytest.raises(Forbidden):
-            analytics.dashboard(s, seed["actors"]["admin"], f, t)
+            analytics.dashboard(s, seed["actors"]["m1"], f, t)
 
 
 def test_period_ranges():
@@ -224,7 +237,7 @@ def test_master_takes_earning_from_till_rest_paid_by_director(db, seed):
     m1 = seed["actors"]["m1"]
     with db.session() as s:
         for i in range(12):
-            a = bookings.create_appointment(s, seed["actors"]["admin"], master_id=seed["m1"], service_id=seed["haircut"],
+            a = bookings.create_appointment(s, seed["actors"]["director"], master_id=seed["m1"], service_id=seed["haircut"],
                                             starts_at=datetime(2026, 11, 2, 8) + timedelta(hours=i), client_name=f"К{i}",
                                             client_phone=f"05000000{i:02d}", confirm_off_hours=True)
             orders.close_order(s, m1, a.id, amount=50000, payment_method="cash" if i < 7 else "card")
@@ -235,7 +248,7 @@ def test_master_takes_earning_from_till_rest_paid_by_director(db, seed):
                      "director_pays": 0, "mode": "take_from_till"}
         assert sh.payout_due == 0 and sh.status == ShiftStatus.PAID
     with db.session() as s:
-        assert orders.master_balance(s, seed["m1"]) == {"accrued": 300000, "paid": 300000, "charged": 0, "balance": 0}
+        assert orders.master_balance(s, seed["m1"]) == {"accrued": 300000, "paid": 300000, "balance": 0}
         p = s.query(Payout).one()
         assert p.cash_shift_id == sh.id and p.shift_id is None and p.method == "cash"
 
@@ -244,7 +257,7 @@ def test_not_enough_cash_director_pays_difference(db, seed):
     m1, d = seed["actors"]["m1"], seed["actors"]["director"]
     with db.session() as s:
         for i, method in enumerate(["cash", "card", "transfer", "card", "card", "card"]):
-            a = bookings.create_appointment(s, seed["actors"]["admin"], master_id=seed["m1"], service_id=seed["haircut"],
+            a = bookings.create_appointment(s, seed["actors"]["director"], master_id=seed["m1"], service_id=seed["haircut"],
                                             starts_at=datetime(2026, 11, 2, 9 + i), client_name=f"К{i}", client_phone=f"05000001{i:02d}")
             orders.close_order(s, m1, a.id, amount=50000, payment_method=method)
         sh = orders.close_shift(s, m1, seed["m1"])

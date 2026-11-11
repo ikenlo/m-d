@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from .. import clock
 from ..errors import ValidationError
-from ..models import Appointment, ApptStatus, Expense, ExpenseCategory, Order, Payout, Role, Service, User
+from ..models import Appointment, ApptStatus, Expense, ExpenseCategory, Order, OrderStatus, Payout, Role, Service, User
 from .common import Actor
 from .orders import master_balance
 
@@ -33,7 +33,8 @@ def _bounds(d_from: date, d_to: date) -> tuple[datetime, datetime]:
     return datetime.combine(d_from, time.min), datetime.combine(d_to + timedelta(days=1), time.min)
 
 
-def _order_totals(s: Session, start: datetime, end: datetime, master_id: int | None = None) -> dict:
+def _order_totals(s: Session, start: datetime, end: datetime, master_id: int | None = None,
+                  statuses: tuple[str, ...] = (OrderStatus.COMPLETED,)) -> dict:
     q = select(
         func.count(Order.id),
         func.coalesce(func.sum(Order.amount), 0),
@@ -41,14 +42,17 @@ def _order_totals(s: Session, start: datetime, end: datetime, master_id: int | N
         func.coalesce(func.sum(Order.materials_cost), 0),
         func.coalesce(func.sum(Order.salon_earning), 0),
         func.count(func.distinct(Order.client_id)),
-    ).where(Order.closed_at >= start, Order.closed_at < end)
+        func.coalesce(func.sum(Order.price_snapshot), 0),
+    ).where(Order.closed_at >= start, Order.closed_at < end, Order.status.in_(statuses))
     if master_id:
         q = q.where(Order.master_id == master_id)
-    n, revenue, master, materials, salon, clients = s.execute(q).one()
+    n, revenue, master, materials, salon, clients, price = s.execute(q).one()
     return {
         "orders_count": int(n),
         "clients_count": int(clients),
         "revenue": int(revenue),
+        "price_total": int(price),
+        "discounts": int(price) - int(revenue),
         "masters_share": int(master),
         "materials": int(materials),
         "salon_net_from_orders": int(salon),
@@ -73,7 +77,7 @@ def dashboard(s: Session, actor: Actor, d_from: date, d_to: date) -> dict:
         m: int(v)
         for m, v in s.execute(
             select(Order.payment_method, func.sum(Order.amount))
-            .where(Order.closed_at >= start, Order.closed_at < end)
+            .where(Order.closed_at >= start, Order.closed_at < end, Order.status == OrderStatus.COMPLETED)
             .group_by(Order.payment_method)
         )
     }
@@ -85,15 +89,14 @@ def dashboard(s: Session, actor: Actor, d_from: date, d_to: date) -> dict:
             )
         ) or 0
     )
-    from .utilities import charges_total, generator_totals
+    from .utilities import generator_totals
 
     gross = t["revenue"] - t["masters_share"] - t["materials"]
     operating = exp[ExpenseCategory.RENT] + exp[ExpenseCategory.UTILITIES] + exp[ExpenseCategory.ADVERTISING] + exp[ExpenseCategory.OTHER]
     generator = generator_totals(s, start, end)["total_cost"]
-    charged = charges_total(s, d_from=d_from, d_to=d_to)
-    total_accrued = int(s.scalar(select(func.coalesce(func.sum(Order.master_earning), 0))) or 0)
+    total_accrued = int(s.scalar(select(func.coalesce(func.sum(Order.master_earning), 0)).where(
+        Order.status.in_(OrderStatus.ACCRUING))) or 0)
     total_paid = int(s.scalar(select(func.coalesce(func.sum(Payout.amount), 0))) or 0)
-    total_charged = charges_total(s)
     return {
         "from": d_from.isoformat(),
         "to": d_to.isoformat(),
@@ -107,13 +110,12 @@ def dashboard(s: Session, actor: Actor, d_from: date, d_to: date) -> dict:
             "materials_purchases": exp[ExpenseCategory.MATERIALS],
             "generator": generator,
             "fuel_purchases": exp[ExpenseCategory.FUEL],
-            "master_charges": charged,
         },
         "operating_expenses": operating + generator,
         "gross_profit": gross,
-        "net_profit": gross - operating - generator + charged,
+        "net_profit": gross - operating - generator,
         "payouts": paid,
-        "salary_debt_total": total_accrued - total_paid - total_charged,
+        "salary_debt_total": total_accrued - total_paid,
         "by_payment": by_payment,
         "cancellations": cancellations,
         "average_check": t["revenue"] // t["orders_count"] if t["orders_count"] else 0,
@@ -145,7 +147,7 @@ def by_service(s: Session, actor: Actor, d_from: date, d_to: date) -> list[dict]
             func.sum(Order.materials_cost), func.sum(Order.salon_earning),
         )
         .join(Order, Order.service_id == Service.id)
-        .where(Order.closed_at >= start, Order.closed_at < end)
+        .where(Order.closed_at >= start, Order.closed_at < end, Order.status == OrderStatus.COMPLETED)
         .group_by(Service.id, Service.name)
         .order_by(func.sum(Order.amount).desc())
     )
@@ -162,7 +164,7 @@ def by_day(s: Session, actor: Actor, d_from: date, d_to: date) -> list[dict]:
     day = func.date(Order.closed_at)
     rows = s.execute(
         select(day, func.sum(Order.amount), func.sum(Order.master_earning), func.sum(Order.salon_earning))
-        .where(Order.closed_at >= start, Order.closed_at < end)
+        .where(Order.closed_at >= start, Order.closed_at < end, Order.status == OrderStatus.COMPLETED)
         .group_by(day).order_by(day)
     )
     return [{"date": str(d), "revenue": int(r), "masters_share": int(m), "salon_net_from_orders": int(sn)} for d, r, m, sn in rows]
@@ -178,11 +180,8 @@ def my_earnings(s: Session, actor: Actor, master_id: int | None = None) -> dict:
     out = {}
     for p in ("day", "week", "month"):
         a, b = period_range(p)
-        t = _order_totals(s, *_bounds(a, b), master_id=master_id)
-        from .utilities import charges_total
-
-        out[p] = {"orders_count": t["orders_count"], "revenue": t["revenue"], "earning": t["masters_share"],
-                  "charges": charges_total(s, master_id=master_id, d_from=a, d_to=b)}
+        t = _order_totals(s, *_bounds(a, b), master_id=master_id, statuses=OrderStatus.ACCRUING)
+        out[p] = {"orders_count": t["orders_count"], "revenue": t["revenue"], "earning": t["masters_share"]}
     out["balance"] = master_balance(s, master_id)
     return out
 
@@ -228,9 +227,9 @@ def forecast_month(s: Session, actor: Actor, ref: date | None = None) -> dict:
     operating = int(s.scalar(select(func.coalesce(func.sum(Expense.amount), 0)).where(
         Expense.spent_on >= m_from, Expense.spent_on <= m_to, Expense.is_deleted.is_(False),
         Expense.category.not_in(ExpenseCategory.CASH_FLOW_ONLY))) or 0)
-    from .utilities import charges_total, generator_totals
+    from .utilities import generator_totals
 
-    operating += generator_totals(s, start, cut)["total_cost"] - charges_total(s, d_from=m_from, d_to=m_to)
+    operating += generator_totals(s, start, cut)["total_cost"]
     days_total = (m_to - m_from).days + 1
     days_elapsed = max((today - m_from).days + 1, 1)
     return {
@@ -255,7 +254,7 @@ def insights(s: Session, actor: Actor, d_from: date, d_to: date) -> dict:
 
     start, end = _bounds(d_from, d_to)
     rows = s.execute(select(Order.client_id, Order.closed_at, Order.amount, Order.master_id)
-                     .where(Order.closed_at >= start, Order.closed_at < end)).all()
+                     .where(Order.closed_at >= start, Order.closed_at < end, Order.status == OrderStatus.COMPLETED)).all()
     client_ids = {r.client_id for r in rows}
     first_visit = dict(s.execute(select(Order.client_id, func.min(Order.closed_at))
                                  .where(Order.client_id.in_(client_ids or {0})).group_by(Order.client_id)).all())

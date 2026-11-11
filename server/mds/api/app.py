@@ -10,12 +10,13 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from sqlalchemy.orm.exc import StaleDataError
 from starlette.middleware.gzip import GZipMiddleware
 
 from .. import __version__, clock, perf
 from ..config import Config
 from ..db import Database
-from ..errors import DomainError
+from ..errors import DomainError, VersionConflict
 from ..services import backup
 from .routers import auth, calendar, card_terminal, callbacks, catalog, clients, money, sms, staff, stock_schedule, system, tax_report, taxes, utilities
 
@@ -101,7 +102,16 @@ def create_app(
 
     @app.exception_handler(DomainError)
     async def domain_error(_req: Request, exc: DomainError):
-        return JSONResponse({"error": exc.code, "detail": exc.message}, status_code=exc.status)
+        body = {"error": exc.code, "detail": exc.message}
+        if isinstance(exc, VersionConflict):
+            body["current_version"] = exc.current_version
+            if exc.current is not None:
+                body["current"] = exc.current
+        return JSONResponse(body, status_code=exc.status)
+
+    @app.exception_handler(StaleDataError)
+    async def stale_error(_req: Request, _exc: StaleDataError):
+        return JSONResponse({"error": "version_conflict", "detail": "Дані змінилися, оновіть сторінку"}, status_code=409)
 
     @app.exception_handler(RequestValidationError)
     async def validation_error(_req: Request, exc: RequestValidationError):

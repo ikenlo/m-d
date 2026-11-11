@@ -212,7 +212,7 @@ def main(argv: list[str] | None = None) -> None:
     cu = sub.add_parser("create-user", help="додати співробітника")
     cu.add_argument("username")
     cu.add_argument("--full-name", required=True)
-    cu.add_argument("--role", choices=["director", "admin", "master"], required=True)
+    cu.add_argument("--role", choices=["director", "master"], required=True)
     cu.add_argument("--password")
 
     for name in ("run", "serve", "start"):

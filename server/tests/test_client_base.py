@@ -12,7 +12,7 @@ from mds.services.common import update_settings
 def _visit(db, seed, day, hour, phone, name="Олена Коваль", master="m1", amount=50000):
     clock.set_now(datetime(2026, day[0], day[1], 7))
     with db.session() as s:
-        a = bookings.create_appointment(s, seed["actors"]["admin"], master_id=seed[master], service_id=seed["haircut"],
+        a = bookings.create_appointment(s, seed["actors"]["director"], master_id=seed[master], service_id=seed["haircut"],
                                         starts_at=datetime(2026, day[0], day[1], hour), client_name=name, client_phone=phone)
         aid = a.id
     clock.set_now(datetime(2026, day[0], day[1], hour + 1))
@@ -28,7 +28,7 @@ def test_stats_segments_and_card(db, seed):
     d = seed["actors"]["director"]
     with db.session() as s:
         cid = s.query(Client).filter_by(phone="+380671110001").one().id
-        a = bookings.create_appointment(s, seed["actors"]["admin"], master_id=seed["m2"], service_id=seed["haircut"],
+        a = bookings.create_appointment(s, seed["actors"]["director"], master_id=seed["m2"], service_id=seed["haircut"],
                                         starts_at=datetime(2026, 10, 10, 10), client_id=cid)
         bookings.set_status(s, d, a.id, "cancelled")
         c = cb.card(s, d, cid)
@@ -55,13 +55,13 @@ def test_stats_segments_and_card(db, seed):
 
 
 def _other_client(s, seed):
-    c = catalog.get_or_create_client(s, seed["actors"]["admin"], "Без візитів до Ірини", "0670009999")
+    c = catalog.get_or_create_client(s, seed["actors"]["director"], "Без візитів до Ірини", "0670009999")
     s.flush()
     return c.id
 
 
 def test_search_cyrillic_lookup_and_no_duplicates(db, seed):
-    adm, d = seed["actors"]["admin"], seed["actors"]["director"]
+    adm, d = seed["actors"]["director"], seed["actors"]["director"]
     clock.set_now(datetime(2026, 11, 2, 8))
     with db.session() as s:
         c = catalog.get_or_create_client(s, adm, "Ірина Шевченко", "067 222 33 44")
@@ -92,7 +92,7 @@ def test_merge_duplicates_and_anonymize(db, seed):
         groups = cb.duplicates(s, d)
         assert any({x["id"] for x in g} == {keep, dup} for g in groups)
         with pytest.raises(Forbidden):
-            cb.merge(s, seed["actors"]["admin"], keep, dup)
+            cb.merge(s, seed["actors"]["m1"], keep, dup)
         m = cb.merge(s, d, keep, dup)
         assert m.phone2 == "+380671119992" and s.get(Client, dup) is None
         assert s.query(Order).filter_by(client_id=keep).count() == 2
@@ -117,7 +117,7 @@ def test_analytics_and_export(db, seed):
         assert r["revenue"] == 100000 and r["average_check"] == 50000 and r["repeat_share_bp"] == 5000
         assert r["top_clients"][0]["spent"] == 70000
         with pytest.raises(Forbidden):
-            cb.analytics(s, seed["actors"]["admin"], date(2026, 10, 1), date(2026, 10, 31))
+            cb.analytics(s, seed["actors"]["m1"], date(2026, 10, 1), date(2026, 10, 31))
         csv_text = cb.export_csv(s, d)
         assert "Новий Клієнт" in csv_text and ";1200.0;600.0;" in csv_text
     clock.set_now(None)

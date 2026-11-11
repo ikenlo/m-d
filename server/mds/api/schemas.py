@@ -47,8 +47,7 @@ class UserIn(BaseModel):
     full_name: str
     role: str
     phone: str | None = None
-    share_bp: int | None = None
-    materials_mode: str | None = None
+    master_rate_bp: int = 5000
     schedule: dict | None = None
     service_ids: list[int] | None = None
     bot_pin: str | None = None
@@ -59,8 +58,7 @@ class UserPatch(BaseModel):
     phone: str | None = None
     role: str | None = None
     is_active: bool | None = None
-    share_bp: int | None = None
-    materials_mode: str | None = None
+    master_rate_bp: int | None = None
     schedule: dict | None = None
     service_ids: list[int] | None = None
     bot_pin: str | None = None
@@ -173,6 +171,8 @@ class MaterialLine(BaseModel):
 class CloseOrderIn(BaseModel):
     amount: int
     payment_method: str
+    price: int | None = None
+    status: str = "completed"
     materials: list[MaterialLine] = []
     idempotency_key: str | None = Field(default=None, max_length=64)
     client_name: str | None = Field(default=None, max_length=128)
@@ -181,10 +181,22 @@ class CloseOrderIn(BaseModel):
 class OrderCorrectionIn(BaseModel):
     reason: str
     amount: int | None = None
+    price: int | None = None
     payment_method: str | None = None
-    share_bp: int | None = None
-    materials_mode: str | None = None
     materials: list[MaterialLine] | None = None
+    version: int | None = None
+
+
+class MarkPaidIn(BaseModel):
+    payment_method: str
+    amount: int | None = None
+    reason: str | None = None
+    version: int | None = None
+
+
+class VoidOrderIn(BaseModel):
+    reason: str = Field(min_length=1, max_length=500)
+    version: int | None = None
 
 
 class OrderPhoneIn(BaseModel):

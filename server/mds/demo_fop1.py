@@ -154,7 +154,7 @@ def seed_fop1(db: Database, start: date = date(2025, 1, 1), end: date | None = N
         clock.set_now(datetime.combine(start, datetime.min.time()).replace(hour=8))
         with db.session() as s:
             u = users.create_user(s, Actor.system(), username=FOP_LOGIN, password=secrets.token_urlsafe(12) + "a1",
-                                  full_name=FOP_NAME, role=Role.MASTER, share_bp=0)
+                                  full_name=FOP_NAME, role=Role.MASTER, master_rate_bp=0)
             users.update_user(s, da, u.id, {"schedule": {str(d): ["09:00", "19:00"] for d in range(5)},
                                             "service_ids": list(services)})
             fid, fa = u.id, Actor.of(u)

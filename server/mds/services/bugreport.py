@@ -12,7 +12,7 @@ from ..models import User
 from . import notifications
 from .common import Actor, audit
 
-ROLE_UA = {"director": "директор", "admin": "адміністратор", "master": "майстер", "client": "клієнт"}
+ROLE_UA = {"director": "директор", "admin": "адміністратор (до 0.3.0)", "master": "майстер", "client": "клієнт"}
 MAX_IMAGE_BYTES = 5 * 1024 * 1024
 MAX_TEXT = 2000
 

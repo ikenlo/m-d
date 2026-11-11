@@ -19,7 +19,7 @@ WD = ["понеділок", "вівторок", "середа", "четвер", 
 
 
 def ready(s: Session) -> bool:
-    return bool(get_setting(s, "sms_enabled")) and sms.configured()
+    return sms.SENDING_ENABLED and bool(get_setting(s, "sms_enabled")) and sms.configured()
 
 
 def enqueue(s: Session, *, phone: str, text: str, kind: str, reason: str, client_id: int | None = None,
@@ -37,7 +37,8 @@ def process_queue(s: Session, limit: int = 40) -> int:
     n = 0
     for m in rows:
         if not ok_ready:
-            m.status, m.error, m.updated_at = "not_configured", "TurboSMS не підключено", now
+            reason = "TurboSMS не підключено" if sms.SENDING_ENABLED else sms.DISABLED_REASON
+            m.status, m.error, m.updated_at = "not_configured", reason[:200], now
             continue
         r = sms.send_one(m.phone, m.text)
         m.status = "sent" if r["ok"] else "failed"
@@ -122,6 +123,10 @@ def create_campaign(s: Session, actor: Actor, *, title: str, text: str, audience
     price = int(get_setting(s, "sms_price") or 0)
     parts = 1 if len(text) <= 70 else (len(text) + 66) // 67
     cost = len(people) * price * parts
+    if not dry_run and not sms.SENDING_ENABLED:
+        from ..errors import Conflict
+
+        raise Conflict(sms.DISABLED_REASON, code="sms_disabled")
     preview = text.replace("{name}", _first_name(people[0].name) if people else "Олено")
     if dry_run:
         return {"recipients": len(people), "cost": cost, "parts": parts, "preview": preview, "ready": ready(s)}
@@ -159,7 +164,7 @@ def campaigns(s: Session, actor: Actor) -> list[dict]:
 
 
 def messages(s: Session, actor: Actor, *, client_id: int | None = None, limit: int = 100) -> list[dict]:
-    actor.require(Role.DIRECTOR, Role.ADMIN)
+    actor.require(Role.DIRECTOR)
     q = select(SmsMessage).order_by(SmsMessage.id.desc()).limit(min(limit, 300))
     if client_id:
         q = q.where(SmsMessage.client_id == client_id)

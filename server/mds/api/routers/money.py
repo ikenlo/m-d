@@ -10,7 +10,7 @@ from ...models import Order, Role
 from ...services import analytics, expenses, orders
 from ...services.common import Actor, get_or_404
 from ..deps import get_actor, get_session
-from ..schemas import ExpenseIn, ExpensePatch, OrderCorrectionIn, OrderPhoneIn, PayoutIn
+from ..schemas import ExpenseIn, ExpensePatch, MarkPaidIn, OrderCorrectionIn, OrderPhoneIn, PayoutIn, VoidOrderIn
 
 router = APIRouter(prefix="/api", tags=["finance"])
 
@@ -23,9 +23,14 @@ def _range(period: str | None, date_from: date | None, date_to: date | None) -> 
 
 @router.get("/orders")
 def list_orders(period: str | None = None, date_from: date | None = None, date_to: date | None = None,
-                master_id: int | None = None, actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
-    a, b = _range(period, date_from, date_to)
-    return [orders.order_public(o) for o in orders.list_orders(s, actor, date_from=a, date_to=b, master_id=master_id)]
+                master_id: int | None = None, status: str | None = None, materials_not_entered: bool | None = None,
+                actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
+    if (status or materials_not_entered is not None) and not (period or date_from or date_to):
+        a = b = None
+    else:
+        a, b = _range(period, date_from, date_to)
+    return [orders.order_public(o) for o in orders.list_orders(s, actor, date_from=a, date_to=b, master_id=master_id,
+                                                               status=status, materials_not_entered=materials_not_entered)]
 
 
 @router.get("/orders/needs-materials")
@@ -48,10 +53,27 @@ def set_order_phone(order_id: int, body: OrderPhoneIn, actor: Actor = Depends(ge
 
 @router.patch("/orders/{order_id}")
 def correct_order(order_id: int, body: OrderCorrectionIn, actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
-    data = body.model_dump(exclude_unset=True, exclude={"reason"})
+    data = body.model_dump(exclude_unset=True, exclude={"reason", "version"})
     if "materials" in data and data["materials"] is not None:
         data["materials"] = [m.model_dump() for m in body.materials]
-    return orders.order_public(orders.correct_order(s, actor, order_id, data, body.reason))
+    data = {k: v for k, v in data.items() if v is not None}
+    return orders.order_public(orders.correct_order(s, actor, order_id, data, body.reason, expected_version=body.version))
+
+
+@router.post("/orders/{order_id}/mark-paid")
+def mark_paid(order_id: int, body: MarkPaidIn, actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
+    return orders.order_public(orders.mark_paid(s, actor, order_id, payment_method=body.payment_method, amount=body.amount,
+                                                reason=body.reason, expected_version=body.version))
+
+
+@router.post("/orders/{order_id}/refund")
+def refund_order(order_id: int, body: VoidOrderIn, actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
+    return orders.order_public(orders.refund_order(s, actor, order_id, body.reason, expected_version=body.version))
+
+
+@router.post("/orders/{order_id}/cancel")
+def cancel_order(order_id: int, body: VoidOrderIn, actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
+    return orders.order_public(orders.cancel_order(s, actor, order_id, body.reason, expected_version=body.version))
 
 
 @router.get("/shifts/current")

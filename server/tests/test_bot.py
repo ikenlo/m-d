@@ -142,7 +142,7 @@ def test_slot_taken_between_steps(h, db, seed):
     h.send(contact=Contact(phone_number="380931234567", first_name="Катя", user_id=TG_ID))
     from mds.services import bookings
     with db.session() as s:
-        bookings.create_appointment(s, seed["actors"]["admin"], master_id=seed["m1"], service_id=seed["haircut"],
+        bookings.create_appointment(s, seed["actors"]["director"], master_id=seed["m1"], service_id=seed["haircut"],
                                     starts_at=datetime(2026, 11, 2, 10), client_name="X", client_phone="0500000000")
     h.click("ok")
     assert any("зайнятий" in a for a in h.session.alerts())
@@ -242,7 +242,7 @@ def test_client_free_time_and_contacts(h, db, seed):
     from mds.services import bookings
     from mds.services.common import Actor as A, update_settings
     with db.session() as s:
-        bookings.create_appointment(s, seed["actors"]["admin"], master_id=seed["m1"], service_id=seed["haircut"],
+        bookings.create_appointment(s, seed["actors"]["director"], master_id=seed["m1"], service_id=seed["haircut"],
                                     starts_at=datetime(2026, 11, 2, 12), client_name="X", client_phone="0500000000")
         update_settings(s, A.system(), {"salon_address": "Київ, вул. Хрещатик, 1", "salon_phone": "+380671234567"})
     h.send("🕐 Вільний час")
@@ -317,7 +317,7 @@ def test_master_flow_add_list_close_earn_shift(h, db, pins):
         orders.close_order(s, pins["actors"]["m1"], appt_id, amount=62000, payment_method="cash")
 
     h.click("s:earn")
-    assert "Сьогодні: <b>310 ₴</b>" in h.session.texts()[-1]
+    assert "Сьогодні: <b>250 ₴</b>" in h.session.texts()[-1]
     h.click("s:shift")
     h.click("s:shiftok")
     assert "Звіт зміни" in h.session.texts()[-1]
@@ -332,7 +332,7 @@ def test_master_flow_add_list_close_earn_shift(h, db, pins):
 
 def test_director_flow(h, db, pins):
     from mds.services import bookings, orders
-    adm = pins["actors"]["admin"]
+    adm = pins["actors"]["director"]
     with db.session() as s:
         a = bookings.create_appointment(s, adm, master_id=pins["m1"], service_id=pins["haircut"],
                                         starts_at=datetime(2026, 11, 2, 10), client_name="Анна", client_phone="0671112233")
@@ -490,7 +490,7 @@ def test_masters_show_first_name_and_nearest_free_time(h, db, seed):
     with db.session() as s:
         us.update_user(s, d, seed["m1"], {"full_name": "Олена Коваль"})
         us.update_user(s, d, seed["m2"], {"schedule": {"0": ["09:00", "10:00"], "1": ["09:00", "18:00"]}})
-        bookings.create_appointment(s, seed["actors"]["admin"], master_id=seed["m2"], service_id=seed["haircut"],
+        bookings.create_appointment(s, seed["actors"]["director"], master_id=seed["m2"], service_id=seed["haircut"],
                                     starts_at=datetime(2026, 11, 2, 9), client_name="X", client_phone="0500000000")
     h.send("📅 Записатися")
     h.click_text("Стрижка")
@@ -565,7 +565,7 @@ def test_master_proposes_other_time_and_client_accepts(h, db, seed):
         assert [row[0][1] for row in n.buttons] == [f"acc:{appt_id}", f"mv:{appt_id}", f"cnl:{appt_id}"]
     from mds.errors import Conflict
     with db.session() as s, pytest.raises(Conflict):
-        bookings.create_appointment(s, seed["actors"]["admin"], master_id=seed["m1"], service_id=seed["haircut"],
+        bookings.create_appointment(s, seed["actors"]["director"], master_id=seed["m1"], service_id=seed["haircut"],
                                     starts_at=datetime(2026, 11, 2, 15), client_name="X", client_phone="0500000000")
     h.click(f"acc:{appt_id}")
     assert "запис підтверджено" in h.session.texts()[-1]
@@ -647,7 +647,7 @@ def _visits(db, seed, master_key, n, tg=TG_ID, start_h=9):
         for i in range(n):
             a = bookings.create_appointment(s, A.telegram(tg), master_id=seed[master_key], service_id=seed["haircut"],
                                             starts_at=datetime(2026, 11, 2, start_h + i), client_name="Катя", client_phone="0931234567")
-            orders.close_order(s, seed["actors"]["admin"], a.id, amount=50000, payment_method="cash")
+            orders.close_order(s, seed["actors"]["director"], a.id, amount=50000, payment_method="cash")
 
 
 def test_favorite_master_after_three_visits(h, db, seed):

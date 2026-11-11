@@ -159,7 +159,7 @@ def _check_material(data: dict, creating: bool) -> dict:
 
 
 def create_material(s: Session, actor: Actor, data: dict) -> Material:
-    actor.require(Role.DIRECTOR, Role.ADMIN)
+    actor.require(Role.DIRECTOR)
     vals = _check_material(data, creating=True)
     vals.setdefault("unit_cost", 0)
     m = Material(**vals)
@@ -174,7 +174,7 @@ def create_material(s: Session, actor: Actor, data: dict) -> Material:
 
 
 def update_material(s: Session, actor: Actor, material_id: int, data: dict) -> Material:
-    actor.require(Role.DIRECTOR, Role.ADMIN)
+    actor.require(Role.DIRECTOR)
     m: Material = get_or_404(s, Material, material_id, "Матеріал")
     before = material_public(m)
     vals = _check_material(data, creating=False)
@@ -260,7 +260,7 @@ def get_or_create_client(
 
 
 def create_client(s: Session, actor: Actor, name: str, phone: str, notes: str | None = None) -> Client:
-    actor.require(Role.DIRECTOR, Role.ADMIN)
+    actor.require(Role.DIRECTOR)
     c = get_or_create_client(s, actor, name, phone)
     if notes and notes != c.notes:
         before = c.notes
@@ -270,7 +270,7 @@ def create_client(s: Session, actor: Actor, name: str, phone: str, notes: str | 
 
 
 def update_client(s: Session, actor: Actor, client_id: int, data: dict) -> Client:
-    actor.require(Role.DIRECTOR, Role.ADMIN)
+    actor.require(Role.DIRECTOR)
     c: Client = get_or_404(s, Client, client_id, "Клієнта")
     before = client_public(c)
     if "phone" in data and not (data["phone"] or "").strip():

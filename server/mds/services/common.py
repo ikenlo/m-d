@@ -8,7 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..errors import Forbidden, NotFound
-from ..models import AuditLog, LedgerEntry, MaterialsMode, Role, Setting, User
+from ..models import AuditLog, LedgerEntry, Role, Setting, User
 
 
 @dataclass(frozen=True)
@@ -34,10 +34,6 @@ class Actor:
     @property
     def is_director(self) -> bool:
         return self.role in (Role.DIRECTOR, "system")
-
-    @property
-    def is_staff_manager(self) -> bool:
-        return self.role in (Role.DIRECTOR, Role.ADMIN, "system")
 
     @property
     def is_master(self) -> bool:
@@ -116,8 +112,6 @@ def ledger(
 
 DEFAULT_SETTINGS: dict[str, Any] = {
     "salon_name": "M&D",
-    "default_share_bp": 5000,
-    "default_materials_mode": MaterialsMode.SALON,
     "schedule": {str(d): ["09:00", "20:00"] for d in range(6)},
     "slot_step_min": 30,
     "booking_horizon_days": 30,
@@ -154,11 +148,6 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "generator_fuel_price": 0,
     "generator_amort_per_hour": 0,
     "generator_hours_initial_milli": 0,
-    "utilities_charge_mode": "none",
-    "utilities_split": "revenue",
-    "utilities_charge_share_bp": 10000,
-    "utilities_fixed_amount": 0,
-    "utilities_fixed_per": "shift",
     "fop_income_limit": 0,
     "card_terminal_mode": "off",
     "fop_tin": "",
@@ -220,10 +209,6 @@ def update_settings(s: Session, actor: Actor, data: dict[str, Any]) -> dict[str,
     for key, value in data.items():
         if key not in DEFAULT_SETTINGS:
             raise ValidationError(f"Невідоме налаштування: {key}")
-        if key == "default_share_bp" and not (isinstance(value, int) and 0 <= value <= 10_000):
-            raise ValidationError("Відсоток майстра має бути від 0 до 100%")
-        if key == "default_materials_mode" and value not in MaterialsMode.ALL:
-            raise ValidationError("Невідомий режим обліку матеріалів")
         if key == "schedule":
             _validate_schedule(value)
         if key in ("slot_step_min", "booking_horizon_days", "booking_min_lead_min") and not (
@@ -255,7 +240,7 @@ def update_settings(s: Session, actor: Actor, data: dict[str, Any]) -> dict[str,
             raise ValidationError("Критерії сегментів — додатні цілі числа")
         if key == "stock_auto_writeoff_milli" and not (isinstance(value, int) and not isinstance(value, bool) and 0 <= value <= 500):
             raise ValidationError("Автосписання залишку: від 0 до 0,5 упаковки")
-        if key == "twofa_roles" and not (isinstance(value, list) and all(r in ("director", "admin") for r in value)):
+        if key == "twofa_roles" and not (isinstance(value, list) and all(r == Role.DIRECTOR for r in value)):
             raise ValidationError("Двофакторний вхід: лише для директора та/або адміністратора")
         if key == "favorite_master_visits" and not (isinstance(value, int) and 1 <= value <= 50):
             raise ValidationError("Улюблений майстер: від 1 до 50 візитів")
@@ -264,18 +249,10 @@ def update_settings(s: Session, actor: Actor, data: dict[str, Any]) -> dict[str,
         if key in ("salon_address", "salon_phone", "salon_instagram", "salon_name") and not isinstance(value, str):
             raise ValidationError(f"{key}: очікується текст")
         if key in ("generator_fuel_lph_milli", "generator_fuel_price", "generator_amort_per_hour",
-                   "generator_hours_initial_milli", "utilities_fixed_amount", "fop_income_limit") and not (
+                   "generator_hours_initial_milli", "fop_income_limit") and not (
             isinstance(value, int) and not isinstance(value, bool) and 0 <= value <= 10**12
         ):
             raise ValidationError(f"{key}: очікується ціле невід'ємне число")
-        if key == "utilities_charge_share_bp" and not (isinstance(value, int) and 0 <= value <= 10_000):
-            raise ValidationError("Частка для розподілу — від 0 до 100%")
-        if key == "utilities_charge_mode" and value not in ("none", "month_end", "fixed"):
-            raise ValidationError("Режим списання: вимкнено, наприкінці місяця або фіксована ставка")
-        if key == "utilities_split" and value not in ("revenue", "equal"):
-            raise ValidationError("Розподіл: пропорційно виручці або порівну")
-        if key == "utilities_fixed_per" and value not in ("shift", "month"):
-            raise ValidationError("Фіксована ставка: за зміну або за місяць")
         if key == "card_terminal_mode":
             from .card_terminal_providers import MODES, configured
 

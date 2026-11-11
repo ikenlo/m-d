@@ -28,9 +28,9 @@ def test_master_off_hours_booking_needs_confirmation(db, seed):
                                         starts_at=datetime(2026, 11, 2, 10), client_name="Вчасний")
         assert b.id
         with pytest.raises(Conflict):
-            bookings.create_appointment(s, seed["actors"]["admin"], master_id=seed["m1"], service_id=seed["haircut"],
+            bookings.create_appointment(s, seed["actors"]["director"], master_id=seed["m1"], service_id=seed["haircut"],
                                         starts_at=datetime(2026, 11, 2, 21), client_name="Адмін записав")
-        bookings.create_appointment(s, seed["actors"]["admin"], master_id=seed["m1"], service_id=seed["haircut"],
+        bookings.create_appointment(s, seed["actors"]["director"], master_id=seed["m1"], service_id=seed["haircut"],
                                     starts_at=datetime(2026, 11, 2, 21), client_name="Адмін записав", confirm_off_hours=True)
 
 

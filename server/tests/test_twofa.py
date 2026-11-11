@@ -70,20 +70,26 @@ def test_too_many_attempts_and_expiry(client, db):  # noqa: F811
     assert client.post("/api/auth/login/verify", json={"challenge_id": ch, "code": "12ab"}).status_code == 422
 
 
-def test_admin_only_when_enabled_and_password_change_forgets_devices(client, db):  # noqa: F811
+def test_second_director_and_password_change_forgets_devices(client, db):  # noqa: F811
+    from mds.models import Role
+    from mds.services import users as us
+    from mds.services.common import Actor
     with db.session() as s:
-        s.query(User).filter_by(username="admin").one().telegram_chat_id = 9003
-    assert "token" in client.post("/api/auth/login", json={"username": "admin", "password": "Admin1234"}).json()
+        us.create_user(s, Actor.system(), username="director2", password="Director234", full_name="Дмитро", role=Role.DIRECTOR)
+        s.flush()
+        s.query(User).filter_by(username="director2").one().telegram_chat_id = 9003
     d = client.post("/api/auth/login", json={"username": "director", "password": "Director123"}).json()
     hd = {"Authorization": "Bearer " + d["token"]}
-    assert client.put("/api/settings", headers=hd, json={"twofa_roles": ["director", "admin"]}).status_code == 200
+    assert client.put("/api/settings", headers=hd, json={"twofa_roles": ["director", "admin"]}).status_code == 422
     assert client.put("/api/settings", headers=hd, json={"twofa_roles": ["master"]}).status_code == 422
-    r = client.post("/api/auth/login", json={"username": "admin", "password": "Admin1234"}).json()
+    assert client.put("/api/settings", headers=hd, json={"twofa_roles": ["director"]}).status_code == 200
+    r = client.post("/api/auth/login", json={"username": "director2", "password": "Director234"}).json()
     assert r["twofa"] is True
     r = client.post("/api/auth/login/verify", json={"challenge_id": r["challenge_id"], "code": _code(db), "remember": True}).json()
     dev, ha = r["device_token"], {"Authorization": "Bearer " + r["token"]}
-    assert client.post("/api/auth/change-password", headers=ha, json={"old_password": "Admin1234", "new_password": "NewAdmin567"}).status_code == 200
-    r = client.post("/api/auth/login", json={"username": "admin", "password": "NewAdmin567", "device_token": dev}).json()
+    assert client.post("/api/auth/change-password", headers=ha,
+                       json={"old_password": "Director234", "new_password": "NewDirector567"}).status_code == 200
+    r = client.post("/api/auth/login", json={"username": "director2", "password": "NewDirector567", "device_token": dev}).json()
     assert r.get("twofa") is True
 
 

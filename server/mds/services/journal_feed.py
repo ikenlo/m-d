@@ -28,14 +28,14 @@ STATUS_UA = {"pending": "очікує", "confirmed": "підтверджено",
 PAY_UA = {"cash": "готівка", "card": "картка", "transfer": "переказ"}
 EXPENSE_UA = {"rent": "Оренда", "utilities": "Комунальні", "advertising": "Реклама",
               "materials": "Закупівля матеріалів", "fuel": "Пальне (закупівля)", "other": "Інше"}
-ROLE_UA = {"director": "директор", "admin": "адміністратор", "master": "майстер"}
+ROLE_UA = {"director": "директор", "admin": "адміністратор (до 0.3.0)", "master": "майстер"}
 MODE_UA = {"salon": "матеріали за рахунок салону", "master": "матеріали платить майстер", "split": "пропорційно"}
 
 FIELD_UA = {
     "starts_at": "Час", "ends_at": "Кінець", "master_id": "Майстер", "service_id": "Послуга", "price": "Ціна",
     "status": "Статус", "comment": "Коментар", "amount": "Сума", "payment_method": "Оплата",
     "master_earning": "Майстру", "salon_earning": "Салону", "materials_cost": "Матеріали",
-    "share_bp": "Відсоток майстра", "materials_mode": "Облік матеріалів", "name": "Назва", "full_name": "Ім'я",
+    "master_rate_bp": "Ставка майстра", "share_bp": "Відсоток майстра (до 0.3.0)", "materials_mode": "Облік матеріалів (до 0.3.0)", "name": "Назва", "full_name": "Ім'я",
     "phone": "Телефон", "notes": "Нотатки", "role": "Роль", "is_active": "Активний", "duration_min": "Тривалість, хв",
     "category": "Категорія", "description": "Опис", "spent_on": "Дата", "unit_cost": "Ціна упаковки",
     "pack_size": "В упаковці", "pack_name": "Упаковка", "tone": "Тон", "min_stock": "Мінімальний залишок",
@@ -167,7 +167,7 @@ def _value(n: _Names, key: str, v: Any) -> str:
         return "—"
     if key in _MONEY:
         return _fmt_money(v)
-    if key in ("share_bp", "default_share_bp", "utilities_charge_share_bp"):
+    if key in ("master_rate_bp", "share_bp", "default_share_bp", "utilities_charge_share_bp"):
         return f"{int(v) / 100:g}%"
     if key == "master_id":
         return n.user(v)
