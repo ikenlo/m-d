@@ -5,6 +5,7 @@ from datetime import date
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from .. import clock
 from ..errors import ValidationError
 from ..models import Expense, ExpenseCategory, Role
 from .common import Actor, audit, get_or_404, ledger
@@ -18,6 +19,7 @@ def expense_public(e: Expense) -> dict:
         "spent_on": e.spent_on.isoformat(),
         "description": e.description,
         "is_deleted": e.is_deleted,
+        "archived_at": e.archived_at.isoformat() if e.archived_at else None,
         "version": e.version,
     }
 
@@ -72,6 +74,7 @@ def delete_expense(s: Session, actor: Actor, expense_id: int, reason: str | None
     if e.is_deleted:
         return
     e.is_deleted = True
+    e.archived_at = clock.now()
     ledger(s, actor, "expense_reversal", "expense", e.id, amount=e.amount, salon_amount=e.amount, details={"reason": reason})
     audit(s, actor, "expense", e.id, "delete", expense_public(e), None, reason)
 

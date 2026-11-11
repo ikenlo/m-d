@@ -125,6 +125,7 @@ class User(Base):
     telegram_chat_id: Mapped[int | None] = mapped_column(BigInteger)
     telegram_link_code: Mapped[str | None] = mapped_column(String(16), unique=True)
     bot_pin_hash: Mapped[str | None] = mapped_column(String(255))
+    finance_pin_hash: Mapped[str | None] = mapped_column(String(255))
     token_version: Mapped[int] = mapped_column(Integer, default=0)
     failed_logins: Mapped[int] = mapped_column(Integer, default=0)
     locked_until: Mapped[datetime | None] = mapped_column(DateTime)
@@ -414,6 +415,7 @@ class Expense(Base):
     description: Mapped[str | None] = mapped_column(Text)
     payment_method: Mapped[str | None] = mapped_column(String(16))
     is_deleted: Mapped[bool] = mapped_column(Boolean, default=False)
+    archived_at: Mapped[datetime | None] = mapped_column(DateTime)
     created_by: Mapped[int] = mapped_column(ForeignKey("users.id"))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
     version: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
@@ -775,6 +777,22 @@ class IdempotencyKey(Base):
     request_hash: Mapped[str | None] = mapped_column(String(64))
     response_json: Mapped[dict | None] = mapped_column(JSON)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now, index=True)
+
+
+class LoginEvent(Base):
+
+    __tablename__ = "login_events"
+    __table_args__ = (Index("ix_login_events_ts", "ts"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int | None] = mapped_column(Integer, index=True)
+    username: Mapped[str | None] = mapped_column(String(64))
+    ip: Mapped[str | None] = mapped_column(String(64))
+    user_agent: Mapped[str | None] = mapped_column(String(255))
+    method: Mapped[str] = mapped_column(String(16))
+    success: Mapped[bool] = mapped_column(Boolean)
+    detail: Mapped[str | None] = mapped_column(String(128))
+    ts: Mapped[datetime] = mapped_column(DateTime, default=_now)
 
 
 class AuthThrottle(Base):

@@ -134,6 +134,8 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "reminders_enabled": True,
     "twofa_roles": ["director"],
     "alerts_disabled": [],
+    "finance_pin_enabled": False,
+    "reports_hidden": [],
     "alerts_digest_hour": 9,
     "vacation_mode_active": False,
     "vacation_mode_expires_at": None,
@@ -240,7 +242,7 @@ def update_settings(s: Session, actor: Actor, data: dict[str, Any]) -> dict[str,
             isinstance(value, int) and 0 <= value <= 365 * 24 * 60
         ):
             raise ValidationError(f"{key}: очікується ціле невід'ємне число")
-        if key in ("master_takes_cash", "telegram_auto_confirm", "reminders_enabled") and not isinstance(value, bool):
+        if key in ("master_takes_cash", "telegram_auto_confirm", "reminders_enabled", "finance_pin_enabled") and not isinstance(value, bool):
             raise ValidationError(f"{key}: так або ні")
         if key.startswith("antispam_") and key != "antispam_whitelist" and not (isinstance(value, int) and not isinstance(value, bool) and 0 <= value <= 1000):
             raise ValidationError(f"{key}: ціле число від 0 до 1000")

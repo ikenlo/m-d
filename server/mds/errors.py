@@ -42,3 +42,8 @@ class VersionConflict(Conflict):
         super().__init__(message)
         self.current_version = current_version
         self.current = current
+
+
+class TooManyRequests(DomainError):
+    status = 429
+    code = "too_many_requests"

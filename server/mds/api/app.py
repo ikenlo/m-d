@@ -18,10 +18,13 @@ from ..config import Config
 from ..db import Database
 from ..errors import DomainError, VersionConflict
 from ..services import backup
-from .routers import alerts, auth, calendar, card_terminal, callbacks, catalog, clients, money, products, sms, staff, stock_schedule, system, tax_report, taxes, utilities
+from .routers import alerts, auth, calendar, card_terminal, callbacks, catalog, clients, money, products, security, sms, staff, stock_schedule, system, tax_report, taxes, utilities
 
 log = logging.getLogger("mds")
 STATIC = Path(__file__).resolve().parent.parent / "web" / "static"
+CSP = ("default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; "
+       "font-src 'self'; connect-src 'self'; worker-src 'self'; manifest-src 'self'; object-src 'none'; "
+       "base-uri 'self'; form-action 'self'; frame-ancestors 'none'")
 
 
 def _asset_version() -> str:
@@ -124,7 +127,7 @@ def create_app(
             {"error": "validation", "detail": f"Невірні дані: {field} — {first.get('msg', '')}"}, status_code=422
         )
 
-    for r in (alerts, auth, card_terminal, staff, clients, catalog, calendar, callbacks, money, products, sms, stock_schedule, system, tax_report, taxes, utilities):
+    for r in (alerts, auth, card_terminal, staff, clients, catalog, calendar, callbacks, money, products, security, sms, stock_schedule, system, tax_report, taxes, utilities):
         app.include_router(r.router)
 
     app.mount("/static", StaticFiles(directory=STATIC), name="static")
@@ -161,6 +164,10 @@ def create_app(
         resp.headers.setdefault("X-Frame-Options", "DENY")
         resp.headers.setdefault("Referrer-Policy", "same-origin")
         path = request.url.path
+        if not path.startswith(("/docs", "/redoc", "/openapi.json")):
+            resp.headers.setdefault("Content-Security-Policy", CSP)
+        if request.headers.get("x-forwarded-proto") == "https" or request.url.scheme == "https":
+            resp.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
         if path.startswith("/api/"):
             resp.headers.setdefault("Cache-Control", "no-store")
         elif path.startswith("/static/") and resp.status_code in (200, 304):

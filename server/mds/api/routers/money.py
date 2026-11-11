@@ -9,7 +9,7 @@ from ...errors import Forbidden
 from ...models import Order, Role
 from ...services import analytics, expenses, idempotency, orders
 from ...services.common import Actor, get_or_404
-from ..deps import get_actor, get_session
+from ..deps import get_actor, get_session, require_finance_pin
 from ..schemas import ExpenseIn, ExpensePatch, MarkPaidIn, OrderCorrectionIn, OrderPhoneIn, PayoutIn, VoidOrderIn
 
 router = APIRouter(prefix="/api", tags=["finance"])
@@ -127,7 +127,7 @@ def list_payouts(master_id: int | None = None, actor: Actor = Depends(get_actor)
     return [orders.payout_public(p) for p in orders.list_payouts(s, actor, master_id=master_id)]
 
 
-@router.get("/finance/dashboard")
+@router.get("/finance/dashboard", dependencies=[Depends(require_finance_pin)])
 def dashboard(period: str | None = None, date_from: date | None = None, date_to: date | None = None,
               actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
     a, b = _range(period, date_from, date_to)
@@ -139,7 +139,7 @@ def dashboard(period: str | None = None, date_from: date | None = None, date_to:
     }
 
 
-@router.get("/finance/insights")
+@router.get("/finance/insights", dependencies=[Depends(require_finance_pin)])
 def finance_insights(period: str | None = None, date_from: date | None = None, date_to: date | None = None,
                      actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
     a, b = _range(period, date_from, date_to)

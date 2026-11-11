@@ -288,8 +288,12 @@ def verify_bot_pin(s: Session, user_id: int, pin: str, chat_id: int | None = Non
         if chat_id is not None:
             throttle.register_fail(s, "bot_chat", chat_id)
         return None
+    from .security_journal import log_login
+
     if not verify_password(str(pin).strip(), u.bot_pin_hash):
         audit(s, Actor.system(), "user", u.id, "bot_pin_failed", None, {"chat_id": chat_id})
+        log_login(s, user=u, username=u.username, ip=None, user_agent="telegram", method="bot_pin", success=False,
+                  detail=f"chat {chat_id}")
         throttle.register_fail(s, "bot_user", u.id)
         if chat_id is not None:
             throttle.register_fail(s, "bot_chat", chat_id)
@@ -302,4 +306,6 @@ def verify_bot_pin(s: Session, user_id: int, pin: str, chat_id: int | None = Non
             other.telegram_chat_id = None
         u.telegram_chat_id = chat_id
     audit(s, Actor.of(u), "user", u.id, "bot_login")
+    log_login(s, user=u, username=u.username, ip=None, user_agent="telegram", method="bot_pin", success=True,
+              detail=f"chat {chat_id}")
     return u

@@ -38,6 +38,7 @@ class Config:
     database_url: str = ""
     secret_key: str = ""
     token_ttl_hours: int = field(default_factory=lambda: int(_env("TOKEN_TTL_HOURS", "12")))
+    idle_minutes: int = field(default_factory=lambda: int(_env("IDLE_MINUTES", "30")))
     timezone: str = field(default_factory=lambda: _env("TIMEZONE", "Europe/Kyiv"))
     telegram_token: str = field(default_factory=lambda: _env("TELEGRAM_TOKEN", ""))
     backup_dir: Path | None = None
