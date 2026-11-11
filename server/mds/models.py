@@ -642,6 +642,19 @@ class ExpenseFile(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
 
 
+class AuthThrottle(Base):
+
+    __tablename__ = "auth_throttle"
+    __table_args__ = (UniqueConstraint("scope", "key", name="uq_auth_throttle_scope_key"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    scope: Mapped[str] = mapped_column(String(16))
+    key: Mapped[str] = mapped_column(String(64))
+    fails: Mapped[int] = mapped_column(Integer, default=0)
+    locked_until: Mapped[datetime | None] = mapped_column(DateTime)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
+
+
 class LoginChallenge(Base):
 
     __tablename__ = "login_challenges"

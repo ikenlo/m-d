@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import os
 from datetime import datetime
+
+os.environ["MDS_ENV"] = "test"
 
 import pytest
 

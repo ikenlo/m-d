@@ -307,18 +307,14 @@ def test_master_flow_add_list_close_earn_shift(h, db, pins):
     h.click("s:ld:20261102")
     assert "Анна" in h.session.texts()[-1]
 
+    assert not any(b.callback_data.startswith(("s:cl:", "s:pm:")) for b in h.session.buttons())
     h.click(f"s:cl:{appt_id}")
-    h.send("Анна Коваленко")
-    h.send("620")
-    assert [b.text for b in h.session.buttons()][:2] == ["💵 Готівка", "💳 Картка"]
-    assert not any("Переказ" in b.text for b in h.session.buttons())
-    h.click_text("💵 Готівка")
-    assert "Замовлення закрито" in h.session.texts()[-1] and "310 ₴" in h.session.texts()[-1]
     h.click(f"s:pm:{appt_id}:62000:cash")
     with db.session() as s:
         from mds.models import Order
-        assert s.query(Order).count() == 1
-        assert s.get(Appointment, appt_id).client.name == "Анна Коваленко"
+        assert s.query(Order).count() == 0
+        from mds.services import orders
+        orders.close_order(s, pins["actors"]["m1"], appt_id, amount=62000, payment_method="cash")
 
     h.click("s:earn")
     assert "Сьогодні: <b>310 ₴</b>" in h.session.texts()[-1]

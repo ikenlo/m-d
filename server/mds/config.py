@@ -10,6 +10,26 @@ def _env(name: str, default: str) -> str:
     return os.getenv(f"MDS_{name}", default)
 
 
+ENVIRONMENTS = ("production", "test", "dev")
+
+
+def current_env() -> str:
+    v = (os.getenv("MDS_ENV") or "production").strip().lower()
+    return v if v in ENVIRONMENTS else "production"
+
+
+def is_production() -> bool:
+    return current_env() == "production"
+
+
+def require_non_production(what: str) -> None:
+    if is_production():
+        raise RuntimeError(
+            f"{what}: заборонено в робочому середовищі (MDS_ENV=production). "
+            "Для тестового середовища задайте MDS_ENV=test."
+        )
+
+
 @dataclass
 class Config:
     data_dir: Path = field(

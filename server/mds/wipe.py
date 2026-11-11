@@ -17,6 +17,9 @@ WIPE_MARK_KEY = "data_wipe_mark"
 
 
 def wipe_data(db: Database, mark: str | None = None) -> dict:
+    from .config import require_non_production
+
+    require_non_production("Очищення даних")
     st: dict[str, int] = {}
     with db.session() as s:
         demo = list(s.scalars(select(m.User.id).where(m.User.username.like(DEMO_PREFIX + "%"))))

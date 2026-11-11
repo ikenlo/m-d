@@ -252,11 +252,24 @@ def set_bot_pin(s: Session, actor: Actor, user_id: int, pin: str) -> None:
     audit(s, actor, "user", u.id, "set_bot_pin")
 
 
-def check_staff_code(s: Session, code: str) -> bool:
+def bot_locked(s: Session, chat_id: int | None, user_id: int | None = None) -> bool:
+    from . import throttle
+
+    if chat_id is not None and throttle.is_locked(s, "bot_chat", chat_id):
+        return True
+    return user_id is not None and throttle.is_locked(s, "bot_user", user_id)
+
+
+def check_staff_code(s: Session, code: str, chat_id: int | None = None) -> bool:
     import hmac
 
+    from . import throttle
+
     expected = str(get_setting(s, "bot_staff_code"))
-    return hmac.compare_digest(str(code).strip(), expected)
+    ok = hmac.compare_digest(str(code).strip(), expected)
+    if not ok and chat_id is not None:
+        throttle.register_fail(s, "bot_chat", chat_id)
+    return ok
 
 
 def staff_for_bot(s: Session) -> list[User]:
@@ -267,12 +280,24 @@ def staff_for_bot(s: Session) -> list[User]:
 
 
 def verify_bot_pin(s: Session, user_id: int, pin: str, chat_id: int | None = None) -> User | None:
+    from . import throttle
+
+    if bot_locked(s, chat_id, user_id):
+        return None
     u = s.get(User, user_id)
     if u is None or not u.is_active or not u.bot_pin_hash:
+        if chat_id is not None:
+            throttle.register_fail(s, "bot_chat", chat_id)
         return None
     if not verify_password(str(pin).strip(), u.bot_pin_hash):
-        audit(s, Actor.system(), "user", u.id, "bot_pin_failed")
+        audit(s, Actor.system(), "user", u.id, "bot_pin_failed", None, {"chat_id": chat_id})
+        throttle.register_fail(s, "bot_user", u.id)
+        if chat_id is not None:
+            throttle.register_fail(s, "bot_chat", chat_id)
         return None
+    throttle.clear(s, "bot_user", u.id)
+    if chat_id is not None:
+        throttle.clear(s, "bot_chat", chat_id)
     if chat_id and u.telegram_chat_id != chat_id:
         for other in s.scalars(select(User).where(User.telegram_chat_id == chat_id)):
             other.telegram_chat_id = None

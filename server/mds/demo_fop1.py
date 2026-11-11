@@ -57,6 +57,9 @@ TAXES = {2025: (30280, 80000, 176000), 2026: (33280, 86470, 190234)}
 
 
 def purge_demo(db: Database) -> dict:
+    from .config import require_non_production
+
+    require_non_production("Демо-дані")
     with db.session() as s:
         du = list(s.scalars(select(User.id).where(User.username.like(DEMO_PREFIX + "%"))))
         appts = list(s.scalars(select(Appointment.id).where(Appointment.master_id.in_(du)))) if du else []
@@ -124,6 +127,9 @@ def _price_weight(svc: Service) -> float:
 
 def seed_fop1(db: Database, start: date = date(2025, 1, 1), end: date | None = None, *, year_target: int = 110_000_000,
               future_days: int = 21, seed: int = 2025, clients: int = 380) -> dict:
+    from .config import require_non_production
+
+    require_non_production("Демо-дані")
     from .services import bookings, catalog, expenses, notifications, orders, schedule, stock, users, utilities
     from .services.common import Actor, get_setting, update_settings
 

@@ -104,10 +104,16 @@ def bootstrap_catalog(cfg: Config) -> int:
 
 
 def cmd_start(cfg: Config, args) -> None:
+    from .config import require_non_production
+
+    mark = os.environ.get("MDS_WIPE_DATA", "").strip()
+    if mark:
+        require_non_production("MDS_WIPE_DATA")
+    if os.environ.get("MDS_DEMO_FOP1", "").strip():
+        require_non_production("MDS_DEMO_FOP1")
     upgrade(cfg.database_url)
     bootstrap_director(cfg)
     bootstrap_catalog(cfg)
-    mark = os.environ.get("MDS_WIPE_DATA", "").strip()
     if mark:
         from .wipe import already_wiped
 
@@ -129,12 +135,18 @@ def _wipe(cfg: Config, mark: str | None) -> None:
 
 
 def cmd_wipe_data(cfg: Config, args) -> None:
+    from .config import require_non_production
+
+    require_non_production("wipe-data")
     if not args.yes:
         raise SystemExit("Незворотна дія. Додайте --yes, щоб підтвердити (резервна копія буде зроблена).")
     _wipe(cfg, None)
 
 
 def cmd_demo_fop1(cfg: Config, _args) -> None:
+    from .config import require_non_production
+
+    require_non_production("demo-fop1")
     from sqlalchemy import select
 
     from .demo_fop1 import FOP_LOGIN, purge_demo, seed_fop1

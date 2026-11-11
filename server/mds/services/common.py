@@ -281,6 +281,10 @@ def update_settings(s: Session, actor: Actor, data: dict[str, Any]) -> dict[str,
 
             if value not in MODES:
                 raise ValidationError("Режим «Термінала»: вимкнено, імітація або реальний")
+            from .card_terminal import AUTO_CLOSE_ENABLED
+
+            if value == "live" and not AUTO_CLOSE_ENABLED:
+                raise ValidationError("Автоматичні оплати «Терміналом» — з версії 0.4.0. Зараз: після оплати оберіть «Картка»")
             if value == "live" and not configured():
                 raise ValidationError("Для реальних оплат задайте ключі «Термінала» на сервері (MDS_PRIVAT_TERMINAL_*)")
         if key.startswith("fop_") and key != "fop_income_limit":
