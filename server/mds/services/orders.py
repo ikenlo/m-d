@@ -307,6 +307,9 @@ def close_order(
         for it in products:
             sell(s, actor, o.id, int(it["product_id"]), it.get("qty", 1))
     _alert_salon_negative(s, o)
+    from . import alerts
+
+    alerts.new_order(s, o, actor)
     return o
 
 

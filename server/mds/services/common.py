@@ -133,6 +133,11 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "favorite_master_visits": 3,
     "reminders_enabled": True,
     "twofa_roles": ["director"],
+    "alerts_disabled": [],
+    "alerts_digest_hour": 9,
+    "vacation_mode_active": False,
+    "vacation_mode_expires_at": None,
+    "jobs_daily_last": None,
     "stock_auto_writeoff_milli": 100,
     "antispam_whitelist": ["+380687166910"],
     "sms_enabled": False,
@@ -177,6 +182,9 @@ DEFAULT_SETTINGS: dict[str, Any] = {
 }
 
 
+INTERNAL_SETTINGS = ("vacation_mode_active", "vacation_mode_expires_at", "jobs_daily_last")
+
+
 def get_setting(s: Session, key: str) -> Any:
     row = s.get(Setting, key)
     if row is None:
@@ -217,6 +225,15 @@ def update_settings(s: Session, actor: Actor, data: dict[str, Any]) -> dict[str,
     for key, value in data.items():
         if key not in DEFAULT_SETTINGS:
             raise ValidationError(f"Невідоме налаштування: {key}")
+        if key in INTERNAL_SETTINGS:
+            raise ValidationError(f"{key}: змінюється окремою дією, не через налаштування")
+        if key == "alerts_disabled":
+            from .alerts import IMPORTANT
+
+            if not (isinstance(value, list) and all(k in IMPORTANT for k in value)):
+                raise ValidationError("Вимкнути можна лише важливі сповіщення")
+        if key == "alerts_digest_hour" and not (isinstance(value, int) and not isinstance(value, bool) and 0 <= value <= 23):
+            raise ValidationError("Година дайджесту — від 0 до 23")
         if key == "schedule":
             _validate_schedule(value)
         if key in ("slot_step_min", "booking_horizon_days", "booking_min_lead_min") and not (

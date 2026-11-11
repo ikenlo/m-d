@@ -646,6 +646,27 @@ def build_staff_router() -> Router:
             return
         await calls(cb, db, staff)
 
+    @router.callback_query(F.data.startswith("s:pr:"))
+    async def permission_decision(cb: CallbackQuery, db: Database, staff: StaffSessions):
+        from ..services import vacation
+
+        _, _, decision, rid = cb.data.split(":")
+        try:
+            with db.session() as s:
+                u = _director(s, staff, cb.message.chat.id)
+                if not u:
+                    await cb.answer(EXPIRED, show_alert=True)
+                    return
+                fn = vacation.approve if decision == "ok" else vacation.reject
+                r = fn(s, Actor.of(u), int(rid))
+                text = (f"{'✅ Дозволено й виконано' if r.status == 'approved' else '⛔ Відхилено'}: "
+                        f"{v.e(vacation.ACTIONS.get(r.action, r.action))} (запит #{r.id})")
+        except DomainError as e:
+            await cb.answer(e.message, show_alert=True)
+            return
+        await cb.message.edit_text(text)
+        await cb.answer()
+
     @router.callback_query(F.data == "s:pay")
     async def payouts(cb: CallbackQuery, db: Database, staff: StaffSessions):
         with db.session() as s:

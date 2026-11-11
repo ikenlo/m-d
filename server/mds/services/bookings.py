@@ -422,7 +422,12 @@ def set_status(
         a.cancel_reason = reason or ("Скасовано клієнтом" if actor.role == "client" else None)
     s.flush()
     audit(s, actor, "appointment", a.id, status, before, _snapshot(a), reason)
+    from . import alerts
+
+    if status == ApptStatus.NO_SHOW:
+        alerts.no_show(s, a)
     if status == ApptStatus.CANCELLED:
+        alerts.appointment_cancelled(s, a, actor)
         notifications.notify_appointment(s, a, "❌ Запис скасовано", actor.user_id)
         if actor.role != "client" and notify_client:
             notifications.enqueue(

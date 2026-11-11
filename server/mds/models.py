@@ -545,10 +545,19 @@ class CallbackRequest(Base):
 class Notification(Base):
 
     __tablename__ = "notifications"
-    __table_args__ = (Index("ix_notif_pending", "sent_at"),)
+    __table_args__ = (
+        Index("ix_notif_pending", "sent_at"),
+        Index("ix_notif_user", "user_id", "read_at"),
+        UniqueConstraint("dedupe_key", "user_id", name="uq_notif_dedupe_user"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    chat_id: Mapped[int] = mapped_column(BigInteger)
+    chat_id: Mapped[int | None] = mapped_column(BigInteger)
+    user_id: Mapped[int | None] = mapped_column(Integer)
+    kind: Mapped[str | None] = mapped_column(String(32))
+    level: Mapped[str | None] = mapped_column(String(12))
+    group_key: Mapped[str | None] = mapped_column(String(64), index=True)
+    dedupe_key: Mapped[str | None] = mapped_column(String(96))
     text: Mapped[str] = mapped_column(Text)
     buttons: Mapped[list | None] = mapped_column(JSON)
     photo_path: Mapped[str | None] = mapped_column(String(255))
@@ -556,6 +565,28 @@ class Notification(Base):
     sent_at: Mapped[datetime | None] = mapped_column(DateTime)
     attempts: Mapped[int] = mapped_column(Integer, default=0)
     last_error: Mapped[str | None] = mapped_column(Text)
+    digest_pending: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
+    read_at: Mapped[datetime | None] = mapped_column(DateTime)
+    handled_at: Mapped[datetime | None] = mapped_column(DateTime)
+    handled_by: Mapped[int | None] = mapped_column(Integer)
+
+
+class PermissionRequest(Base):
+
+    __tablename__ = "permission_requests"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", name="fk_permission_requests_user_id"), index=True)
+    action: Mapped[str] = mapped_column(String(32))
+    payload_json: Mapped[dict | None] = mapped_column(JSON)
+    status: Mapped[str] = mapped_column(String(16), default="pending", index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime)
+    resolved_by: Mapped[int | None] = mapped_column(Integer)
+    note: Mapped[str | None] = mapped_column(Text)
+    result_json: Mapped[dict | None] = mapped_column(JSON)
+
+    user: Mapped[User] = relationship()
 
 
 __all__ = [

@@ -146,8 +146,11 @@ def seed_fop1(db: Database, start: date = date(2025, 1, 1), end: date | None = N
         svc = {i: (x.duration_min, x.price, _price_weight(x), (x.category or "").lower()) for i, x in services.items()}
 
     R = random.Random(seed)
-    real_enqueue = notifications.enqueue
+    from .services import alerts
+
+    real_enqueue, real_alert = notifications.enqueue, alerts.raise_alert
     notifications.enqueue = lambda *a, **k: False
+    alerts.raise_alert = lambda *a, **k: 0
     st = {"orders": 0, "cancelled": 0, "no_show": 0, "expenses": 0, "stock_moves": 0, "readings": 0, "future": 0,
           "income_by_year": {}}
     try:
@@ -313,7 +316,7 @@ def seed_fop1(db: Database, start: date = date(2025, 1, 1), end: date | None = N
                         st["future"] += 1
                     t += timedelta(minutes=dur + 30)
     finally:
-        notifications.enqueue = real_enqueue
+        notifications.enqueue, alerts.raise_alert = real_enqueue, real_alert
         clock.set_now(None)
     st["income_by_year"] = {y: v // 100 for y, v in st["income_by_year"].items()}
     log.info("Демо «ФОП 1 група» готово: %s", st)
