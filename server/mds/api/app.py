@@ -60,6 +60,9 @@ async def _reminders_loop(db: Database) -> None:
                     sms_center.refresh_statuses(s)
                 if tick % 12 == 0:
                     taxes.tax_reminders(s)
+                    from ..services import jobs
+
+                    jobs.hourly(s)
             if n:
                 log.info("Нагадувань поставлено в чергу: %s", n)
         except Exception:  # noqa: BLE001

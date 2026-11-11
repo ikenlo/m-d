@@ -46,6 +46,14 @@ class Actor:
             raise Forbidden("Недостатньо прав для цієї дії")
 
 
+def check_version(entity: Any, expected: int | None, public: Any = None) -> None:
+    if expected is None or int(expected) == entity.version:
+        return
+    from ..errors import VersionConflict
+
+    raise VersionConflict(entity.version, public(entity) if public else None)
+
+
 def _jsonable(v: Any) -> Any:
     if isinstance(v, (datetime, date)):
         return v.isoformat()

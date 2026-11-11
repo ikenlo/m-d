@@ -29,6 +29,10 @@ from .common import Actor, audit, get_or_404, get_setting, ledger
 from .finance import compute_split
 from .users import master_rate
 
+MASTER_HIDDEN_ORDER = ("salon_earning",)
+MASTER_HIDDEN_REPORT = ("revenue", "materials_cost", "salon_earning", "price_total", "discounts", "products_revenue",
+                        "by_payment", "services")
+
 
 MISSING_LABELS = {"materials": "матеріали", "phone": "телефон клієнта"}
 
@@ -49,6 +53,17 @@ def master_can_edit(o: Order) -> bool:
 def _touch(o: Order, actor: Actor) -> None:
     o.edited_by = actor.user_id
     o.edited_at = clock.now()
+
+
+def order_for_master(d: dict) -> dict:
+    return {k: v for k, v in d.items() if k not in MASTER_HIDDEN_ORDER}
+
+
+def report_for_master(r: dict) -> dict:
+    out = {k: v for k, v in r.items() if k not in MASTER_HIDDEN_REPORT}
+    if "orders" in out:
+        out["orders"] = [order_for_master(o) for o in out["orders"]]
+    return out
 
 
 def order_public(o: Order) -> dict:
@@ -308,10 +323,9 @@ def _check_edit(actor: Actor, o: Order) -> None:
 
 
 def _check_version(o, expected: int | None) -> None:
-    if expected is not None and int(expected) != o.version:
-        from ..errors import VersionConflict
+    from .common import check_version
 
-        raise VersionConflict(o.version)
+    check_version(o, expected, order_public)
 
 
 def _repost(s: Session, actor: Actor, o: Order, kind: str, reason: str, **details) -> None:
@@ -619,7 +633,7 @@ def shift_payouts(s: Session, shift_ids: list[int]) -> dict:
     return out
 
 
-def shift_public(s: Session, sh: Shift, payouts: dict | None = None) -> dict:
+def shift_public(s: Session, sh: Shift, payouts: dict | None = None, for_master: bool = False) -> dict:
     if payouts is None:
         payouts = shift_payouts(s, [sh.id])
     payout = payouts.get(("shift", sh.id))
@@ -633,7 +647,9 @@ def shift_public(s: Session, sh: Shift, payouts: dict | None = None) -> dict:
         "opened_at": sh.opened_at.isoformat(),
         "closed_at": sh.closed_at.isoformat() if sh.closed_at else None,
         "payout_due": sh.payout_due if sh.payout_due is not None else report["payout_due"],
-        "report": report,
+        "report": report_for_master(report) if for_master else report,
+        "view": "master" if for_master else "director",
+        "version": sh.version,
         "payout": payout_public(payout) if payout else None,
         "cash_payout": payout_public(cash_payout) if cash_payout else None,
     }
@@ -723,6 +739,7 @@ def payout_public(p: Payout) -> dict:
         "method": p.method,
         "note": p.note,
         "from_till": p.cash_shift_id is not None,
+        "tag": p.tag,
         "paid_at": p.paid_at.isoformat(),
     }
 
@@ -736,10 +753,17 @@ def confirm_payout(
     shift_id: int | None = None,
     method: str = PaymentMethod.CASH,
     note: str | None = None,
+    tag: str | None = None,
 ) -> Payout:
+    from ..models import PayoutTag
+
     actor.require(Role.DIRECTOR)
     if amount <= 0:
         raise ValidationError("Сума виплати має бути більшою за 0")
+    if tag is not None and (tag not in PayoutTag.ALL or tag == PayoutTag.PRODUCT_BONUS):
+        raise ValidationError("Тег виплати: advance, bonus або correction_overpayment (бонус за товари — окремою кнопкою)")
+    if tag is not None and shift_id is not None:
+        raise ValidationError("Тег — лише для довільної виплати (без зміни)")
     if method not in PaymentMethod.ALL:
         raise ValidationError("Невідомий спосіб виплати")
     master: User = get_or_404(s, User, master_id, "Майстра")
@@ -752,7 +776,7 @@ def confirm_payout(
         )
         if res.rowcount != 1:
             raise Conflict("Зміна вже виплачена або ще не закрита", code="already_paid")
-    p = Payout(master_id=master.id, shift_id=shift_id, amount=amount, method=method, note=note,
+    p = Payout(master_id=master.id, shift_id=shift_id, amount=amount, method=method, note=note, tag=tag,
                paid_at=clock.now(), confirmed_by=actor.user_id or 0)
     s.add(p)
     try:
@@ -760,7 +784,7 @@ def confirm_payout(
     except IntegrityError:
         raise Conflict("Зміна вже виплачена", code="already_paid") from None
     ledger(s, actor, "payout", "payout", p.id, master_id=master.id, amount=amount, master_amount=-amount,
-           details={"shift_id": shift_id, "method": method, "note": note})
+           details={"shift_id": shift_id, "method": method, "note": note, "tag": tag})
     audit(s, actor, "payout", p.id, "create", None, payout_public(p))
     notifications.enqueue(s, master.telegram_chat_id, f"💸 Виплату підтверджено: {fmt(amount)}")
     return p

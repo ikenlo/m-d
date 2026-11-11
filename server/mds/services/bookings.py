@@ -31,6 +31,9 @@ def appt_public(a: Appointment) -> dict:
         "cancel_reason": a.cancel_reason,
         "awaiting_client": bool(a.awaiting_client),
         "order_id": a.order.id if a.order else None,
+        "price_from": bool(a.service.price_from),
+        "needs_materials": bool(a.service.needs_materials),
+        "version": a.version,
     }
 
 

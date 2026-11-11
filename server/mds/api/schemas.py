@@ -156,11 +156,13 @@ class AppointmentPatch(BaseModel):
     price: int | None = None
     comment: str | None = None
     confirm_off_hours: bool = False
+    version: int | None = None
 
 
 class StatusIn(BaseModel):
     status: str
     reason: str | None = None
+    version: int | None = None
 
 
 class MaterialLine(BaseModel):
@@ -217,6 +219,7 @@ class PayoutIn(BaseModel):
     shift_id: int | None = None
     method: str = "cash"
     note: str | None = None
+    tag: str | None = None
 
 
 class ExpenseIn(BaseModel):
@@ -232,3 +235,4 @@ class ExpensePatch(BaseModel):
     spent_on: date | None = None
     description: str | None = None
     reason: str | None = None
+    version: int | None = None

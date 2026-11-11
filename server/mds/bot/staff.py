@@ -555,14 +555,17 @@ def build_staff_router() -> Router:
                     await cb.answer(EXPIRED, show_alert=True)
                     return
                 r = orders.close_shift(s, Actor.of(u), u.id).report
+                is_dir = u.role == Role.DIRECTOR
         except DomainError as e:
             await cb.answer(e.message, show_alert=True)
             return
-        lines = "\n".join(f"• {v.e(x['service'])} × {x['count']} — {fmt(x['revenue'])}" for x in r["services"])
+        lines = "\n".join(f"• {v.e(x['service'])} × {x['count']}" + (f" — {fmt(x['revenue'])}" if is_dir else "")
+                          for x in r["services"])
         await cb.message.edit_text(
             "📋 <b>Звіт зміни</b>\n"
             f"Клієнтів: {r['clients_count']} · послуг: {r['services_count']} · скасувань: {r['cancellations']}\n"
-            f"{lines}\n\nВиручка: <b>{fmt(r['revenue'])}</b>\nВаш заробіток: <b>{fmt(r['master_earning'])}</b>\n"
+            f"{lines}\n\n" + (f"Виручка: <b>{fmt(r['revenue'])}</b>\n" if is_dir else "")
+            + f"Ваш заробіток: <b>{fmt(r['master_earning'])}</b>\n"
             + _cash_text(r) + "\n\nЗвіт надіслано директору.",
             reply_markup=v.kb([[("☰ Меню", "s:menu")]]),
         )

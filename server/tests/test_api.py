@@ -77,7 +77,7 @@ def test_full_workday_flow(client):
     r = client.post("/api/shifts/close", headers=m1)
     assert r.status_code == 200, r.text
     shift = r.json()
-    assert shift["report"]["revenue"] == 65000 and shift["payout_due"] == 30000
+    assert "revenue" not in shift["report"] and shift["payout_due"] == 30000 and shift["view"] == "master"
 
     pending = client.get("/api/shifts?status=closed", headers=d).json()
     assert [x["id"] for x in pending] == [shift["id"]]
