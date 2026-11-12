@@ -1,4 +1,4 @@
-const CACHE = "mds-shell-v67";
+const CACHE = "mds-shell-v68";
 const SHELL = ["/", "/static/style.css", "/static/app.js", "/static/icon.svg", "/static/manifest.webmanifest"];
 
 self.addEventListener("install", (e) => {

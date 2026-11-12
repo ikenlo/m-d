@@ -57,6 +57,11 @@ async function login(page, user, pass) {
         if (res.hscroll) fail(where, `горизонтальна прокрутка сторінки: ${res.hscroll}px > ширини`);
         if (res.plusOff !== undefined && Math.abs(res.plusOff) > 2) fail(where, `«+» не по центру (зсув ${res.plusOff}px)`);
         if (res.errorState) fail(where, "замість сторінки помилка: " + res.errorState);
+        if (r === "logic") {
+          await page.waitForTimeout(2500);
+          const nodes = await page.evaluate(() => [...document.querySelectorAll(".mermaid-box svg")].map((s) => s.querySelectorAll("g.node").length));
+          if (nodes.length !== 3 || nodes.some((n) => n < 5)) fail(where, `схеми «Логіки системи» не побудовані: ${JSON.stringify(nodes)}`);
+        }
         await page.screenshot({ path: path.join(OUT, `${user}-${mode.name}-${r}.png`), fullPage: mode.name === "desk" ? false : true });
       }
       await ctx.close();

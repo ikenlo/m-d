@@ -1341,3 +1341,14 @@ tbody tr:hover td, table tr:not(:first-child):hover td { background: color-mix(i
 .cl-search > .cl-top span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .search-pop > .search-box { min-width: 0; }
 .search-pop > select { flex: 0 1 auto; width: auto !important; max-width: 36%; min-width: 0; font-size: var(--fs-sm) !important; }
+
+.icon-btn.bell { position: relative; }
+.bell-badge { position: absolute; top: 2px; right: 2px; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px;
+  background: var(--danger, #b3261e); color: #fff; font-size: 10px; line-height: 16px; font-weight: 700; text-align: center; }
+.bell-badge.hidden { display: none; }
+
+/* Календар (канон 0.3.0, Q-9): зайнятий слот — темно-червоне напівпрозоре тло, статус — кольорова смужка зліва */
+.cal-ev, .cal-ev.st-pending, .cal-ev.st-confirmed, .cal-ev.st-in_progress, .cal-ev.st-completed {
+  background: rgba(122, 22, 30, .16); border-color: rgba(122, 22, 30, .30); }
+.cal-ev .ev-svc .i { width: 12px; height: 12px; vertical-align: -1px; }
+:root[data-theme="dark"] .cal-ev, :root[data-theme="dark"] .cal-ev[class*="st-"] { background: rgba(190, 60, 70, .22); }
