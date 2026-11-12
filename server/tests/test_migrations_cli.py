@@ -54,3 +54,26 @@ def test_hosting_bootstrap_director_from_env(tmp_path, monkeypatch):
     with Database(cfg.database_url).session() as s:
         u = s.query(User).one()
         assert (u.username, u.full_name, u.role) == ("margaryta", "Маргарита", "director")
+
+
+def test_upgrade_from_pr80_api_keys_state(tmp_path):
+    """База з main 0.2.1 + PR #80: ревізія '0025' = api_keys, auth_throttle немає."""
+    from sqlalchemy import inspect, text
+
+    url = f"sqlite:///{tmp_path / 'pr80.db'}"
+    upgrade(url, "0025")
+    engine = create_engine(url)
+    with engine.begin() as conn:
+        conn.execute(text("DROP TABLE auth_throttle"))
+        conn.execute(text("CREATE TABLE api_keys (id INTEGER PRIMARY KEY, name VARCHAR(80), prefix VARCHAR(16), "
+                          "key_hash VARCHAR(64) UNIQUE, scope VARCHAR(8), created_by INTEGER REFERENCES users(id), "
+                          "created_at DATETIME, last_used_at DATETIME, revoked_at DATETIME, revoked_by INTEGER)"))
+        conn.execute(text("INSERT INTO api_keys (name, prefix, key_hash, scope) VALUES ('m', 'mds_x', 'h', 'write')"))
+    upgrade(url)
+    engine = create_engine(url)
+    tables = set(inspect(engine).get_table_names())
+    assert "auth_throttle" in tables and "api_keys" not in tables
+    with engine.connect() as conn:
+        assert conn.execute(text("SELECT version_num FROM alembic_version")).scalar() == "0031"
+        diff = compare_metadata(MigrationContext.configure(conn, opts={"compare_type": True}), Base.metadata)
+    assert diff == []
