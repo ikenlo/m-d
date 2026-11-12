@@ -18,7 +18,7 @@ from ..config import Config
 from ..db import Database
 from ..errors import DomainError, VersionConflict
 from ..services import backup
-from .routers import alerts, auth, calendar, card_terminal, callbacks, catalog, clients, ext_api, money, products, security, sms, staff, stock_schedule, system, tax_report, taxes, utilities, webhooks
+from .routers import alerts, auth, calendar, card_terminal, callbacks, catalog, checkbox, clients, ext_api, money, products, security, sms, staff, stock_schedule, system, tax_report, taxes, utilities, webhooks
 
 log = logging.getLogger("mds")
 STATIC = Path(__file__).resolve().parent.parent / "web" / "static"
@@ -46,6 +46,19 @@ async def _backup_loop(cfg: Config, db: Database) -> None:
             log.exception("Помилка резервного копіювання")
             await asyncio.to_thread(backup.alert_local_failure, db, str(e))
         await asyncio.sleep(max(cfg.backup_interval_hours, 1) * 3600)
+
+
+async def _fiscal_loop(cfg: Config, db: Database) -> None:
+    from ..services import checkbox
+
+    while True:
+        try:
+            n = await asyncio.to_thread(checkbox.retry_pending, db, cfg)
+            if n:
+                log.info("Checkbox: створено відкладених чеків: %s", n)
+        except Exception:  # noqa: BLE001
+            log.exception("Помилка черги чеків Checkbox")
+        await asyncio.sleep(60)
 
 
 async def _reminders_loop(db: Database) -> None:
@@ -92,6 +105,7 @@ def create_app(
         if background:
             tasks.append(asyncio.create_task(_backup_loop(cfg, db)))
             tasks.append(asyncio.create_task(_reminders_loop(db)))
+            tasks.append(asyncio.create_task(_fiscal_loop(cfg, db)))
         if with_bot:
             if cfg.telegram_token:
                 from ..bot.runner import run_bot
@@ -128,7 +142,7 @@ def create_app(
             {"error": "validation", "detail": f"Невірні дані: {field} — {first.get('msg', '')}"}, status_code=422
         )
 
-    for r in (alerts, auth, card_terminal, staff, clients, catalog, calendar, callbacks, ext_api, money, products, security, sms, stock_schedule, system, tax_report, taxes, utilities, webhooks):
+    for r in (alerts, auth, card_terminal, checkbox, staff, clients, catalog, calendar, callbacks, ext_api, money, products, security, sms, stock_schedule, system, tax_report, taxes, utilities, webhooks):
         app.include_router(r.router)
 
     app.mount("/static", StaticFiles(directory=STATIC), name="static")

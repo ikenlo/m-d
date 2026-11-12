@@ -359,6 +359,7 @@ class Order(Base):
     revision: Mapped[int] = mapped_column(Integer, default=1)
     edited_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
     edited_at: Mapped[datetime | None] = mapped_column(DateTime)
+    fiscal_receipt_id: Mapped[str | None] = mapped_column(String(36))
 
     appointment: Mapped[Appointment | None] = relationship(back_populates="order")
     shift: Mapped[Shift] = relationship(back_populates="orders")
@@ -893,3 +894,28 @@ class WebhookQueue(Base):
     received_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
     processing_started_at: Mapped[datetime | None] = mapped_column(DateTime)
     processed_at: Mapped[datetime | None] = mapped_column(DateTime)
+
+
+class FiscalReceipt(Base):
+
+    __tablename__ = "fiscal_receipts"
+    __table_args__ = (Index("ix_fiscal_receipt_status", "status"), Index("ix_fiscal_receipt_order", "order_id"),
+                      UniqueConstraint("order_id", "kind", name="uq_fiscal_receipt_order_kind"))
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    uuid: Mapped[str] = mapped_column(String(36), unique=True)
+    order_id: Mapped[int] = mapped_column(ForeignKey("orders.id", name="fk_fiscal_receipts_order_id"))
+    kind: Mapped[str] = mapped_column(String(8))
+    payment_type: Mapped[str] = mapped_column(String(16))
+    amount: Mapped[int] = mapped_column(Integer)
+    related_uuid: Mapped[str | None] = mapped_column(String(36))
+    status: Mapped[str] = mapped_column(String(16), default="pending")
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    last_error: Mapped[str | None] = mapped_column(String(255))
+    fiscal_code: Mapped[str | None] = mapped_column(String(64))
+    fiscal_date: Mapped[str | None] = mapped_column(String(40))
+    tax_url: Mapped[str | None] = mapped_column(String(255))
+    created_by: Mapped[int | None] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
+    done_at: Mapped[datetime | None] = mapped_column(DateTime)

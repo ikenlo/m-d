@@ -173,6 +173,13 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "pos_terminal_enabled": False,
     "pos_terminal_ip": "",
     "pos_terminal_port": 2000,
+    "checkbox_enabled": False,
+    "checkbox_printer_type": "none",
+    "checkbox_printer_ip": "",
+    "checkbox_printer_port": 9100,
+    "checkbox_printer_bt_name": "",
+    "checkbox_printer_width": 32,
+    "checkbox_printer_codepage": "cp866",
     "fop_tin": "",
     "fop_name": "",
     "fop_address": "",
@@ -193,7 +200,9 @@ DEFAULT_SETTINGS: dict[str, Any] = {
 
 
 INTERNAL_SETTINGS = ("vacation_mode_active", "vacation_mode_expires_at", "jobs_daily_last",
-                     "pos_terminal_enabled", "pos_terminal_ip", "pos_terminal_port")
+                     "pos_terminal_enabled", "pos_terminal_ip", "pos_terminal_port",
+                     "checkbox_enabled", "checkbox_printer_type", "checkbox_printer_ip", "checkbox_printer_port",
+                     "checkbox_printer_bt_name", "checkbox_printer_width", "checkbox_printer_codepage")
 
 
 def get_setting(s: Session, key: str) -> Any:

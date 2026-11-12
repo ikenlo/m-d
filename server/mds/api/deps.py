@@ -39,6 +39,12 @@ def get_actor(u: User = Depends(get_user)) -> Actor:
     return Actor.of(u)
 
 
+def actor_short(request: Request, creds: HTTPAuthorizationCredentials | None = Depends(bearer)) -> Actor:
+    # Окрема коротка сесія для запитів, що чекають зовнішній сервіс (термінал, Checkbox), щоб не тримати БД.
+    with request.app.state.db.session() as s:
+        return Actor.of(get_user(request, creds, s))
+
+
 def require_finance_pin(request: Request, u: User = Depends(get_user), s: Session = Depends(get_session)) -> User:
     from ..services.security_journal import finance_pin_required
 

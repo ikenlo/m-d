@@ -83,6 +83,7 @@ tests/             pytest
 | `utilities.py` | лічильник електроенергії, генератор (розподілу на майстрів немає) |
 | `taxes.py`, `tax_report.py`, `tax_declaration.py` | податки ФОП, зарплата (§7), звіт доходу, XML-декларація F0103407 |
 | `client_base.py` | клієнтська база (§7) |
+| `checkbox.py` | Checkbox (ПРРО): черга фіскальних чеків, клієнт API, ESC/POS для друку ([CHECKBOX.md](CHECKBOX.md)) |
 | `card_terminal.py`, `card_terminal_providers.py`, `terminal.py` | «Термінал» ПриватБанку (§7); у 0.3.0 лише вручну. `terminal.py` — POS-термінал (ECR по TCP, [TERMINAL.md](TERMINAL.md)) |
 | `users.py`, `twofa.py` | акаунти, вхід і блокування, PIN бота, 2FA |
 | `notifications.py` | черга Telegram-повідомлень (outbox) |

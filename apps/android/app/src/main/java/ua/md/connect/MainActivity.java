@@ -1,12 +1,21 @@
 package ua.md.connect;
 
+import android.Manifest;
 import android.annotation.SuppressLint;
 import android.app.Activity;
+import android.bluetooth.BluetoothAdapter;
+import android.bluetooth.BluetoothClass;
+import android.bluetooth.BluetoothDevice;
+import android.bluetooth.BluetoothManager;
+import android.bluetooth.BluetoothSocket;
 import android.content.ActivityNotFoundException;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.graphics.Color;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
+import android.util.Base64;
 import android.view.View;
 import android.view.Window;
 import android.webkit.CookieManager;
@@ -21,10 +30,22 @@ import android.webkit.WebViewClient;
 
 import org.json.JSONObject;
 
+import java.io.OutputStream;
+import java.net.Inet4Address;
+import java.net.InetAddress;
+import java.net.InetSocketAddress;
+import java.net.Socket;
+import java.util.Locale;
+import java.util.Set;
+import java.util.UUID;
+
 public class MainActivity extends Activity {
     private static final int FILE_REQUEST = 1001;
     private static final int TERMINAL_REQUEST = 1002;
     private static final String TERMINAL_PACKAGE = "ua.privatbank.pterminal";
+    private static final int BT_PERMISSION_REQUEST = 1003;
+    private static final UUID SPP_UUID = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB");
+    private static final int MAX_PRINT_BYTES = 256 * 1024;
     private WebView web;
     private ValueCallback<Uri[]> fileCallback;
     private String appHost;
@@ -165,6 +186,158 @@ public class MainActivity extends Activity {
                 }
             });
         }
+
+        @JavascriptInterface
+        public void printWifi(final String ip, final int port, final String base64Data) {
+            runOnUiThread(() -> {
+                if (!pageIsOurs()) {
+                    return;
+                }
+                final byte[] data = decode(base64Data);
+                if (data == null) {
+                    deliverPrintResult(false, "Немає даних для друку");
+                    return;
+                }
+                new Thread(() -> printOverWifi(ip, port, data), "mds-print-wifi").start();
+            });
+        }
+
+        @JavascriptInterface
+        public void printBluetooth(final String base64Data, final String deviceName) {
+            runOnUiThread(() -> {
+                if (!pageIsOurs()) {
+                    return;
+                }
+                final byte[] data = decode(base64Data);
+                if (data == null) {
+                    deliverPrintResult(false, "Немає даних для друку");
+                    return;
+                }
+                if (Build.VERSION.SDK_INT >= 31
+                        && checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) {
+                    requestPermissions(new String[]{Manifest.permission.BLUETOOTH_CONNECT}, BT_PERMISSION_REQUEST);
+                    deliverPrintResult(false, "Дозвольте доступ до Bluetooth і натисніть «Друк» ще раз");
+                    return;
+                }
+                new Thread(() -> printOverBluetooth(deviceName, data), "mds-print-bt").start();
+            });
+        }
+    }
+
+    private boolean pageIsOurs() {
+        return web != null && web.getUrl() != null && isOurs(Uri.parse(web.getUrl()));
+    }
+
+    private static byte[] decode(String base64Data) {
+        if (base64Data == null || base64Data.isEmpty() || base64Data.length() > MAX_PRINT_BYTES * 2) {
+            return null;
+        }
+        try {
+            byte[] b = Base64.decode(base64Data, Base64.DEFAULT);
+            return b.length == 0 || b.length > MAX_PRINT_BYTES ? null : b;
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
+    }
+
+    // Лише принтер у локальній мережі салону (10.x, 172.16–31.x, 192.168.x) — сторінка не може слати дані будь-куди.
+    private void printOverWifi(String ip, int port, byte[] data) {
+        InetAddress addr;
+        try {
+            addr = InetAddress.getByName(ip == null ? "" : ip.trim());
+        } catch (Exception e) {
+            deliverPrintResult(false, "Невірна IP-адреса принтера");
+            return;
+        }
+        if (!(addr instanceof Inet4Address) || !addr.isSiteLocalAddress() || port < 1 || port > 65535) {
+            deliverPrintResult(false, "Принтер має бути в локальній мережі салону");
+            return;
+        }
+        try (Socket sock = new Socket()) {
+            sock.connect(new InetSocketAddress(addr, port), 5000);
+            sock.setSoTimeout(10000);
+            OutputStream out = sock.getOutputStream();
+            out.write(data);
+            out.flush();
+            deliverPrintResult(true, "Чек надруковано");
+        } catch (Exception e) {
+            deliverPrintResult(false, "Принтер Wi-Fi недоступний (" + ip + ":" + port + ")");
+        }
+    }
+
+    @SuppressLint("MissingPermission")
+    private void printOverBluetooth(String deviceName, byte[] data) {
+        BluetoothManager bm = (BluetoothManager) getSystemService(BLUETOOTH_SERVICE);
+        BluetoothAdapter adapter = bm == null ? null : bm.getAdapter();
+        if (adapter == null) {
+            deliverPrintResult(false, "На планшеті немає Bluetooth");
+            return;
+        }
+        if (!adapter.isEnabled()) {
+            deliverPrintResult(false, "Увімкніть Bluetooth на планшеті");
+            return;
+        }
+        BluetoothDevice device = findPrinter(adapter.getBondedDevices(), deviceName);
+        if (device == null) {
+            deliverPrintResult(false, "Спарений принтер не знайдено — спаруйте його в налаштуваннях Bluetooth");
+            return;
+        }
+        BluetoothSocket sock = null;
+        try {
+            sock = device.createRfcommSocketToServiceRecord(SPP_UUID);
+            sock.connect();
+            OutputStream out = sock.getOutputStream();
+            out.write(data);
+            out.flush();
+            Thread.sleep(300);
+            deliverPrintResult(true, "Чек надруковано");
+        } catch (Exception e) {
+            deliverPrintResult(false, "Принтер Bluetooth недоступний (" + device.getName() + ")");
+        } finally {
+            if (sock != null) {
+                try {
+                    sock.close();
+                } catch (Exception ignored) {
+                }
+            }
+        }
+    }
+
+    @SuppressLint("MissingPermission")
+    private static BluetoothDevice findPrinter(Set<BluetoothDevice> bonded, String wanted) {
+        if (bonded == null || bonded.isEmpty()) {
+            return null;
+        }
+        String want = wanted == null ? "" : wanted.trim().toLowerCase(Locale.ROOT);
+        BluetoothDevice guess = null;
+        for (BluetoothDevice d : bonded) {
+            String name = d.getName() == null ? "" : d.getName().toLowerCase(Locale.ROOT);
+            if (!want.isEmpty()) {
+                if (name.equals(want)) {
+                    return d;
+                }
+                continue;
+            }
+            BluetoothClass c = d.getBluetoothClass();
+            boolean imaging = c != null && c.getMajorDeviceClass() == BluetoothClass.Device.Major.IMAGING;
+            if (guess == null && (imaging || name.contains("print") || name.contains("pos") || name.contains("xp-"))) {
+                guess = d;
+            }
+        }
+        if (!want.isEmpty()) {
+            return null;
+        }
+        return guess != null ? guess : (bonded.size() == 1 ? bonded.iterator().next() : null);
+    }
+
+    private void deliverPrintResult(boolean ok, String message) {
+        runOnUiThread(() -> {
+            if (web == null) {
+                return;
+            }
+            web.evaluateJavascript("window.mdsPrintResult && window.mdsPrintResult(" + ok + ","
+                    + JSONObject.quote(message == null ? "" : message) + ")", null);
+        });
     }
 
     private void deliverTerminalResult(String json) {
