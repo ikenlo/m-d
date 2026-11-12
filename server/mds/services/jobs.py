@@ -9,11 +9,13 @@ log = logging.getLogger("mds.jobs")
 
 def hourly(s: Session) -> dict:
     from .. import clock
-    from . import alerts, idempotency, security_journal, vacation
+    from . import alerts, idempotency, security_journal, vacation, webhooks
     from .common import Actor, get_setting, set_setting
 
     out: dict = {"idempotency_deleted": idempotency.cleanup(s), "vacation_off": vacation.auto_off(s),
                  "login_events_deleted": security_journal.cleanup(s)}
+    wq = webhooks.cleanup(s)
+    out["webhooks_deleted"] = wq["completed"] + wq["failed"]
     out["alerts"] = alerts.hourly_checks(s)
     now = clock.now()
     today = now.date().isoformat()

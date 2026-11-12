@@ -210,3 +210,37 @@ def test_ack_unknown_and_bad_status(c, db):
     uuid = _pulled_uuid(c, db)
     assert c.post(f"/api/ext/v1/webhooks/{uuid}/ack", json={"status": "done"}, headers=H).status_code == 422
     assert c.post(f"/api/ext/v1/webhooks/{uuid}/ack", json={}, headers=H).status_code == 422
+
+
+# Щогодинне очищення черги
+
+def test_cleanup_keeps_recent_and_active(db, fixed_clock):
+    from mds.services import jobs, webhooks
+
+    now = clock.now()
+    with db.session() as s:
+        for status, days in [("completed", 8), ("completed", 6), ("failed", 31), ("failed", 29),
+                             ("pending", 60), ("processing", 60)]:
+            done = now - timedelta(days=days) if status in ("completed", "failed") else None
+            s.add(WebhookQueue(source="page", payload={"s": status, "d": days}, status=status,
+                               received_at=now - timedelta(days=days), processed_at=done))
+    with db.session() as s:
+        assert webhooks.cleanup(s) == {"completed": 1, "failed": 1}
+    with db.session() as s:
+        left = sorted((w.payload["s"], w.payload["d"]) for w in s.scalars(select(WebhookQueue)))
+    assert left == [("completed", 6), ("failed", 29), ("pending", 60), ("processing", 60)]
+    with db.session() as s:
+        assert webhooks.cleanup(s) == {"completed": 0, "failed": 0}
+        assert jobs.hourly(s)["webhooks_deleted"] == 0
+
+
+def test_hourly_job_runs_cleanup(db, fixed_clock):
+    from mds.services import jobs
+
+    with db.session() as s:
+        s.add(WebhookQueue(source="page", payload={}, status="completed", received_at=clock.now() - timedelta(days=10),
+                           processed_at=clock.now() - timedelta(days=10)))
+    with db.session() as s:
+        assert jobs.hourly(s)["webhooks_deleted"] == 1
+    with db.session() as s:
+        assert s.scalar(select(WebhookQueue)) is None

@@ -19,9 +19,36 @@ python -m pytest
 | [docs/OPERATIONS.md](docs/OPERATIONS.md) · [docs/SECURITY.md](docs/SECURITY.md) | запуск, бекапи, безпека |
 | [docs/ROADMAP.md](docs/ROADMAP.md) · [CHANGELOG.md](CHANGELOG.md) | план і історія версій |
 
-## Webhook Queue
+## Webhook Queue (v0.3.1)
 
 Вебхуки Meta (Instagram, Facebook) приймає Connect на публічному `/api/webhooks/meta` і лише кладе їх у чергу
-`webhook_queue`. Обробляє їх MDs Manager: забирає `GET /api/ext/v1/webhooks` і підтверджує
-`POST /api/ext/v1/webhooks/{uuid}/ack` (ключ `X-API-Key`). Правила — [CANON.md](docs/CANON.md) D-5, D-6a і §7;
-ендпоінти — [API.md](docs/API.md); змінні `MDS_META_*` — `server/.env.example`.
+`webhook_queue`. Обробляє їх MDs Manager. Правила — [CANON.md](docs/CANON.md) D-5, D-6a і §7; ендпоінти —
+[API.md](docs/API.md); повний контекст — [docs/CONTEXT_MANAGER_INTEGRATION.md](docs/CONTEXT_MANAGER_INTEGRATION.md).
+
+**1. Змінні на Railway (Variables) — обов'язково для production**
+
+| Змінна | Значення |
+|---|---|
+| `MDS_META_VERIFY_TOKEN` | випадковий рядок 32+ символів, напр. `python -c "import secrets;print(secrets.token_urlsafe(32))"`; потрібен для перевірки підписки Meta |
+| `MDS_META_APP_SECRET` | App Secret з Meta App Dashboard (Settings → Basic); потрібен для перевірки підпису |
+| `MDS_WEBHOOK_PROCESSING_TIMEOUT_MINUTES` | необов'язково, `5` за замовчуванням |
+| `MDS_MANAGER_API_KEY` | ключ, яким MDs Manager читає `/api/ext/v1` (без нього — 404) |
+
+**2. Увага.** Якщо `MDS_META_APP_SECRET` не задано, підпис вебхуків не перевіряється. У production це небезпечно:
+будь-хто може писати в чергу. Завжди задавайте на Railway обидві змінні — `MDS_META_VERIFY_TOKEN` і
+`MDS_META_APP_SECRET` ([SECURITY.md](docs/SECURITY.md)).
+
+**3. Перевірка після деплою**
+
+```bash
+curl "https://<your-connect-url>/api/webhooks/meta?hub.mode=subscribe&hub.challenge=test&hub.verify_token=<MDS_META_VERIFY_TOKEN>"
+```
+
+Очікується `test` (text/plain, 200 OK). Невірний токен — 403 `Forbidden`.
+
+**4. Meta App** — покрокове налаштування: [docs/CONTEXT_MANAGER_INTEGRATION.md](docs/CONTEXT_MANAGER_INTEGRATION.md),
+розділ «Meta App Setup (для директора)».
+
+**5. Сторона Manager.** Manager забирає вебхуки `GET /api/ext/v1/webhooks` і підтверджує обробку
+`POST /api/ext/v1/webhooks/{uuid}/ack` (заголовок `X-API-Key`). Налаштування Manager —
+[github.com/ikenlo/md-manager](https://github.com/ikenlo/md-manager).

@@ -28,9 +28,15 @@
 - [x] Рекомендації через `AIProvider` (правила за замовчуванням, локальна llama — лише конфігурацією) ([CANON.md](CANON.md) §8).
 - [x] Read-only API для MDs Manager `/api/ext/v1` з ключем `X-API-Key` ([API.md](API.md)).
 - [x] Реліз-гілка: версія 0.3.0 у коді, розділ CHANGELOG (2026-11-12).
-- [ ] Тег `v0.3.0`, PR у `main`, злиття директором, деплой на Railway.
+- [x] Тег `v0.3.0`, PR у `main`, злиття директором, деплой на Railway (12.11.2026).
 
-## Наступна — 0.3.1 (прибирання після 0.3.0)
+## 0.3.1 — черга вебхуків Meta для MDs Manager
+
+- [x] Таблиця `webhook_queue`, публічні `/api/webhooks/meta`, pull/ack для Manager, щогодинне очищення
+  ([CONTEXT_MANAGER_INTEGRATION.md](CONTEXT_MANAGER_INTEGRATION.md); рішення директора D-5, D-6a від 12.11.2026).
+- [ ] PR у `main`, злиття директором, змінні `MDS_META_*` на Railway, деплой, налаштування Meta App.
+
+## Наступна — 0.3.2 (прибирання після 0.3.0)
 
 - [ ] Видалити застарілі колонки `users.materials_mode`, `orders.materials_mode`, `orders.share_bp` новою міграцією ([FINANCE.md](FINANCE.md) «Застаріле»).
 - [ ] Архівувати й видалити таблицю `master_charges` після відповіді директора на Q-1 ([CANON.md](CANON.md) §2).

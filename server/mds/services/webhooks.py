@@ -4,9 +4,10 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import logging
 from datetime import timedelta
 
-from sqlalchemy import select, update
+from sqlalchemy import delete, select, update
 from sqlalchemy.orm import Session
 
 from .. import clock
@@ -15,10 +16,14 @@ from ..models import WebhookQueue
 from .common import Actor
 from .integration import _require
 
+log = logging.getLogger("mds")
+
 SOURCES = {"instagram": "instagram", "page": "facebook"}
 MAX_PULL = 100
 MAX_RETRIES = 5
 MAX_ERROR_LEN = 2000
+KEEP_COMPLETED_DAYS = 7
+KEEP_FAILED_DAYS = 30
 
 
 def verify_challenge(params: dict, verify_token: str) -> str | None:
@@ -102,3 +107,14 @@ def ack(s: Session, actor: Actor, uuid: str, status: str, error: str | None = No
             w.status, w.processing_started_at = "pending", None
     s.flush()
     return {"uuid": w.uuid, "status": w.status}
+
+
+def cleanup(s: Session) -> dict:
+    now = clock.now()
+    done = s.execute(delete(WebhookQueue).where(
+        WebhookQueue.status == "completed", WebhookQueue.processed_at < now - timedelta(days=KEEP_COMPLETED_DAYS))).rowcount
+    failed = s.execute(delete(WebhookQueue).where(
+        WebhookQueue.status == "failed", WebhookQueue.processed_at < now - timedelta(days=KEEP_FAILED_DAYS))).rowcount
+    if done or failed:
+        log.info("Webhook cleanup: deleted %s completed, %s failed", done, failed)
+    return {"completed": done, "failed": failed}
