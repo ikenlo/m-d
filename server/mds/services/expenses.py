@@ -5,6 +5,7 @@ from datetime import date
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from .. import clock
 from ..errors import ValidationError
 from ..models import Expense, ExpenseCategory, Role
 from .common import Actor, audit, get_or_404, ledger
@@ -18,6 +19,8 @@ def expense_public(e: Expense) -> dict:
         "spent_on": e.spent_on.isoformat(),
         "description": e.description,
         "is_deleted": e.is_deleted,
+        "archived_at": e.archived_at.isoformat() if e.archived_at else None,
+        "version": e.version,
     }
 
 
@@ -40,9 +43,13 @@ def create_expense(s: Session, actor: Actor, *, category: str, amount: int, spen
     return e
 
 
-def update_expense(s: Session, actor: Actor, expense_id: int, data: dict, reason: str | None = None) -> Expense:
+def update_expense(s: Session, actor: Actor, expense_id: int, data: dict, reason: str | None = None,
+                   expected_version: int | None = None) -> Expense:
+    from .common import check_version
+
     actor.require(Role.DIRECTOR)
     e: Expense = get_or_404(s, Expense, expense_id, "Витрату")
+    check_version(e, expected_version, expense_public)
     if e.is_deleted:
         raise ValidationError("Витрату видалено")
     _validate(data.get("category"), data.get("amount"))
@@ -57,12 +64,17 @@ def update_expense(s: Session, actor: Actor, expense_id: int, data: dict, reason
     return e
 
 
-def delete_expense(s: Session, actor: Actor, expense_id: int, reason: str | None = None) -> None:
+def delete_expense(s: Session, actor: Actor, expense_id: int, reason: str | None = None,
+                   expected_version: int | None = None) -> None:
+    from .common import check_version
+
     actor.require(Role.DIRECTOR)
     e: Expense = get_or_404(s, Expense, expense_id, "Витрату")
+    check_version(e, expected_version, expense_public)
     if e.is_deleted:
         return
     e.is_deleted = True
+    e.archived_at = clock.now()
     ledger(s, actor, "expense_reversal", "expense", e.id, amount=e.amount, salon_amount=e.amount, details={"reason": reason})
     audit(s, actor, "expense", e.id, "delete", expense_public(e), None, reason)
 

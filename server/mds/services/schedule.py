@@ -39,7 +39,7 @@ def day_span(s: Session, master: User, day: date, override: ScheduleDay | None =
 
 def set_day(s: Session, actor: Actor, master_id: int, day: date, *, off: bool = False,
             start: str | None = None, end: str | None = None) -> ScheduleDay:
-    actor.require(Role.DIRECTOR, Role.ADMIN)
+    actor.require(Role.DIRECTOR)
     master: User = get_or_404(s, User, master_id, "Майстра")
     if master.role != Role.MASTER:
         raise ValidationError("Графік ведеться лише для майстрів")
@@ -73,7 +73,7 @@ def _check_places(s: Session, master: User, day: date, start: str, end: str) -> 
 
 
 def reset_day(s: Session, actor: Actor, master_id: int, day: date) -> None:
-    actor.require(Role.DIRECTOR, Role.ADMIN)
+    actor.require(Role.DIRECTOR)
     row = s.scalar(select(ScheduleDay).where(ScheduleDay.master_id == master_id, ScheduleDay.day == day))
     if row:
         audit(s, actor, "schedule", master_id, "reset_day", {"day": day, "off": row.is_off, "start": row.start, "end": row.end}, None)
@@ -81,7 +81,7 @@ def reset_day(s: Session, actor: Actor, master_id: int, day: date) -> None:
 
 
 def copy_week(s: Session, actor: Actor, master_id: int, from_monday: date, weeks: int = 1) -> int:
-    actor.require(Role.DIRECTOR, Role.ADMIN)
+    actor.require(Role.DIRECTOR)
     if from_monday.weekday() != 0:
         raise ValidationError("Тиждень має починатися з понеділка")
     if not (1 <= weeks <= 8):
@@ -99,7 +99,7 @@ def copy_week(s: Session, actor: Actor, master_id: int, from_monday: date, weeks
 
 def parity_pattern(s: Session, actor: Actor, master_id: int, parity: str, date_from: date, date_to: date,
                    start: str | None = None, end: str | None = None) -> int:
-    actor.require(Role.DIRECTOR, Role.ADMIN)
+    actor.require(Role.DIRECTOR)
     if parity not in ("even", "odd"):
         raise ValidationError("Оберіть «парні» або «непарні» дні")
     if date_to < date_from or (date_to - date_from).days > 92:
@@ -122,7 +122,7 @@ def grid(s: Session, actor: Actor, date_from: date, date_to: date) -> dict:
     q = select(User).where(User.role == Role.MASTER, User.is_active.is_(True)).order_by(User.full_name)
     if actor.is_master:
         q = q.where(User.id == actor.user_id)
-    elif not actor.is_staff_manager:
+    elif not actor.is_director:
         raise Forbidden("Недостатньо прав")
     masters = list(s.scalars(q))
     rows = s.scalars(select(ScheduleDay).where(

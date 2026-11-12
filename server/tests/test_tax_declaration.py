@@ -96,7 +96,7 @@ def test_missing_profile_and_validation(db, seed):
                     {"fop_min_wage": -1}, {"fop_email": "ні"}, {"fop_name": 5}):
             with pytest.raises(ValidationError):
                 update_settings(s, d, bad)
-        for who in ("admin", "m1"):
+        for who in ("m1", "m2"):
             with pytest.raises(Forbidden):
                 tax_declaration.declaration_data(s, seed["actors"][who], 2026)
 

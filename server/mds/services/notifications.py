@@ -42,7 +42,7 @@ def pending(s: Session, limit: int = 50) -> list[Notification]:
     return list(
         s.scalars(
             select(Notification)
-            .where(Notification.sent_at.is_(None), Notification.attempts < MAX_ATTEMPTS)
+            .where(Notification.sent_at.is_(None), Notification.attempts < MAX_ATTEMPTS, Notification.chat_id.is_not(None))
             .order_by(Notification.id)
             .limit(limit)
         )

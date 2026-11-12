@@ -10,7 +10,7 @@ MAX_NEW = 10
 
 
 def changes(s: Session, actor: Actor, since: int | None) -> dict:
-    actor.require(Role.DIRECTOR, Role.ADMIN, Role.MASTER)
+    actor.require(Role.DIRECTOR, Role.MASTER)
     rev = int(s.scalar(select(func.max(AuditLog.id))) or 0)
     out = {"rev": rev, "entities": [], "new": []}
     if since is None or rev <= since:

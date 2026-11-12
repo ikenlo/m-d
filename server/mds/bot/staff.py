@@ -20,8 +20,6 @@ from ..services.common import Actor
 from . import views as v
 
 SESSION_TTL = timedelta(hours=12)
-MAX_FAILS = 5
-LOCK = timedelta(minutes=15)
 DAYS_AHEAD = 14
 
 
@@ -30,7 +28,6 @@ class StaffSessions:
 
     sessions: dict[int, tuple[int, datetime]] = field(default_factory=dict)
     code_ok: dict[int, datetime] = field(default_factory=dict)
-    fails: dict[int, tuple[int, datetime | None]] = field(default_factory=dict)
 
     def user_id(self, chat_id: int) -> int | None:
         item = self.sessions.get(chat_id)
@@ -44,21 +41,15 @@ class StaffSessions:
 
     def login(self, chat_id: int, user_id: int) -> None:
         self.sessions[chat_id] = (user_id, clock.now())
-        self.fails.pop(chat_id, None)
         self.code_ok.pop(chat_id, None)
 
     def logout(self, chat_id: int) -> None:
         self.sessions.pop(chat_id, None)
         self.code_ok.pop(chat_id, None)
 
-    def locked(self, chat_id: int) -> bool:
-        _, until = self.fails.get(chat_id, (0, None))
-        return bool(until and until > clock.now())
-
-    def fail(self, chat_id: int) -> None:
-        n, _ = self.fails.get(chat_id, (0, None))
-        n += 1
-        self.fails[chat_id] = (0, clock.now() + LOCK) if n >= MAX_FAILS else (n, None)
+    def locked(self, db: Database, chat_id: int, user_id: int | None = None) -> bool:
+        with db.session() as s:
+            return users.bot_locked(s, chat_id, user_id)
 
     def pass_code(self, chat_id: int) -> None:
         self.code_ok[chat_id] = clock.now()
@@ -78,10 +69,6 @@ class AddAppt(StatesGroup):
     name = State()
 
 
-class CloseOrder(StatesGroup):
-    amount = State()
-
-
 NOT_FOR_YOU = "⛔ Цей розділ не для вас."
 LOCKED = "⛔ Забагато невдалих спроб. Спробуйте через 15 хвилин."
 EXPIRED = "Сесія завершилась. Натисніть «👩‍🎨 Для майстрів», щоб увійти знову."
@@ -92,17 +79,6 @@ async def _delete(message: Message) -> None:
         await message.delete()
     except Exception:  # noqa: BLE001
         pass
-
-
-def _parse_amount(text: str) -> int | None:
-    t = text.replace(" ", "").replace(",", ".").replace("₴", "").replace("грн", "")
-    try:
-        val = float(t)
-    except ValueError:
-        return None
-    if val < 0 or val > 1_000_000:
-        return None
-    return round(val * 100)
 
 
 def _cash_text(r: dict) -> str:
@@ -145,7 +121,7 @@ def build_staff_router() -> Router:
                     await show_menu(message, u)
                     return
             staff.logout(chat)
-        if staff.locked(chat):
+        if staff.locked(db, chat):
             await message.answer(LOCKED)
             return
         await state.set_state(StaffAuth.code)
@@ -156,15 +132,14 @@ def build_staff_router() -> Router:
         chat = message.chat.id
         await _delete(message)
         await state.clear()
-        if staff.locked(chat):
+        if staff.locked(db, chat):
             await message.answer(LOCKED)
             return
         with db.session() as s:
-            ok = users.check_staff_code(s, message.text or "")
+            ok = users.check_staff_code(s, message.text or "", chat_id=chat)
             people = users.staff_for_bot(s) if ok else []
             markup = v.staff_people_kb(people)
         if not ok:
-            staff.fail(chat)
             await message.answer(NOT_FOR_YOU, reply_markup=v.main_menu())
             return
         staff.pass_code(chat)
@@ -194,17 +169,18 @@ def build_staff_router() -> Router:
         await _delete(message)
         data = await state.get_data()
         await state.clear()
-        if staff.locked(chat) or not staff.code_passed(chat):
-            await message.answer(LOCKED if staff.locked(chat) else NOT_FOR_YOU)
+        who = data.get("who", 0)
+        if staff.locked(db, chat, who) or not staff.code_passed(chat):
+            await message.answer(LOCKED if staff.locked(db, chat, who) else NOT_FOR_YOU)
             return
         with db.session() as s:
-            u = users.verify_bot_pin(s, data.get("who", 0), message.text or "", chat_id=chat)
-            if u is None:
-                staff.fail(chat)
-                await message.answer("❌ Невірний PIN." + ("\n" + LOCKED if staff.locked(chat) else ""))
+            u = users.verify_bot_pin(s, who, message.text or "", chat_id=chat)
+            if u is not None:
+                staff.login(chat, u.id)
+                await show_menu(message, u)
                 return
-            staff.login(chat, u.id)
-            await show_menu(message, u)
+        locked = staff.locked(db, chat, who)
+        await message.answer("❌ Невірний PIN." + ("\n" + LOCKED if locked else ""))
 
     @router.callback_query(F.data == "s:exit")
     async def exit_(cb: CallbackQuery, staff: StaffSessions):
@@ -398,73 +374,6 @@ def build_staff_router() -> Router:
         await cb.answer()
 
 
-    @router.callback_query(F.data.startswith("s:cl:"))
-    async def close_start(cb: CallbackQuery, db: Database, staff: StaffSessions, state: FSMContext):
-        appt_id = int(cb.data.split(":")[2])
-        try:
-            with db.session() as s:
-                u = current(s, staff, cb.message.chat.id)
-                if not u:
-                    await cb.answer(EXPIRED, show_alert=True)
-                    return
-                a = bookings.get_appointment(s, Actor.of(u), appt_id)
-                price, service, client_name = a.price, a.service.name, a.client.name
-        except DomainError as e:
-            await cb.answer(e.message, show_alert=True)
-            return
-        await state.set_state(CloseOrder.amount)
-        await state.set_data({"appt_id": appt_id, "amount": price})
-        await cb.message.edit_text(
-            f"💳 <b>Закрити замовлення</b>\n{v.e(service)}\n👤 Клієнт: <b>{v.e(client_name)}</b>\n\nСума: <b>{fmt(price)}</b>\n\n"
-            "• Ім'я неправильне (нікнейм з Telegram)? Надішліть <b>ім'я та прізвище</b> повідомленням.\n"
-            "• Сума інша? Надішліть її числом (напр. 750).\n"
-            "Потім оберіть спосіб оплати:",
-            reply_markup=v.pay_method_kb(appt_id, price),
-        )
-        await cb.answer()
-
-    @router.message(CloseOrder.amount)
-    async def close_amount(message: Message, state: FSMContext):
-        data = await state.get_data()
-        text = (message.text or "").strip()
-        amount = _parse_amount(text)
-        if amount is not None:
-            await state.update_data(amount=amount)
-        elif len(text) >= 2 and not text.startswith("/"):
-            name = " ".join(text.split())[:128]
-            await state.update_data(client_name=name)
-        else:
-            await message.answer("Надішліть суму числом (750) або ім'я та прізвище клієнта.")
-            return
-        data = await state.get_data()
-        who = data.get("client_name")
-        await message.answer(
-            (f"👤 Клієнт: <b>{v.e(who)}</b>\n" if who else "") + f"Сума: <b>{fmt(data['amount'])}</b>. Оберіть спосіб оплати:",
-            reply_markup=v.pay_method_kb(data["appt_id"], data["amount"]))
-
-    @router.callback_query(F.data.startswith("s:pm:"))
-    async def close_do(cb: CallbackQuery, db: Database, staff: StaffSessions, state: FSMContext):
-        _, _, appt_id, amount, method = cb.data.split(":")
-        try:
-            with db.session() as s:
-                u = current(s, staff, cb.message.chat.id)
-                if not u:
-                    await cb.answer(EXPIRED, show_alert=True)
-                    return
-                data = await state.get_data()
-                o = orders.close_order(s, Actor.of(u), int(appt_id), amount=int(amount), payment_method=method,
-                                       idempotency_key=f"tg-close-{appt_id}",
-                                       client_name=data.get("client_name") if str(data.get("appt_id")) == appt_id else None)
-                text = (f"✅ <b>Замовлення закрито</b>\n{v.e(o.service.name)} · {v.e(o.client.name)}\n"
-                        f"Сума: {fmt(o.amount)}\nЗаробіток майстра: <b>{fmt(o.master_earning)}</b>")
-        except DomainError as e:
-            await cb.answer(e.message, show_alert=True)
-            return
-        await state.clear()
-        await cb.message.edit_text(text, reply_markup=v.kb([[("☰ Меню", "s:menu")]]))
-        await cb.answer("Закрито")
-
-
     @router.callback_query(F.data == "s:add")
     async def add_start(cb: CallbackQuery, db: Database, staff: StaffSessions, state: FSMContext):
         await state.clear()
@@ -646,14 +555,17 @@ def build_staff_router() -> Router:
                     await cb.answer(EXPIRED, show_alert=True)
                     return
                 r = orders.close_shift(s, Actor.of(u), u.id).report
+                is_dir = u.role == Role.DIRECTOR
         except DomainError as e:
             await cb.answer(e.message, show_alert=True)
             return
-        lines = "\n".join(f"• {v.e(x['service'])} × {x['count']} — {fmt(x['revenue'])}" for x in r["services"])
+        lines = "\n".join(f"• {v.e(x['service'])} × {x['count']}" + (f" — {fmt(x['revenue'])}" if is_dir else "")
+                          for x in r["services"])
         await cb.message.edit_text(
             "📋 <b>Звіт зміни</b>\n"
             f"Клієнтів: {r['clients_count']} · послуг: {r['services_count']} · скасувань: {r['cancellations']}\n"
-            f"{lines}\n\nВиручка: <b>{fmt(r['revenue'])}</b>\nВаш заробіток: <b>{fmt(r['master_earning'])}</b>\n"
+            f"{lines}\n\n" + (f"Виручка: <b>{fmt(r['revenue'])}</b>\n" if is_dir else "")
+            + f"Ваш заробіток: <b>{fmt(r['master_earning'])}</b>\n"
             + _cash_text(r) + "\n\nЗвіт надіслано директору.",
             reply_markup=v.kb([[("☰ Меню", "s:menu")]]),
         )
@@ -733,6 +645,27 @@ def build_staff_router() -> Router:
             await cb.answer(e.message, show_alert=True)
             return
         await calls(cb, db, staff)
+
+    @router.callback_query(F.data.startswith("s:pr:"))
+    async def permission_decision(cb: CallbackQuery, db: Database, staff: StaffSessions):
+        from ..services import vacation
+
+        _, _, decision, rid = cb.data.split(":")
+        try:
+            with db.session() as s:
+                u = _director(s, staff, cb.message.chat.id)
+                if not u:
+                    await cb.answer(EXPIRED, show_alert=True)
+                    return
+                fn = vacation.approve if decision == "ok" else vacation.reject
+                r = fn(s, Actor.of(u), int(rid))
+                text = (f"{'✅ Дозволено й виконано' if r.status == 'approved' else '⛔ Відхилено'}: "
+                        f"{v.e(vacation.ACTIONS.get(r.action, r.action))} (запит #{r.id})")
+        except DomainError as e:
+            await cb.answer(e.message, show_alert=True)
+            return
+        await cb.message.edit_text(text)
+        await cb.answer()
 
     @router.callback_query(F.data == "s:pay")
     async def payouts(cb: CallbackQuery, db: Database, staff: StaffSessions):

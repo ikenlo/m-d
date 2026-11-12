@@ -15,8 +15,18 @@ log = logging.getLogger("mds.card_terminal")
 MIN_AMOUNT = 100
 
 
+AUTO_CLOSE_ENABLED = False
+
+
 def mode(s) -> str:
-    return get_setting(s, "card_terminal_mode") or "off"
+    from ..config import is_production
+
+    md = get_setting(s, "card_terminal_mode") or "off"
+    if md == "live" and not AUTO_CLOSE_ENABLED:
+        return "off"
+    if md == "mock" and is_production():
+        return "off"
+    return md
 
 
 def public(p: CardPayment, deeplink: str | None = None) -> dict:
@@ -30,7 +40,7 @@ def _appointment(s, actor: Actor, appt_id: int) -> Appointment:
     a = s.get(Appointment, appt_id)
     if a is None:
         raise NotFound(f"Запис #{appt_id} не знайдено")
-    if not (actor.is_staff_manager or actor.user_id == a.master_id):
+    if not (actor.is_director or actor.user_id == a.master_id):
         raise Forbidden("Можна приймати оплату лише за власні записи")
     return a
 

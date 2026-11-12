@@ -1,6 +1,6 @@
 [project]
 name = "mds-connect"
-version = "0.2.1"
+version = "0.3.0"
 description = "MDS Connect — внутрішня система салону M&D (записи, зарплати, фінанси, Telegram-бот)"
 requires-python = ">=3.11"
 dependencies = [
@@ -25,7 +25,7 @@ build-backend = "setuptools.build_meta"
 include = ["mds*"]
 
 [tool.setuptools.package-data]
-mds = ["web/static/*", "seed/*.json"]
+mds = ["web/static/*", "web/static/fonts/*", "web/static/vendor/*", "seed/*.json", "reports/fonts/*", "prompts/*.md"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

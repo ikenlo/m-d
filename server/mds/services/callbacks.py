@@ -52,7 +52,7 @@ def create_request(s: Session, actor: Actor, phone: str, name: str | None = None
 
 
 def list_requests(s: Session, actor: Actor, status: str | None = "new", limit: int = 50) -> list[CallbackRequest]:
-    actor.require(Role.DIRECTOR, Role.ADMIN)
+    actor.require(Role.DIRECTOR)
     q = select(CallbackRequest)
     if status:
         q = q.where(CallbackRequest.status == status)
@@ -60,7 +60,7 @@ def list_requests(s: Session, actor: Actor, status: str | None = "new", limit: i
 
 
 def mark_done(s: Session, actor: Actor, request_id: int) -> CallbackRequest:
-    actor.require(Role.DIRECTOR, Role.ADMIN)
+    actor.require(Role.DIRECTOR)
     r: CallbackRequest = get_or_404(s, CallbackRequest, request_id, "Заявку")
     if r.status == "done":
         raise Conflict("Заявку вже опрацьовано")

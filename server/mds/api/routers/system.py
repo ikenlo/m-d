@@ -6,7 +6,7 @@ from datetime import date
 
 import jwt
 from fastapi import APIRouter, Depends, Request
-from fastapi.responses import RedirectResponse
+from fastapi.responses import FileResponse, RedirectResponse
 from pydantic import Field
 from sqlalchemy.orm import Session
 
@@ -64,8 +64,15 @@ def list_backups(request: Request, actor: Actor = Depends(get_actor)):
 def create_backup(request: Request, actor: Actor = Depends(get_actor)):
     actor.require(Role.DIRECTOR)
     cfg = request.app.state.config
-    path = backup.make_backup(cfg.database_url, cfg.backup_dir, cfg.backup_keep)
+    path = backup.make_backup(cfg.database_url, cfg.backup_dir, cfg.backup_keep_days)
     return {"name": path.name}
+
+
+@router.get("/backups/{name}")
+def download_backup(name: str, request: Request, actor: Actor = Depends(get_actor)):
+    actor.require(Role.DIRECTOR)
+    path = backup.backup_file(request.app.state.config.backup_dir, name)
+    return FileResponse(path, media_type="application/x-sqlite3", filename=name)
 
 
 class BugReportIn(BaseModel):

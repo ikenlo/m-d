@@ -3,7 +3,7 @@ from datetime import date, datetime
 import pytest
 
 from mds import clock
-from mds.errors import Forbidden, ValidationError
+from mds.errors import Conflict, Forbidden, ValidationError
 from mds.models import Expense, SmsMessage
 from mds.services import catalog, client_base, sms, sms_center
 from mds.services.common import update_settings
@@ -12,6 +12,7 @@ from mds.services.common import update_settings
 @pytest.fixture
 def fake_sms(monkeypatch):
     sent = []
+    monkeypatch.setattr(sms, "SENDING_ENABLED", True)
     monkeypatch.setenv("MDS_TURBOSMS_TOKEN", "x")
     monkeypatch.setenv("MDS_TURBOSMS_SENDER", "MD Salon")
     monkeypatch.setattr(sms, "send_one", lambda phone, text, channel="viber_sms": sent.append((phone, text)) or {"ok": True, "message_id": f"m{len(sent)}", "error": None})
@@ -21,7 +22,7 @@ def fake_sms(monkeypatch):
 
 
 def _clients(s, seed):
-    adm = seed["actors"]["admin"]
+    adm = seed["actors"]["director"]
     a = catalog.get_or_create_client(s, adm, "Олена Коваль", "0671000001")
     b = catalog.get_or_create_client(s, adm, "Ірина Мельник", "0671000002")
     c = catalog.get_or_create_client(s, adm, "Без згоди", "0671000003")
@@ -41,7 +42,7 @@ def test_campaign_only_consent_cost_to_expenses_and_statuses(db, seed, fake_sms)
         pre = sms_center.create_campaign(s, d, title="Акція", text="{name}, знижка 10%", audience_key="all", dry_run=True)
         assert (pre["recipients"], pre["cost"], pre["preview"]) == (2, 300, "Олена, знижка 10%")
         with pytest.raises(Forbidden):
-            sms_center.create_campaign(s, seed["actors"]["admin"], title="x", text="y", audience_key="all")
+            sms_center.create_campaign(s, seed["actors"]["m1"], title="x", text="y", audience_key="all")
         r = sms_center.create_campaign(s, d, title="Акція", text="{name}, знижка 10%", audience_key="all")
         assert r["recipients"] == 2 and r["cost"] == 300
         e = s.query(Expense).one()
@@ -56,8 +57,30 @@ def test_campaign_only_consent_cost_to_expenses_and_statuses(db, seed, fake_sms)
     clock.set_now(None)
 
 
+def test_sending_disabled_by_default_d6a(db, seed, monkeypatch):
+    d = seed["actors"]["director"]
+    monkeypatch.setenv("MDS_TURBOSMS_TOKEN", "x")
+    monkeypatch.setenv("MDS_TURBOSMS_SENDER", "MD")
+    clock.set_now(datetime(2026, 11, 6, 11))
+    with db.session() as s:
+        a, _, _ = _clients(s, seed)
+        update_settings(s, d, {"sms_enabled": True, "sms_auto_birthday": True})
+        assert not sms_center.ready(s)
+        assert sms_center.create_campaign(s, d, title="А", text="{name}, привіт", audience_key="all", dry_run=True)["recipients"] == 2
+        with pytest.raises(Conflict):
+            sms_center.create_campaign(s, d, title="А", text="{name}, привіт", audience_key="all")
+        sms_center.enqueue(s, phone=a.phone, text="тест", kind="service", reason="test", client_id=a.id)
+        assert sms_center.process_queue(s) == 0
+        m = s.query(SmsMessage).one()
+        assert m.status == "not_configured" and "MDs Manager" in m.error
+        assert sms_center.run_automations(s) == 0
+        assert sms.send_one("+380671000001", "x")["error"] == "disabled"
+    clock.set_now(None)
+
+
 def test_not_configured_marks_history_and_automations(db, seed, monkeypatch):
     d = seed["actors"]["director"]
+    monkeypatch.setattr(sms, "SENDING_ENABLED", True)
     monkeypatch.delenv("MDS_TURBOSMS_TOKEN", raising=False)
     clock.set_now(datetime(2026, 11, 6, 11))
     with db.session() as s:

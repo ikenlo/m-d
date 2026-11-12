@@ -48,6 +48,7 @@ jobs:
           npx playwright install --with-deps chromium
       - name: Демо-база і сервер
         env:
+          MDS_ENV: test
           MDS_DATA_DIR: ${{ runner.temp }}/mds-ui
           MDS_PORT: "8770"
         run: |

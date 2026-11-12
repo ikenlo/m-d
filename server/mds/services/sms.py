@@ -11,6 +11,10 @@ TIMEOUT = 10.0
 OK_CODES = (0, 800, 801, 802, 803)
 
 
+SENDING_ENABLED = False
+DISABLED_REASON = "SMS із MDS Connect вимкнено — їх надсилає MDs Manager (D-6a)"
+
+
 def configured() -> bool:
     return bool(os.environ.get("MDS_TURBOSMS_TOKEN") and os.environ.get("MDS_TURBOSMS_SENDER"))
 
@@ -24,6 +28,8 @@ def _call(path: str, body: dict) -> dict:
 
 
 def send_one(phone: str, text: str, channel: str = "viber_sms") -> dict:
+    if not SENDING_ENABLED:
+        return {"ok": False, "message_id": None, "error": "disabled"}
     if not configured():
         return {"ok": False, "message_id": None, "error": "not_configured"}
     sender = os.environ.get("MDS_TURBOSMS_SENDER", "")

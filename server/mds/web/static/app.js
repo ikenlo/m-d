@@ -14,6 +14,60 @@ const store = {
   set(k, v) { try { localStorage.setItem(k, v); } catch (_) {  } },
   del(k) { try { localStorage.removeItem(k); } catch (_) {  } },
 };
+const sessionStore = {
+  get(k) { try { return sessionStorage.getItem(k); } catch (_) { return null; } },
+  set(k, v) { try { sessionStorage.setItem(k, v); } catch (_) {  } },
+  del(k) { try { sessionStorage.removeItem(k); } catch (_) {  } },
+};
+const session = {
+  idleMin: 30, lastActive: Date.now(), issued: Date.now(),
+  touch() { session.lastActive = Date.now(); },
+  async tick() {
+    if (!api.token || !state.user) return;
+    const idle = Date.now() - session.lastActive;
+    if (idle > session.idleMin * 60000) { logout(); toast("Автовихід: 30 хвилин без дій"); return; }
+    if (Date.now() - session.issued > 10 * 60000 && idle < 5 * 60000) {
+      try {
+        const r = await api.post("/api/auth/refresh");
+        api.token = r.token; store.set("mds_token", r.token); session.issued = Date.now();
+        if (r.idle_minutes) session.idleMin = r.idle_minutes;
+      } catch (_) {  }
+    }
+  },
+};
+["pointerdown", "keydown", "touchstart"].forEach((ev) => document.addEventListener(ev, session.touch, { passive: true }));
+setInterval(() => session.tick(), 60000);
+
+let finPinOpen = null;
+function financePinPrompt(setup) {
+  if (finPinOpen) return finPinOpen;
+  finPinOpen = new Promise((resolve) => {
+    const pin = h("input", { type: "password", inputmode: "numeric", maxlength: 8, autocomplete: "off", placeholder: "4–8 цифр" });
+    const pin2 = h("input", { type: "password", inputmode: "numeric", maxlength: 8, autocomplete: "off", placeholder: "ще раз" });
+    let done = false;
+    const finish = (ok) => { if (!done) { done = true; finPinOpen = null; resolve(ok); } };
+    const go = h("button", { class: "btn primary big", onclick: async () => {
+      try {
+        if (setup) {
+          if (pin.value !== pin2.value) return toast("PIN не збігається", true);
+          await api.send("POST", "/api/auth/finance-pin", { pin: pin.value }, true);
+        }
+        const r = await api.send("POST", "/api/auth/finance-verify", { pin: pin.value }, true);
+        sessionStore.set("mds_fin", r.finance_token);
+        closeSheet(); finish(true);
+      } catch (e) { toast(e.message, true); }
+    } }, setup ? "Задати PIN і відкрити" : "Відкрити фінанси");
+    openSheet(setup ? "Задайте PIN для «Фінансів»" : "PIN для «Фінансів»",
+      h("div", { class: "stack" }, h("p", { class: "muted small" }, "PIN запитується раз за сесію. Скинути його може інший директор."),
+        field("PIN", pin), setup ? field("Повторіть PIN", pin2) : null, go));
+    const sheet = document.querySelector(".sheet");
+    if (sheet) new MutationObserver((_, obs) => { if (!document.body.contains(sheet)) { obs.disconnect(); finish(false); } })
+      .observe(document.body, { childList: true, subtree: true });
+    setTimeout(() => pin.focus(), 50);
+  });
+  return finPinOpen;
+}
+
 const api = {
   token: store.get("mds_token"),
   inflight: new Map(),
@@ -25,11 +79,14 @@ const api = {
     this.inflight.set(key, p);
     return p;
   },
-  async send(method, path, body) {
+  async send(method, path, body, retried = false) {
     const ctl = typeof AbortController !== "undefined" ? new AbortController() : null;
     const timer = ctl && setTimeout(() => ctl.abort(), method === "GET" ? 20000 : 30000);
     const opts = { method, headers: {}, signal: ctl ? ctl.signal : undefined };
     if (this.token) opts.headers.Authorization = "Bearer " + this.token;
+    const fin = sessionStore.get("mds_fin");
+    if (fin) opts.headers["X-Finance-Token"] = fin;
+    if (body && body.__idem) { opts.headers["Idempotency-Key"] = body.__idem; body = { ...body }; delete body.__idem; }
     if (body !== undefined) {
       opts.headers["Content-Type"] = "application/json";
       opts.body = JSON.stringify(body);
@@ -47,6 +104,14 @@ const api = {
       throw new Error("Сесія завершилась");
     }
     const data = res.status === 204 ? null : await res.json().catch(() => null);
+    if (res.status === 403 && data && (data.error === "finance_pin_required" || data.error === "finance_pin_setup") && !retried) {
+      if (await financePinPrompt(data.error === "finance_pin_setup")) return this.send(method, path, body, true);
+    }
+    if (res.status === 409 && data && data.error === "version_conflict") {
+      const err = new Error("Дані змінилися — хтось уже відредагував. Оновіть сторінку й повторіть.");
+      err.code = "version_conflict"; err.status = 409; err.current = data.current;
+      throw err;
+    }
     if (!res.ok) {
       const msg = (data && data.detail) || "Помилка " + res.status;
       if (res.status >= 500 || res.status === 0) pushErr(`${method} ${path} → ${res.status}: ${msg}`);
@@ -148,12 +213,7 @@ const STATUS = {
 const SHIFT_STATUS = { open: "Відкрита", closed: "Очікує виплати", paid: "Виплачено" };
 const PAY = { cash: "Готівка", card: "Картка", transfer: "Переказ" };
 const PAY_CHOICES = { cash: "Готівка", card: "Картка" };
-const ROLES = { director: "Директор", admin: "Адміністратор", master: "Майстер" };
-const MAT_MODES = {
-  salon: "Матеріали за рахунок салону",
-  master: "Матеріали за рахунок майстра",
-  split: "Матеріали ділимо пропорційно",
-};
+const ROLES = { director: "Директор", master: "Майстер" };
 const EXP_CAT = { utilities: "Комунальні", advertising: "Реклама", materials: "Закупівля матеріалів", fuel: "Пальне (закупівля)", other: "Інше" };
 const expCat = (k) => EXP_CAT[k] || (k === "rent" ? "Оренда" : k);
 
@@ -221,6 +281,9 @@ const ICONS = {
   woman: '<circle cx="12" cy="5" r="2.6"/><path d="M9.5 21v-4H6.8L9.5 10a2.5 2.5 0 0 1 2.4-1.8h.2A2.5 2.5 0 0 1 14.5 10l2.7 7h-2.7v4"/>',
   dye: '<path d="M14.5 3.5l6 6-7.8 7.8a3 3 0 0 1-2.1.9H8.4l-2.6 2.6-2.1-2.1 2.6-2.6v-2.2a3 3 0 0 1 .9-2.1z"/><path d="M11 7l6 6"/><path d="M5 4.5c1.3 1.6 2 2.7 2 3.6a2 2 0 0 1-4 0c0-.9.7-2 2-3.6z"/>',
   gauge: '<path d="M12 14l4-4"/><path d="M3.3 19a10 10 0 1 1 17.4 0"/>',
+  bell: '<path d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/>',
+  shield: '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>',
+  flow: '<rect x="3" y="3" width="6" height="6" rx="1"/><rect x="15" y="15" width="6" height="6" rx="1"/><path d="M9 6h4a2 2 0 0 1 2 2v7"/>',
 };
 function icon(name, cls = "") {
   const s = document.createElementNS("http://www.w3.org/2000/svg", "svg");
@@ -537,22 +600,21 @@ function confirmSheet(title, text, okText, onOk, { danger = false, withReason = 
 
 const NAV = {
   master: [
-    ["today", "clock", "Сьогодні"], ["calendar", "calendar", "Календар"], ["myorders", "receipt", "Мої замовлення"], ["earnings", "wallet", "Заробіток"],
-    ["shift", "check", "Зміна"], ["profile", "user", "Профіль"],
+    ["today", "clock", "Сьогодні"], ["calendar", "calendar", "Календар"], ["myorders", "receipt", "Мої замовлення"], ["earnings", "wallet", "Мої фінанси"],
+    ["shift", "check", "Зміна"], ["security", "shield", "Запити дозволу"], ["profile", "user", "Профіль"],
   ],
-  admin: [["calendar", "calendar", "Календар", "Робота"], ["schedule", "calclock", "Графік роботи", "Робота"], ["clients", "users", "Клієнти", "Робота"],
-    ["stock", "box", "Склад", "Робота"], ["generator", "gauge", "Генератор", "Робота"], ["profile", "user", "Профіль"]],
   director: [
-    ["dashboard", "chart", "Огляд", "Огляд"],
+    ["dashboard", "chart", "Фінанси", "Огляд"], ["analytics", "trend", "Аналітика", "Огляд"],
     ["calendar", "calendar", "Календар", "Робота"], ["schedule", "calclock", "Графік роботи", "Робота"], ["clients", "users", "Клієнти", "Робота"],
     ["stock", "box", "Склад", "Робота"],
-    ["orders", "receipt", "Замовлення", "Фінанси"], ["shifts", "coins", "Зміни й виплати", "Фінанси"], ["expenses", "wallet", "Витрати", "Фінанси"], ["utilities", "gauge", "Комунальні платежі", "Фінанси"], ["taxreport", "filetext", "Звіт для податкової", "Фінанси"], ["taxes", "landmark", "Податки і зарплата", "Фінанси"], ["sms", "send", "SMS-розсилки", "Фінанси"],
+    ["orders", "receipt", "Замовлення", "Фінанси"], ["shifts", "coins", "Зміни й виплати", "Фінанси"], ["expenses", "wallet", "Витрати", "Фінанси"], ["utilities", "gauge", "Комунальні платежі", "Фінанси"], ["taxreport", "filetext", "Звіт для податкової", "Фінанси"], ["taxes", "landmark", "Податки і зарплата", "Фінанси"],
     ["staff", "usercog", "Персонал", "Салон"], ["catalog", "scissors", "Послуги", "Салон"],
     ["settings", "settings", "Налаштування", "Салон"], ["journal", "book", "Журнал", "Салон"],
+    ["security", "shield", "Безпека", "Салон"], ["logic", "flow", "Логіка системи", "Салон"],
     ["profile", "user", "Профіль"],
   ],
 };
-const MOBILE_TABS = { director: ["dashboard", "calendar", "orders", "more"], admin: ["calendar", "schedule", "clients", "more"],
+const MOBILE_TABS = { director: ["dashboard", "calendar", "orders", "more"],
   master: ["today", "calendar", "earnings", "more"] };
 
 function currentRoute() { return (location.hash.replace(/^#\/?/, "") || "").split("?")[0]; }
@@ -560,6 +622,7 @@ function currentRoute() { return (location.hash.replace(/^#\/?/, "") || "").spli
 function logout() {
   api.token = null;
   store.del("mds_token");
+  sessionStore.del("mds_fin");
   state.user = null;
   renderLogin();
 }
@@ -627,6 +690,8 @@ function renderLogin() {
   const done = async (r) => {
     api.token = r.token;
     store.set("mds_token", r.token);
+    session.issued = Date.now(); session.touch();
+    if (r.idle_minutes) session.idleMin = r.idle_minutes;
     if (r.device_token) store.set("mds_device", r.device_token);
     store.set("mds_last_user", user.value.trim());
     location.hash = "";
@@ -944,8 +1009,35 @@ function topbar(title, ...actions) {
   if (actions.length && typeof actions[0] === "string") sub = actions.shift();
   return h("div", { class: "topbar" },
     h("div", {}, h("h1", {}, title), sub ? h("div", { class: "sub" }, sub) : null),
-    h("div", { class: "row" }, actions,
+    h("div", { class: "row" }, actions, bellButton(),
       h("button", { class: "icon-btn refresh-desk", title: "Оновити сторінку", "aria-label": "Оновити сторінку", onclick: (e) => refreshView(e.currentTarget) }, icon("refresh"))));
+}
+
+const ALERT_ICON = { critical: "🔴", important: "🟠", info: "🔵" };
+function bellButton() {
+  if (!state.user) return null;
+  const badge = h("span", { class: "bell-badge hidden" });
+  const btn = h("button", { class: "icon-btn bell", title: "Сповіщення", "aria-label": "Сповіщення", onclick: alertsSheet }, icon("bell"), badge);
+  api.get("/api/alerts?unread=true").then((r) => {
+    if (r.unread) { badge.textContent = r.unread > 99 ? "99+" : String(r.unread); badge.classList.remove("hidden"); }
+  }).catch(() => {});
+  return btn;
+}
+async function alertsSheet() {
+  const r = await run(() => api.get("/api/alerts"));
+  const isDir = state.user.role === "director";
+  const list = h("div", { class: "stack" });
+  const draw = (items) => list.replaceChildren(...(items.length ? items.map((a) => h("div", { class: "card", style: { padding: "10px 12px", opacity: a.read ? ".7" : "1" } },
+    h("div", { class: "row small" }, ALERT_ICON[a.level] || "", h("b", { class: "grow" }, a.label || "Сповіщення"), h("span", { class: "muted" }, `${dm(a.created_at)} ${hm(a.created_at)}`)),
+    h("div", { style: { whiteSpace: "pre-line" } }, a.text),
+    isDir && !a.handled ? h("button", { class: "btn sm", onclick: async (e) => {
+      const res = await run(() => api.post(`/api/alerts/${a.id}/handled`));
+      e.currentTarget.replaceWith(h("span", { class: "muted small" }, res.already ? "Вже оброблено іншим директором" : "Оброблено"));
+    } }, "Оброблено") : a.handled ? h("span", { class: "muted small" }, "✓ оброблено") : null))
+    : [emptyState("Сповіщень немає", "bell")]));
+  draw(r.items);
+  openSheet("Сповіщення", list);
+  if (r.unread) api.post("/api/alerts/read", {}).then(() => document.querySelectorAll(".bell-badge").forEach((b) => b.classList.add("hidden"))).catch(() => {});
 }
 
 function viewMore(main) {
@@ -1070,6 +1162,29 @@ function closeOrderSheet(a, onChange) {
   const mats = new Map();
   const custom = [];
   const amount = h("input", { class: "huge", inputmode: "decimal", value: kopToInput(a.price) });
+  const isDir = state.user && state.user.role === "director";
+  const priceEditable = !!a.price_from || isDir;
+  const price = h("input", { inputmode: "decimal", value: kopToInput(a.price), disabled: priceEditable ? null : true });
+  const unpaid = h("input", { type: "checkbox" });
+  const discountHint = h("div", { class: "muted small" });
+  const updHint = () => {
+    const d = (toKop(price.value) || 0) - (toKop(amount.value) || 0);
+    discountHint.textContent = d > 0 ? `Знижка ${money(d)} — за рахунок салону; майстру 50% від ціни` : "";
+  };
+  amount.addEventListener("input", updHint); price.addEventListener("input", updHint);
+  const prodQty = new Map();
+  const prodBox = h("details", { class: "card", style: { padding: "4px 12px" } },
+    h("summary", { class: "row", style: { padding: "8px 0", cursor: "pointer", listStyle: "none" } }, icon("box", "sm"), h("b", { class: "grow" }, "Товари клієнту"), icon("right", "sm")));
+  api.get("/api/products").then((list) => {
+    if (!list.length) { prodBox.append(h("p", { class: "muted small" }, "Товарів у каталозі ще немає")); return; }
+    list.forEach((pr) => {
+      const n = h("b", {}, "0");
+      const ch = (dlt) => () => { const q = Math.max(0, (prodQty.get(pr.id) || 0) + dlt); prodQty.set(pr.id, q); n.textContent = String(q); };
+      prodBox.append(h("div", { class: "sum-line" }, h("span", {}, pr.name, h("span", { class: "muted small" }, ` · ${money(pr.sale_price_cents)}`)),
+        h("span", { class: "row" }, h("button", { type: "button", class: "btn sm", onclick: ch(-1) }, "−"), n,
+          h("button", { type: "button", class: "btn sm", onclick: ch(1) }, "+"))));
+    });
+  }).catch(() => {});
   const PAY_ICON = { cash: "banknote", card: "card", transfer: "transfer" };
   const pick = (k) => (e) => { method = k; [...methods.children].forEach((b) => b.classList.remove("on")); e.currentTarget.classList.add("on");
     btn.replaceChildren(icon("ok"), k === "terminal" ? "Оплатити на терміналі" : "Закрити замовлення"); };
@@ -1101,6 +1216,9 @@ function closeOrderSheet(a, onChange) {
     const clientName = [firstName.value, lastName.value].map((x) => x.trim()).filter(Boolean).join(" ");
     if (firstName.value.trim().length < 2) { firstName.focus(); return toast("Вкажіть ім'я клієнта", true); }
     const materials = [...mats.entries()].filter(([, q]) => q > 0).map(([id, q]) => ({ material_id: id, qty: q })).concat(custom);
+    const products = [...prodQty.entries()].filter(([, q]) => q > 0).map(([id, q]) => ({ product_id: id, qty: q }));
+    const p = priceEditable ? toKop(price.value) : null;
+    if (priceEditable && !(p >= 0)) return toast("Вкажіть ціну послуги", true);
     if (svc.needs_materials && !materials.length && !noMatOk) {
       matsBox.open = true;
       matsBox.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -1119,7 +1237,10 @@ function closeOrderSheet(a, onChange) {
     }
     btn.disabled = true;
     try {
-      const o = await run(() => api.post(`/api/appointments/${a.id}/close`, { amount: kop, payment_method: method, materials, idempotency_key: key, client_name: clientName }));
+      const body = { amount: kop, payment_method: method, materials, products, idempotency_key: key, client_name: clientName,
+        status: unpaid.checked ? "unpaid" : "completed" };
+      if (priceEditable) body.price = p;
+      const o = await run(() => api.post(`/api/appointments/${a.id}/close`, body));
       closeSheet();
       toast(`Замовлення закрито. Заробіток майстра: ${money(o.master_earning)}`);
       state.materials = await api.get("/api/materials").catch(() => state.materials);
@@ -1129,7 +1250,11 @@ function closeOrderSheet(a, onChange) {
 
   openSheet("Закрити замовлення",
     h("div", { class: "muted", style: { marginBottom: "10px" } }, `${a.service_name} · ${hm(a.starts_at)}`),
-    h("div", { class: "stack" }, clientBox, field("Фактична вартість, ₴", amount), field("Спосіб оплати", methods), matsBox, btn));
+    h("div", { class: "stack" }, clientBox,
+      h("div", { class: "form-grid" }, field(a.price_from ? "Погоджена ціна (P), ₴" : "Ціна за прайсом (P), ₴", price),
+        field("Сплачено клієнтом (A), ₴", amount)), discountHint,
+      field("Спосіб оплати", methods), h("label", { class: "row small" }, unpaid, "Клієнт ще не оплатив (неоплачене замовлення)"),
+      matsBox, prodBox, btn));
   autoFocus(amount, true);
   amount.addEventListener("focus", () => setTimeout(() => amount.select(), 0));
 }
@@ -1990,9 +2115,10 @@ VIEWS.calendar = async (main) => {
           title: `${hm(a.starts_at)}–${hm(a.ends_at)} · ${a.client.name} · ${a.service_name} · ${money(a.price)} · ${STATUS[a.status] || ""}`,
           style: { top: top + 2 + "px", height: height + "px", left: head.offsetLeft + 4 + "px", width: head.offsetWidth - 8 + "px", animationDelay: Math.min(i * 25, 300) + "ms" },
           onclick: () => apptSheet(a, reload) },
-          h("div", { class: "ev-top" }, h("span", { class: "ev-time" }, hm(a.starts_at)), h("b", {}, a.client.name),
+          h("div", { class: "ev-top" }, h("span", { class: "ev-time" }, `${hm(a.starts_at)}–${hm(a.ends_at)}`), h("b", {}, a.client.name),
             h("span", { class: "ev-st", title: STATUS[a.status] || "" }, icon(EV_ICON[a.status] || "clock", "sm"))),
-          h("div", { class: "ev-sub" }, h("span", { class: "ev-svc" }, a.service_name), h("b", { class: "ev-price" }, money(a.price))),
+          h("div", { class: "ev-sub" }, h("span", { class: "ev-svc" }, icon(/фарб|тон|мелір|блонд/i.test(a.service_name) ? "dye" : "scissors", "sm"),
+            ` ${a.service_name} · ${Math.floor(a.duration_min / 60)}:${String(a.duration_min % 60).padStart(2, "0")}`), h("b", { class: "ev-price" }, money(a.price))),
           short ? null : h("div", { class: "ev-meta" }, `${hm(a.starts_at)}–${hm(a.ends_at)} · ${STATUS[a.status] || ""}`,
             a.client.phone ? h("a", { href: "tel:" + a.client.phone, class: "ev-call", "aria-label": "Подзвонити", onclick: (e) => e.stopPropagation() }, icon("phone", "sm")) : null)));
       });
@@ -2035,30 +2161,42 @@ VIEWS.calendar = async (main) => {
 };
 
 VIEWS.earnings = async (main) => {
-  const [my, orders, payouts] = await Promise.all([api.get("/api/finance/my"), api.get("/api/orders?period=month"), api.get("/api/payouts")]);
-  main.append(topbar("Мій заробіток", "Нарахування з кожного закритого замовлення та виплати від директора"));
-  main.append(h("div", { class: "grid kpi" },
-    kpi("Сьогодні", my.day.earning, "", { ico: "clock", sub: `${my.day.orders_count} посл.` }),
-    kpi("Цей тиждень", my.week.earning, "", { ico: "calendar", sub: `${my.week.orders_count} посл.` }),
-    kpi("Цей місяць", my.month.earning, "", { ico: "chart", sub: `${my.month.orders_count} посл.` }),
-    kpi("До виплати", my.balance.balance, "dark", { ico: "wallet" })));
-  const paidShare = my.balance.accrued ? Math.min(100, Math.round((my.balance.paid / my.balance.accrued) * 100)) : 0;
-  main.append(h("div", { class: "card", style: { marginTop: "12px" } },
-    h("div", { class: "sum-line" }, h("span", {}, "Нараховано за весь час"), h("b", {}, money(my.balance.accrued))),
-    h("div", { class: "sum-line" }, h("span", {}, "Виплачено"), h("b", {}, money(my.balance.paid))),
-    my.balance.charged ? h("div", { class: "sum-line" }, h("span", {}, "Списано: комунальні / генератор"), h("b", {}, "− " + money(my.balance.charged))) : null,
-    h("div", { class: "progress", style: { margin: "6px 0" } }, h("div", { style: { width: paidShare + "%" } })),
-    h("div", { class: "sum-line total" }, h("span", {}, "Залишок до виплати"), h("span", {}, money(my.balance.balance)))));
-  main.append(h("div", { class: "section" }, h("h2", {}, "Замовлення цього місяця")));
-  main.append(orders.length ? h("div", { class: "card table-wrap" }, h("table", {},
-    h("tr", {}, h("th", {}, "Дата"), h("th", {}, "Послуга"), h("th", {}, "Клієнт"), h("th", { class: "num" }, "Сума"), h("th", { class: "num" }, "Мій заробіток")),
-    orders.map((o) => h("tr", {}, h("td", {}, dm(o.closed_at), " ", h("span", { class: "muted" }, hm(o.closed_at))), h("td", {}, o.service_name), h("td", {}, o.client_name),
-      h("td", { class: "num" }, money(o.amount)), h("td", { class: "num" }, h("b", {}, money(o.master_earning))))))) : h("div", { class: "card" }, emptyState("Ще немає закритих замовлень", "receipt")));
-  if (payouts.length) {
-    main.append(h("div", { class: "section" }, h("h2", {}, "Виплати")));
-    main.append(h("div", { class: "card table-wrap" }, h("table", {},
-      h("tr", {}, h("th", {}, "Дата"), h("th", {}, "Спосіб"), h("th", {}, "Примітка"), h("th", { class: "num" }, "Сума")),
-      payouts.map((p) => h("tr", {}, h("td", {}, dmy(p.paid_at)), h("td", {}, PAY[p.method]), h("td", { class: "muted" }, p.note || (p.shift_id ? "За зміну" : "")), h("td", { class: "num" }, money(p.amount)))))));
+  const [my, bonus] = await Promise.all([api.get("/api/finance/my"), api.get("/api/bonuses/my").catch(() => null)]);
+  main.append(topbar("Мої фінанси", "50% від ціни кожної послуги + 10% від проданих товарів"));
+  const cs = my.current_shift;
+  const ms = my.month_summary;
+  main.append(h("div", { class: "card" }, h("div", { class: "card-head" }, h("h3", {}, "Поточна зміна")),
+    cs ? h("div", { class: "stack" },
+      h("div", { class: "sum-line" }, h("span", {}, "Замовлень"), h("b", {}, String(cs.orders_count))),
+      h("div", { class: "sum-line" }, h("span", {}, "Заробіток"), h("b", {}, money(cs.earnings))),
+      h("div", { class: "sum-line" }, h("span", {}, "Взяти з каси"), h("b", {}, money(cs.takes_from_till))),
+      h("div", { class: "sum-line total" }, h("span", {}, "До виплати від директора"), h("span", {}, money(cs.to_pay))))
+      : h("span", { class: "muted" }, "Зміну не відкрито")));
+  main.append(h("div", { class: "grid kpi", style: { marginTop: "12px" } },
+    kpi("Заробіток за місяць", ms.earnings, "", { ico: "chart", sub: `${my.month.orders_count} посл.` }),
+    kpi("Виплачено за місяць", ms.paid, "", { ico: "wallet" }),
+    kpi("Борг салону мені", ms.debt, "dark", { ico: "coins" }),
+    kpi("Бонус за товари", ms.product_bonus, "", { ico: "box", sub: "виплата раз на місяць" })));
+  const max = Math.max(1, ...my.last_7_days.map((x) => x.earning));
+  main.append(h("div", { class: "card", style: { marginTop: "12px" } }, h("div", { class: "card-head" }, h("h3", {}, "Останні 7 днів")),
+    h("div", { class: "bars7", style: { display: "flex", alignItems: "flex-end", gap: "6px", height: "120px" } },
+      my.last_7_days.map((x) => h("div", { style: { flex: "1", display: "flex", flexDirection: "column", alignItems: "center", gap: "4px" }, title: money(x.earning) },
+        h("div", { style: { width: "100%", height: `${Math.round((x.earning / max) * 90)}px`, minHeight: "2px", background: "var(--brand)", borderRadius: "6px 6px 2px 2px" } }),
+        h("span", { class: "muted small" }, dm(x.date)))))));
+  main.append(h("div", { class: "card", style: { marginTop: "12px" } }, h("div", { class: "card-head" }, h("h3", {}, "Топ-3 послуги місяця")),
+    my.top_services.length ? my.top_services.map((x) => h("div", { class: "sum-line" }, h("span", {}, `${x.service}: ${x.count}×`), h("b", {}, `→ ${money(x.earnings)}`)))
+      : h("span", { class: "muted" }, "Ще немає замовлень")));
+  const TYPES = { order: "Замовлення", payout: "Виплата", refunded: "Повернення", cancelled: "Скасовано" };
+  main.append(h("div", { class: "section" }, h("h2", {}, "Історія (останні 20)")));
+  main.append(my.history.length ? h("div", { class: "card table-wrap" }, h("table", {},
+    h("tr", {}, h("th", {}, "Дата"), h("th", {}, "Тип"), h("th", {}, ""), h("th", { class: "num" }, "Сума")),
+    my.history.map((x) => h("tr", {}, h("td", {}, dmy(x.date)), h("td", {}, TYPES[x.type] || x.type), h("td", { class: "muted" }, x.title),
+      h("td", { class: "num" }, h("b", { class: x.amount < 0 ? "neg" : "" }, money(x.amount)))))))
+    : h("div", { class: "card" }, emptyState("Історія порожня", "history")));
+  if (bonus && bonus.history.length) {
+    main.append(h("div", { class: "section" }, h("h2", {}, "Бонус за товари")));
+    main.append(h("div", { class: "card" }, bonus.history.slice(0, 10).map((b) => h("div", { class: "sum-line small" },
+      h("span", {}, dmy(b.accrued_on), " · ", b.note || "", b.paid ? h("span", { class: "muted" }, " (виплачено)") : null), h("b", {}, money(b.amount))))));
   }
 };
 
@@ -2069,8 +2207,10 @@ function shiftReport(r) {
       n("Клієнтів", r.clients_count, "users"), n("Послуг", r.services_count, "scissors"), n("Скасувань", r.cancellations, "cancel")),
     h("div", { class: "card" },
       (r.services || []).map((s) => h("div", { class: "sum-line" }, h("span", {}, s.service, h("span", { class: "muted" }, " × ", s.count)), h("span", {}, money(s.revenue)))),
-      h("div", { class: "divider" }),
-      h("div", { class: "sum-line" }, h("span", {}, "Загальна виручка"), h("b", {}, money(r.revenue))),
+      r.revenue !== undefined ? h("div", { class: "divider" }) : null,
+      r.revenue !== undefined ? h("div", { class: "sum-line" }, h("span", {}, "Загальна виручка"), h("b", {}, money(r.revenue))) : null,
+      r.discounts ? h("div", { class: "sum-line muted small" }, h("span", {}, "Знижки (за рахунок салону)"), h("span", {}, money(r.discounts))) : null,
+      r.unpaid && r.unpaid.count ? h("div", { class: "sum-line small" }, h("span", {}, `Неоплачені: ${r.unpaid.count}`), h("span", {}, money(r.unpaid.amount))) : null,
       Object.entries(r.by_payment || {}).map(([k, v]) => h("div", { class: "sum-line muted small" }, h("span", {}, PAY[k] || k), h("span", {}, money(v)))),
       r.cash ? null : h("div", { class: "sum-line" }, h("span", {}, "Заробіток майстра"), h("b", {}, money(r.master_earning))),
       r.cash ? cashBlock(r) : h("div", { class: "sum-line total" }, h("span", {}, "Сума до виплати"), h("span", {}, money(r.payout_due)))));
@@ -2135,7 +2275,6 @@ VIEWS.profile = async (main) => {
   main.append(h("div", { class: "grid two" },
     h("div", { class: "card stack" },
       h("div", { class: "row" }, avatar(u.full_name, "lg"), h("div", {}, h("h3", { style: { margin: 0 } }, u.full_name), h("div", { class: "muted" }, ROLES[u.role], " · ", u.username))),
-      u.role === "master" && u.share_bp !== null ? h("div", { class: "info-row" }, icon("percent"), "Ваш відсоток: ", h("b", {}, pct(u.share_bp))) : null,
       h("div", { class: "row" },
         h("button", { class: "btn", onclick: toggleTheme }, icon(dark ? "sun" : "moon", "sm"), dark ? "Світла тема" : "Темна тема"),
         h("button", { class: "btn", onclick: bugReportForm }, icon("bug", "sm"), "Повідомити про помилку"),
@@ -2149,7 +2288,7 @@ VIEWS.profile = async (main) => {
         await run(() => api.post("/api/auth/change-password", { old_password: oldP.value, new_password: newP.value }), "Пароль змінено, увійдіть знову");
         logout();
       } }, "Змінити пароль")),
-    ["director", "admin"].includes(u.role) ? await devicesCard(u) : null));
+    u.role === "director" ? await devicesCard(u) : null));
 };
 
 async function devicesCard(u) {
@@ -2512,70 +2651,247 @@ function revenueChart(byDay) {
   return svg;
 }
 
+const REPORTS = { revenue: "Виручка і знижки", split: "Частки і матеріали", gross: "Валовий прибуток", expenses: "Витрати",
+  net: "Чистий прибуток", profitability: "Рентабельність", masters: "Майстри: виплати, борг, бонус", unpaid: "Неоплачені замовлення",
+  by_master: "По майстрах", by_service: "По послугах", by_day: "По днях", insights: "Порівняння і прогноз",
+  recommendations: "Рекомендації", pie: "Куди йдуть гроші", average_check: "Середній чек" };
+const PROFIT_LEVEL = { excellent: ["💚", "відмінно"], good: ["🟢", "добре"], fair: ["🟡", "задовільно"], low: ["🟠", "низько"], critical: ["🔴", "критично"] };
+function profitChip(s) {
+  if (s.profitability_bp === null || s.profitability_bp === undefined) return h("span", { class: "muted" }, "—");
+  const [em, txt] = PROFIT_LEVEL[s.profitability_level] || ["", ""];
+  return h("span", { class: "row" }, h("b", { class: "kpi-value" }, `${(s.profitability_bp / 100).toFixed(1).replace(".", ",")}%`), `${em} ${txt}`);
+}
+async function downloadFile(path, filename) {
+  const headers = { Authorization: "Bearer " + api.token };
+  const fin = sessionStore.get("mds_fin");
+  if (fin) headers["X-Finance-Token"] = fin;
+  const r = await fetch(path, { headers });
+  if (!r.ok) { const d = await r.json().catch(() => null); return toast((d && d.detail) || "Не вдалося завантажити", true); }
+  const url = URL.createObjectURL(await r.blob());
+  const a = h("a", { href: url, download: filename });
+  document.body.append(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 5000);
+}
+function exportSheet(q) {
+  openSheet("Експорт звітів", h("div", { class: "stack" },
+    ...[["finance", "Фінанси (підсумки)"], ["orders", "Замовлення"]].map(([name, label]) => h("div", { class: "card stack" }, h("b", {}, label),
+      h("div", { class: "row" }, ...["pdf", "xlsx", "csv"].map((fmt) => h("button", { class: "btn", onclick: () => downloadFile(`/api/exports/${name}.${fmt}?${q}`, `mds-${name}.${fmt}`) },
+        fmt === "xlsx" ? "Excel" : fmt.toUpperCase())))))));
+}
+function reportsToggleSheet(hidden, onSaved) {
+  const boxes = Object.entries(REPORTS).map(([k, label]) => [k, h("input", { type: "checkbox", checked: !hidden.includes(k) }), label]);
+  openSheet("Які звіти показувати", h("div", { class: "stack" },
+    h("p", { class: "muted small" }, "Приховані звіти не показуються, але дані рахуються далі."),
+    boxes.map(([, cb, label]) => h("label", { class: "row" }, cb, label)),
+    h("button", { class: "btn primary", onclick: async () => {
+      const v = boxes.filter(([, cb]) => !cb.checked).map(([k]) => k);
+      state.settings = await run(() => api.put("/api/settings", { reports_hidden: v }), "Збережено");
+      closeSheet(); onSaved();
+    } }, "Зберегти")));
+}
+
 VIEWS.dashboard = async (main) => {
   const body = h("div");
-  main.append(topbar("Огляд",
-    h("button", { class: "btn", onclick: () => { location.hash = "#/expenses"; } }, icon("plus", "sm"), "Витрата"),
-    h("button", { class: "btn primary", onclick: () => { location.hash = "#/calendar"; } }, icon("calendar", "sm"), "Календар")),
+  let lastQ = "period=month";
+  main.append(topbar("Фінанси",
+    h("button", { class: "btn", onclick: () => exportSheet(lastQ) }, icon("filetext", "sm"), "Експорт"),
+    h("button", { class: "btn", onclick: () => reportsToggleSheet(state.settings?.reports_hidden || [], () => load(lastQ)) }, icon("settings", "sm"), "Звіти"),
+    h("button", { class: "btn", onclick: () => { location.hash = "#/expenses"; } }, icon("plus", "sm"), "Витрата")),
     periodPicker((q, kind) => load(q, kind)), body);
   const load = async (q, kind = "month") => {
+    lastQ = q;
     body.replaceChildren(h("div", { class: "empty" }, "Завантаження…"));
-    const [d, ins] = await Promise.all([api.get("/api/finance/dashboard?" + q), api.get("/api/finance/insights?" + q).catch(() => null)]);
+    const d = await api.get("/api/finance/dashboard?" + q);
     const s = d.summary;
-    const [pf, pt] = prevRange(s.from, s.to, kind);
-    const p = (await api.get(`/api/finance/dashboard?date_from=${pf}&date_to=${pt}`).catch(() => null))?.summary || {};
-    const vs = kind === "month" ? "мин. місяць" : kind === "year" ? "мин. рік" : "попер. період";
+    const hidden = new Set(s.hidden_reports || []);
+    const show = (k, node) => (hidden.has(k) ? null : node);
     const exp = s.expenses;
-    const expRows = [...(exp.rent ? [["Оренда", exp.rent, "home"]] : []), ["Комунальні", exp.utilities, "zap", "#/utilities"],
-      ["Генератор", exp.generator || 0, "gauge", "#/utilities"], ["Реклама", exp.advertising, "megaphone", "#/expenses"], ["Інші витрати", exp.other, "receipt", "#/expenses"]];
-    const opEx = s.operating_expenses;
-    const ex = { s, p, d, vs, exp, expRows, opEx };
+    const gd = s.gross_details;
+    const line = (label, v, cls = "") => h("div", { class: "sum-line " + cls }, h("span", {}, label), h("b", { class: v < 0 ? "neg" : "" }, money(v)));
+    const un = s.unpaid_orders;
     body.replaceChildren(...[
-      h("div", { class: "grid kpi" },
-        kpi("Виручка салону", s.revenue, "dark", { ico: "banknote", prev: p.revenue, vs, spark: d.by_day.map((x) => x.revenue), onclick: () => revenueSheet(ex) }),
-        kpi("Витрати", opEx, "", { ico: "wallet", prev: p.operating_expenses, onclick: () => expensesSheet(ex) }),
-        kpi("Чистий прибуток", s.net_profit, "accent", { ico: "trend", prev: p.net_profit, vs, onclick: () => profitSheet(ex) }),
-        kpi("Валовий прибуток", s.gross_profit, "", { ico: "chart", prev: p.gross_profit, spark: d.by_day.map((x) => x.salon_net_from_orders), onclick: () => profitSheet(ex) }),
-        kpi("Середній чек", s.average_check, "", { ico: "receipt", prev: p.average_check, sub: `${s.orders_count} замовл. · ${s.clients_count} клієнтів`, onclick: () => checkSheet(ex) })),
-      ins ? insightsBlock(ins) : null,
-      h("div", { class: "grid two swipe-deck", style: { marginTop: "12px" } },
-        h("div", { class: "card", "data-tab": "Куди гроші" }, h("div", { class: "card-head" }, h("h3", {}, "Куди йдуть гроші"), h("span", { class: "muted small" }, `${dmy(s.from)} — ${dmy(s.to)}`)),
-          h("div", { class: "sum-line" }, h("span", {}, "Виручка"), h("b", {}, money(s.revenue))),
-          h("div", { class: "sum-line" }, h("span", { class: "muted" }, "− Частка майстрів"), h("span", {}, money(s.masters_share))),
-          h("div", { class: "sum-line" }, h("span", { class: "muted" }, "− Матеріали"), h("span", {}, money(s.materials))),
-          h("div", { class: "sum-line total" }, h("span", {}, "Валовий прибуток"), h("span", {}, money(s.gross_profit))),
-          expRows.map(([l, v, , href]) => h(href ? "a" : "div", { class: "sum-line" + (href ? " link" : ""), href: href || null }, h("span", { class: "muted" }, "− " + l), h("span", {}, money(v)))),
-          h("div", { class: "sum-line total" }, h("span", {}, "Чистий прибуток"), h("span", { class: s.net_profit < 0 ? "neg" : "" }, money(s.net_profit)))),
-        h("div", { class: "stack" },
-          h("div", { class: "card", "data-tab": "Зарплати" }, h("div", { class: "card-head" }, h("h3", {}, "Зарплата майстрів")),
-            h("div", { class: "sum-line" }, h("span", {}, "Нараховано за період"), h("b", {}, money(s.masters_share))),
-            h("div", { class: "sum-line" }, h("span", {}, "Виплачено за період"), h("b", {}, money(s.payouts))),
-            h("div", { class: "sum-line total" }, h("span", {}, "Борг по зарплаті зараз"), h("span", {}, money(s.salary_debt_total))),
-            s.salary_debt_total > 0 ? h("a", { href: "#/shifts", class: "small" }, "Підтвердити виплати →") : null),
-          h("div", { class: "card", "data-tab": "Оплати" }, h("div", { class: "card-head" }, h("h3", {}, "Оплати клієнтів")),
-            [["cash", "banknote"], ["card", "card"], ["transfer", "transfer"]].filter(([k]) => k !== "transfer" || s.by_payment.transfer).map(([k, ic]) => {
-              const v = s.by_payment[k] || 0;
-              return h("div", { class: "stack", style: { marginBottom: "8px" } },
-                h("div", { class: "sum-line", style: { padding: 0 } }, h("span", { class: "row" }, icon(ic, "sm"), PAY[k]), h("b", {}, money(v))),
-                h("div", { class: "progress" }, h("div", { style: { width: (s.revenue ? (v / s.revenue) * 100 : 0) + "%" } })));
-            }),
-            h("div", { class: "sum-line muted small" }, h("span", {}, "Закупівля матеріалів (грошовий потік)"), h("span", {}, money(exp.materials_purchases)))))),
-      d.by_day.length > 1 ? h("div", { class: "card", style: { marginTop: "12px" } }, h("div", { class: "card-head" }, h("h3", {}, "Виручка по днях"), h("span", { class: "muted small" }, "грн")), revenueChart(d.by_day)) : null,
-      h("div", { class: "section" }, h("h2", {}, "По майстрах")),
-      d.by_master.length ? h("div", { class: "card table-wrap scroll-box" }, h("table", {},
-        h("tr", {}, h("th", {}, "Майстер"), h("th", { class: "num m-hide" }, "Послуг"), h("th", { class: "num" }, "Виручка"), h("th", { class: "num" }, "Нараховано"), h("th", { class: "num m-hide" }, "Виплачено"), h("th", { class: "num" }, "Борг")),
-        d.by_master.map((m) => h("tr", {}, h("td", {}, h("div", { class: "row" }, avatar(m.master_name, "sm"), m.master_name)), h("td", { class: "num" }, m.orders_count), h("td", { class: "num" }, money(m.revenue)),
-          h("td", { class: "num" }, money(m.masters_share)), h("td", { class: "num" }, money(m.paid)), h("td", { class: "num" }, h("b", {}, money(m.balance)))))))
-        : h("div", { class: "card" }, emptyState("Додайте майстрів у розділі «Персонал»", "users")),
-      h("div", { class: "section" }, h("h2", {}, "По послугах")),
-      d.by_service.length ? h("div", { class: "card table-wrap scroll-box" }, h("table", {},
-        h("tr", {}, h("th", {}, "Послуга"), h("th", { class: "num" }, "К-сть"), h("th", { class: "num" }, "Виручка"), h("th", { class: "num m-hide" }, "Майстрам"), h("th", { class: "num m-hide" }, "Матеріали"), h("th", { class: "num" }, "Салону")),
-        d.by_service.map((x) => h("tr", {}, h("td", {}, x.service_name), h("td", { class: "num" }, x.orders_count), h("td", { class: "num" }, money(x.revenue)),
-          h("td", { class: "num" }, money(x.masters_share)), h("td", { class: "num" }, money(x.materials)), h("td", { class: "num" }, money(x.salon_net_from_orders))))))
-        : h("div", { class: "card" }, emptyState("Немає замовлень за період", "receipt")),
+      show("revenue", h("div", { class: "grid kpi" },
+        kpi("Реальна виручка", s.real_revenue, "dark", { ico: "banknote", sub: `послуги ${money(s.revenue)} · товари ${money(s.products.revenue)}` }),
+        s.discounts >= 0 ? kpi("Знижки (за рахунок салону)", s.discounts, "", { ico: "percent" })
+          : kpi("Доплати понад ціну", -s.discounts, "", { ico: "percent", sub: "клієнти заплатили більше за прайс" }))),
+      show("split", h("div", { class: "grid kpi", style: { marginTop: "12px" } },
+        kpi("Частка майстрів", s.masters_share, "", { ico: "users", sub: "50% від ціни" }),
+        kpi("Частка салону (до матеріалів)", s.salon_share, "", { ico: "home" }),
+        kpi("Матеріали", s.materials, "", { ico: "box" }))),
+      show("gross", h("details", { class: "card", style: { marginTop: "12px" } },
+        h("summary", { class: "row", style: { cursor: "pointer", listStyle: "none" } }, h("h3", { class: "grow", style: { margin: 0 } }, "Валовий прибуток"),
+          h("b", { class: "kpi-value" }, money(s.gross_profit)), icon("down", "sm")),
+        h("div", { class: "stack", style: { marginTop: "8px" } },
+          line("Послуги: виручка − майстри − матеріали", gd.services), line("Товари: продаж − собівартість − бонус", gd.products),
+          gd.refund_losses ? line("Матеріали на повернених замовленнях", -gd.refund_losses) : null,
+          line("Вигода від кращих закупівель", gd.purchase_benefit, "muted"),
+          h("b", { class: "small" }, "Матеріали за категоріями"),
+          gd.materials_by_category.length ? gd.materials_by_category.map((c) => line(c.category, c.amount, "muted small")) : h("span", { class: "muted small" }, "—")))),
+      show("expenses", h("div", { class: "card", style: { marginTop: "12px" } }, h("div", { class: "card-head" }, h("h3", {}, "Витрати")),
+        line("Оренда", exp.rent), line("Комунальні", exp.utilities), line("Реклама", exp.advertising), line("Податки", exp.taxes),
+        line("Генератор", exp.generator), line("Інше", exp.other),
+        h("div", { class: "sum-line muted small" }, h("span", {}, "Закупівля матеріалів і пального (лише грошовий потік)"), h("span", {}, money(exp.materials_purchases + exp.fuel_purchases))))),
+      show("net", h("div", { class: "card", style: { marginTop: "12px" } }, line("Чистий прибуток", s.net_profit, "total"))),
+      show("profitability", h("div", { class: "card", style: { marginTop: "12px" } }, h("div", { class: "card-head" }, h("h3", {}, "Рентабельність")), profitChip(s),
+        h("div", { class: "muted small" }, "≥25% 💚 · 18–25% 🟢 · 14–18% 🟡 · 8–14% 🟠 · <8% 🔴"))),
+      show("masters", h("div", { class: "card", style: { marginTop: "12px" } }, h("div", { class: "card-head" }, h("h3", {}, "Майстри")),
+        line("Виплачено майстрам за період", s.payouts), line("Борг майстрам зараз", s.owed_to_masters, "total"),
+        line("Бонус за товари (накопичено)", s.product_bonus_accrued),
+        h("a", { href: "#/shifts", class: "small" }, "Виплати й бонуси →"))),
+      show("unpaid", h("div", { class: "card", style: { marginTop: "12px" } }, h("div", { class: "card-head" }, h("h3", {}, "Неоплачені замовлення"),
+        h("span", { class: "muted small" }, `${un.count} шт. · ${money(un.amount)}`)),
+        un.items.length ? un.items.map((x) => h("button", { class: "sum-line link" + (x.overdue ? " neg" : ""), onclick: () => orderSheet(x.id, () => load(lastQ)) },
+          h("span", {}, `#${x.id} · ${x.days} дн.`, x.overdue ? " · понад 3 дні" : ""), h("b", {}, money(x.amount)))) : h("span", { class: "muted small" }, "Немає"))),
+      show("by_day", d.by_day.length > 1 ? h("div", { class: "card", style: { marginTop: "12px" } }, h("div", { class: "card-head" }, h("h3", {}, "Виручка по днях")), revenueChart(d.by_day)) : null),
+      show("by_master", h("div", {}, h("div", { class: "section" }, h("h2", {}, "По майстрах")),
+        d.by_master.length ? h("div", { class: "card table-wrap scroll-box" }, h("table", {},
+          h("tr", {}, h("th", {}, "Майстер"), h("th", { class: "num" }, "Послуг"), h("th", { class: "num" }, "Виручка"), h("th", { class: "num" }, "Нараховано"), h("th", { class: "num m-hide" }, "Виплачено"), h("th", { class: "num" }, "Борг")),
+          d.by_master.map((m) => h("tr", {}, h("td", {}, m.master_name), h("td", { class: "num" }, m.orders_count), h("td", { class: "num" }, money(m.revenue)),
+            h("td", { class: "num" }, money(m.masters_share)), h("td", { class: "num m-hide" }, money(m.paid)), h("td", { class: "num" }, h("b", {}, money(m.balance)))))))
+          : h("div", { class: "card" }, emptyState("Немає даних", "users")))),
+      show("by_service", h("div", {}, h("div", { class: "section" }, h("h2", {}, "По послугах")),
+        d.by_service.length ? h("div", { class: "card table-wrap scroll-box" }, h("table", {},
+          h("tr", {}, h("th", {}, "Послуга"), h("th", { class: "num" }, "К-сть"), h("th", { class: "num" }, "Виручка"), h("th", { class: "num m-hide" }, "Майстрам"), h("th", { class: "num m-hide" }, "Матеріали"), h("th", { class: "num" }, "Салону")),
+          d.by_service.map((x) => h("tr", {}, h("td", {}, x.service_name), h("td", { class: "num" }, x.orders_count), h("td", { class: "num" }, money(x.revenue)),
+            h("td", { class: "num m-hide" }, money(x.masters_share)), h("td", { class: "num m-hide" }, money(x.materials)), h("td", { class: "num" }, money(x.salon_net_from_orders))))))
+          : h("div", { class: "card" }, emptyState("Немає замовлень за період", "receipt")))),
     ].filter(Boolean));
   };
   await load("period=month", "month");
+};
+
+const SVGNS = "http://www.w3.org/2000/svg";
+function svg(tag, attrs, ...kids) {
+  const el = document.createElementNS(SVGNS, tag);
+  for (const [k, v] of Object.entries(attrs || {})) if (v !== null && v !== undefined) el.setAttribute(k, String(v));
+  kids.flat().forEach((c) => c && el.append(c));
+  return el;
+}
+function pieChart(parts) {
+  const total = parts.reduce((a, [, v]) => a + Math.max(0, v), 0);
+  if (!total) return h("div", { class: "muted small" }, "Немає даних");
+  let ang = -Math.PI / 2;
+  const slices = parts.filter(([, v]) => v > 0).map(([label, v, color]) => {
+    const a2 = ang + (v / total) * Math.PI * 2;
+    const large = a2 - ang > Math.PI ? 1 : 0;
+    const p = (a) => `${50 + 45 * Math.cos(a)} ${50 + 45 * Math.sin(a)}`;
+    const d = v === total ? "M 50 5 A 45 45 0 1 1 49.99 5 Z" : `M 50 50 L ${p(ang)} A 45 45 0 ${large} 1 ${p(a2)} Z`;
+    ang = a2;
+    return [svg("path", { d, fill: color }), label, v, color];
+  });
+  return h("div", { class: "row", style: { gap: "16px", flexWrap: "wrap" } },
+    (() => { const el = svg("svg", { viewBox: "0 0 100 100", width: 150, height: 150, role: "img", "aria-label": "Куди йдуть гроші" }, slices.map((x) => x[0])); return el; })(),
+    h("div", { class: "stack small" }, slices.map(([, l, v, c]) => h("div", { class: "row" }, h("span", { style: { width: "10px", height: "10px", borderRadius: "50%", background: c, display: "inline-block" } }),
+      `${l}: ${money(v)} (${Math.round((v / total) * 100)}%)`))));
+}
+
+let mermaidLoading = null;
+function loadMermaid() {
+  if (window.mermaid) return Promise.resolve(window.mermaid);
+  if (mermaidLoading) return mermaidLoading;
+  mermaidLoading = new Promise((resolve, reject) => {
+    const sc = document.createElement("script");
+    sc.src = "/static/vendor/mermaid.min.js?v=11.4.1";
+    sc.onload = () => resolve(window.mermaid);
+    sc.onerror = () => { mermaidLoading = null; reject(new Error("Не вдалося завантажити схеми")); };
+    document.head.append(sc);
+  });
+  return mermaidLoading;
+}
+const uah = (k) => (Math.round((k || 0) / 100)).toLocaleString("uk-UA").replace(/\u00a0/g, " ") + " ₴";
+function logicDiagrams(st) {
+  const finance = `flowchart TD
+    P["Ціна (середня)<br/>P = ${uah(st.avg_price)}"] --> M1["Майстер = P × 50%<br/>${uah(st.avg_master)}"]
+    A["Сплачено (середнє)<br/>A = ${uah(st.avg_paid)}"] --> S1["Салон = A − Майстер − M<br/>${uah(st.avg_salon)}"]
+    M["Матеріали (середні)<br/>M = ${uah(st.avg_materials)}"] --> S1
+    M1 --> S1
+    S1 --> CHK{"Салон < 0?"}
+    CHK -->|Так| ALERT["🔔 Сповіщення обом директорам"]
+    CHK -->|Ні| OK["✅ ОК"]`;
+  const lifecycle = `flowchart LR
+    A["Клієнт"] --> B["Запис<br/>(pending)"]
+    B --> C["confirmed"]
+    C --> D["in_progress"]
+    D --> E["Замовлення<br/>(completed / unpaid)"]
+    E --> F["Зміна закрита"]
+    F --> G["Виплата"]
+    B -.-> X["cancelled / no_show"]
+    E -.-> R["refunded / cancelled"]`;
+  const cash = `flowchart TD
+    S["Відкрита зміна"] --> O["Замовлення"]
+    O --> C{"Готівка?"}
+    C -->|Так| CASH["Готівка в касу"]
+    C -->|Ні| CARD["На картку салону"]
+    CASH --> CLOSE["Закриття зміни"]
+    CARD --> CLOSE
+    CLOSE --> CALC["Майстер бере: min(Заробіток, Готівка)"]
+    CALC --> PAYOUT["Доплата на картку: Заробіток − взяте"]`;
+  return [["Фінансовий поділ (середнє за місяць)", finance], ["Життєвий цикл замовлення", lifecycle], ["Зміна і каса", cash]];
+}
+
+VIEWS.logic = async (main) => {
+  main.append(topbar("Логіка системи", "Як працюють гроші, замовлення і каса — на реальних середніх цифрах"));
+  const [st, mermaid] = await Promise.all([api.get("/api/finance/logic-stats"), loadMermaid()]);
+  const dark = document.documentElement.getAttribute("data-theme") === "dark";
+  mermaid.initialize({ startOnLoad: false, securityLevel: "strict", theme: dark ? "dark" : "neutral", flowchart: { htmlLabels: true } });
+  main.append(h("p", { class: "muted small" }, st.orders ? `Місяць з ${dmy(st.month)}: ${st.orders} замовлень. ` +
+    (st.avg_discount >= 0 ? `Знижка в середньому ${uah(st.avg_discount)}.` : `Клієнти в середньому платили на ${uah(-st.avg_discount)} більше за ціну.`)
+    : "У цьому місяці ще немає закритих замовлень — цифри дорівнюють нулю."));
+  let i = 0;
+  for (const [title, code] of logicDiagrams(st)) {
+    const holder = h("div", { class: "mermaid-box", style: { overflowX: "auto" } });
+    main.append(h("div", { class: "card", style: { marginTop: "12px" } }, h("div", { class: "card-head" }, h("h3", {}, title)), holder));
+    try {
+      const { svg } = await mermaid.render(`logic-${Date.now()}-${i++}`, code);
+      const doc = new DOMParser().parseFromString(svg, "text/html");
+      const el = doc.body.querySelector("svg");
+      if (!el) throw new Error("порожня схема");
+      holder.append(document.importNode(el, true));
+    } catch (e) {
+      holder.append(h("div", { class: "muted small" }, "Схему не вдалося побудувати: " + (e.message || e)));
+    }
+  }
+};
+
+VIEWS.analytics = async (main) => {
+  const body = h("div");
+  let q = "period=month";
+  main.append(topbar("Аналітика"), periodPicker((x) => { q = x; load(); }), body);
+  const recBox = h("div", { class: "stack" });
+  const loadRec = async (refresh) => {
+    recBox.replaceChildren(h("div", { class: "muted small" }, "Готуємо рекомендації…"));
+    const r = await api.post(`/api/analytics/recommend?${q}${refresh ? "&refresh=true" : ""}`).catch((e) => ({ items: [{ title: "Немає рекомендацій", text: e.message, priority: "low" }] }));
+    const pr = { high: "🔴", medium: "🟡", low: "🟢" };
+    recBox.replaceChildren(...r.items.map((x) => h("div", { class: "rec-item", style: { whiteSpace: "normal", overflowWrap: "anywhere", padding: "6px 0", borderBottom: "1px solid var(--line)" } },
+      `${pr[x.priority] || ""} `, h("b", {}, x.title), " — ", x.text)),
+      h("div", { class: "muted small" }, r.provider === "llama" ? "Локальна модель" : "Правила", r.cached ? " · з кешу (1 год)" : ""));
+  };
+  const load = async () => {
+    body.replaceChildren(h("div", { class: "empty" }, "Завантаження…"));
+    const [d, ins] = await Promise.all([api.get("/api/finance/dashboard?" + q), api.get("/api/finance/insights?" + q).catch(() => null)]);
+    const s = d.summary;
+    const hidden = new Set(s.hidden_reports || []);
+    const show = (k, node) => (hidden.has(k) ? null : node);
+    const exp = s.expenses;
+    const opEx = exp.rent + exp.utilities + exp.advertising + exp.taxes + exp.generator + exp.other;
+    body.replaceChildren(...[
+      show("profitability", h("div", { class: "card" }, h("div", { class: "card-head" }, h("h3", {}, "Рентабельність")), profitChip(s))),
+      show("recommendations", h("div", { class: "card", style: { marginTop: "12px" } },
+        h("div", { class: "card-head" }, h("h3", {}, "Рекомендації"), h("button", { class: "btn sm", onclick: () => loadRec(true) }, "Оновити")), recBox)),
+      show("pie", h("div", { class: "card", style: { marginTop: "12px" } }, h("div", { class: "card-head" }, h("h3", {}, "Куди йдуть гроші")),
+        pieChart([["Майстрам", s.masters_share, "#8a6f3c"], ["Матеріали", s.materials, "#c9a46a"], ["Витрати", opEx, "#9aa59e"],
+          ["Прибуток", Math.max(0, s.net_profit), "#2f6b4f"]]))),
+      show("expenses", h("div", { class: "card", style: { marginTop: "12px" } }, h("div", { class: "card-head" }, h("h3", {}, "Витрати")),
+        [["Оренда", exp.rent], ["Комунальні", exp.utilities], ["Реклама", exp.advertising], ["Податки", exp.taxes], ["Генератор", exp.generator], ["Інше", exp.other]]
+          .map(([l, v]) => h("div", { class: "sum-line" }, h("span", {}, l), h("b", {}, money(v)))))),
+      show("insights", ins ? insightsBlock(ins) : null),
+      show("average_check", h("div", { class: "card", style: { marginTop: "12px" } }, h("div", { class: "card-head" }, h("h3", {}, "Середній чек"), h("b", {}, money(s.average_check))),
+        d.by_service.map((x) => h("div", { class: "sum-line small" }, h("span", {}, x.service_name, h("span", { class: "muted" }, ` · ${x.orders_count}×`)),
+          h("span", {}, money(x.orders_count ? Math.floor(x.revenue / x.orders_count) : 0)))))),
+    ].filter(Boolean));
+    if (!hidden.has("recommendations")) loadRec(false);
+  };
+  await load();
 };
 
 function sheetHead(value, prev, vs, from, to) {
@@ -2608,7 +2924,6 @@ function expensesSheet({ s, p, vs, exp, expRows, opEx }) {
   openSheet("Витрати салону", h("div", { class: "stack detail" },
     sheetHead(opEx, p.operating_expenses, vs, s.from, s.to),
     rows.length ? barList(rows.map(([l, v, , href]) => [l, v, pctOf(v, opEx), href]), opEx) : emptyState("За період витрат немає", "wallet"),
-    exp.master_charges ? h("div", { class: "sum-line" }, h("span", {}, "Компенсували майстри (комунальні/генератор)"), h("b", { class: "pos" }, "+ " + money(exp.master_charges))) : null,
     h("div", { class: "card stack", style: { boxShadow: "none" } },
       h("div", { class: "sum-line muted small" }, h("span", {}, "Закупівля матеріалів (гроші, не витрата періоду)"), h("span", {}, money(exp.materials_purchases))),
       h("div", { class: "sum-line muted small" }, h("span", {}, "Закупівля пального"), h("span", {}, money(exp.fuel_purchases || 0))),
@@ -2617,7 +2932,7 @@ function expensesSheet({ s, p, vs, exp, expRows, opEx }) {
       h("a", { class: "btn", href: "#/utilities" }, icon("gauge", "sm"), "Комунальні платежі"))));
 }
 function profitSheet({ s, p, vs, opEx, exp }) {
-  const parts = [["Майстрам", s.masters_share, "c-masters"], ["Матеріали", s.materials, "c-mat"], ["Витрати", Math.max(0, opEx - (exp.master_charges || 0)), "c-exp"],
+  const parts = [["Майстрам", s.masters_share, "c-masters"], ["Матеріали", s.materials, "c-mat"], ["Витрати", Math.max(0, opEx), "c-exp"],
     ["Прибуток", Math.max(0, s.net_profit), "c-profit"]];
   const total = Math.max(1, parts.reduce((a, x) => a + x[1], 0));
   openSheet("Прибуток: куди йдуть гроші", h("div", { class: "stack detail" },
@@ -2630,7 +2945,6 @@ function profitSheet({ s, p, vs, opEx, exp }) {
       h("div", { class: "sum-line" }, h("span", { class: "muted" }, "− Матеріали"), h("span", {}, money(s.materials))),
       h("div", { class: "sum-line total" }, h("span", {}, "Валовий прибуток"), h("span", {}, money(s.gross_profit))),
       h("div", { class: "sum-line" }, h("span", { class: "muted" }, "− Витрати"), h("span", {}, money(opEx))),
-      exp.master_charges ? h("div", { class: "sum-line" }, h("span", { class: "muted" }, "+ Компенсація майстрів"), h("span", {}, money(exp.master_charges))) : null,
       h("div", { class: "sum-line total" }, h("span", {}, "Чистий прибуток"), h("span", { class: s.net_profit < 0 ? "neg" : "" }, money(s.net_profit)))),
     s.revenue ? h("p", { class: "muted small" }, `Рентабельність: ${pctOf(s.net_profit, s.revenue)} — стільки з кожної гривні виручки лишається салону.`) : null));
 }
@@ -2842,15 +3156,122 @@ function perfCard() {
     h("p", { class: "muted small", style: { margin: 0 } }, "Як швидко відкриваються сторінки в працівників і відповідає сервер. Без персональних даних — лише час."),
     box, btn);
 }
+function vacationCard() {
+  const box = h("div", { class: "card stack" }, h("h3", { class: "row", style: { gap: "8px" } }, icon("calendar"), "Режим «Ми у відпустці»"));
+  const draw = (v) => {
+    const days = h("input", { type: "number", min: 1, max: 14, value: 14, style: { width: "80px" } });
+    box.replaceChildren(box.firstChild,
+      h("p", { class: "muted small", style: { margin: 0 } }, "Майстри можуть запитати дозвіл на 7 дій (скасування, повернення, виправлення, примусове закриття зміни, матеріали після закриття, інвентаризація, прихід). Вирішує перший із директорів. Автовимкнення — максимум 14 днів."),
+      v.active ? h("div", { class: "sum-line" }, h("b", {}, "Увімкнено"), h("span", {}, "до ", dmy(v.expires_at), " ", hm(v.expires_at))) : h("span", { class: "muted" }, "Вимкнено"),
+      v.active ? h("button", { class: "btn", onclick: async () => draw(await run(() => api.post("/api/settings/vacation-mode", { active: false }), "Вимкнено")) }, "Вимкнути")
+        : h("div", { class: "row" }, field("Днів", days), h("button", { class: "btn primary", onclick: async () =>
+          draw(await run(() => api.post("/api/settings/vacation-mode", { active: true, days: parseInt(days.value, 10) || 14 }), "Увімкнено")) }, "Увімкнути")),
+      h("a", { href: "#/security", class: "small" }, "Запити дозволу →"));
+  };
+  api.get("/api/settings/vacation-mode").then(draw).catch(() => {});
+  return box;
+}
+function alertsSettingsCard() {
+  const box = h("div", { class: "card stack" }, h("h3", { class: "row", style: { gap: "8px" } }, icon("bell"), "Сповіщення"));
+  api.get("/api/alerts/settings").then((cfg) => {
+    const boxes = cfg.important.map((k) => [k, h("input", { type: "checkbox", checked: !cfg.disabled.includes(k) })]);
+    box.append(h("p", { class: "muted small", style: { margin: 0 } }, "Критичні (салон у мінусі, від'ємний баланс майстра, запит дозволу) вимкнути не можна. Інформаційні приходять щоденним дайджестом."),
+      ...boxes.map(([k, cb]) => h("label", { class: "row" }, cb, cfg.labels[k] || k)),
+      h("button", { class: "btn primary", onclick: async () => {
+        await run(() => api.put("/api/alerts/settings", { disabled: boxes.filter(([, cb]) => !cb.checked).map(([k]) => k) }), "Збережено");
+      } }, "Зберегти"));
+  }).catch(() => {});
+  return box;
+}
+
+VIEWS.security = async (main) => {
+  const isDir = state.user.role === "director";
+  main.append(topbar("Безпека", isDir ? "Входи, сесії, PIN фінансів, запити дозволу" : "Мої запити дозволу"));
+  const reqBox = h("div", { class: "card stack" }, h("h3", {}, "Запити дозволу"));
+  const drawReq = async () => {
+    const list = await api.get("/api/permission-requests").catch(() => []);
+    const ST = { pending: "очікує", approved: "дозволено", rejected: "відхилено", withdrawn: "відкликано", expired: "прострочено" };
+    reqBox.replaceChildren(reqBox.firstChild, ...(list.length ? list.map((r) => h("div", { class: "sum-line" },
+      h("span", {}, `#${r.id} · ${r.user_name || ""} · ${r.action_label} · `, h("b", {}, ST[r.status] || r.status)),
+      r.status === "pending" ? h("span", { class: "row" }, ...(isDir
+        ? [h("button", { class: "btn sm primary", onclick: async () => { await run(() => api.post(`/api/permission-requests/${r.id}/approve`, {}), "Дозволено"); drawReq(); } }, "Дозволити"),
+           h("button", { class: "btn sm", onclick: async () => { await run(() => api.post(`/api/permission-requests/${r.id}/reject`, {}), "Відхилено"); drawReq(); } }, "Відхилити")]
+        : [h("button", { class: "btn sm", onclick: async () => { await run(() => api.post(`/api/permission-requests/${r.id}/withdraw`), "Відкликано"); drawReq(); } }, "Відкликати")])) : null))
+      : [h("span", { class: "muted" }, "Запитів немає")]));
+  };
+  if (!isDir) {
+    main.append(permissionRequestCard(drawReq), h("div", { style: { marginTop: "12px" } }, reqBox));
+    return drawReq();
+  }
+  const s = state.settings || {};
+  const pinOn = h("input", { type: "checkbox", checked: !!s.finance_pin_enabled });
+  const newPin = h("input", { type: "password", inputmode: "numeric", maxlength: 8, placeholder: "новий PIN" });
+  const curPin = h("input", { type: "password", inputmode: "numeric", maxlength: 8, placeholder: "поточний (якщо вже задано)" });
+  const dirs = (state.allUsers || []).filter((u) => u.role === "director" && u.id !== state.user.id);
+  const users = (state.allUsers || []).filter((u) => u.is_active !== false);
+  const pinCard = h("div", { class: "card stack" }, h("h3", { class: "row", style: { gap: "8px" } }, icon("lock"), "PIN вкладки «Фінанси»"),
+    h("label", { class: "row" }, pinOn, "Запитувати PIN раз за сесію (для директорів)"),
+    h("button", { class: "btn", onclick: async () => { state.settings = await run(() => api.put("/api/settings", { finance_pin_enabled: pinOn.checked }), "Збережено"); } }, "Зберегти"),
+    h("div", { class: "form-grid" }, field("Мій новий PIN", newPin), field("Поточний PIN", curPin)),
+    h("button", { class: "btn", onclick: async () => { await run(() => api.post("/api/auth/finance-pin", { pin: newPin.value, current_pin: curPin.value || null }), "PIN змінено"); newPin.value = curPin.value = ""; } }, "Змінити мій PIN"),
+    dirs.map((u) => h("button", { class: "btn ghost", onclick: () => confirmSheet("Скинути PIN?", `${u.full_name} задасть новий PIN при наступному відкритті фінансів.`, "Скинути",
+      async () => { await run(() => api.post(`/api/users/${u.id}/reset-finance-pin`), "PIN скинуто"); }) }, `Скинути PIN: ${u.full_name}`)));
+  const sessCard = h("div", { class: "card stack" }, h("h3", { class: "row", style: { gap: "8px" } }, icon("logout"), "Сесії"),
+    h("p", { class: "muted small", style: { margin: 0 } }, "Завершити всі входи людини на всіх пристроях (наприклад, якщо загубили телефон)."),
+    users.map((u) => h("div", { class: "sum-line" }, h("span", {}, u.full_name, h("span", { class: "muted small" }, ` · ${ROLES[u.role] || u.role}`)),
+      h("button", { class: "btn sm", onclick: () => confirmSheet("Завершити всі сесії?", u.full_name, "Завершити", async () => {
+        await run(() => api.post(`/api/users/${u.id}/revoke-sessions`), "Сесії завершено");
+        if (u.id === state.user.id) logout();
+      }) }, "Завершити сесії"))));
+  const logBox = h("div", { class: "card table-wrap scroll-box" });
+  const onlyFail = h("input", { type: "checkbox" });
+  const loadLog = async () => {
+    const rows = await api.get("/api/security/logins" + (onlyFail.checked ? "?success=false" : ""));
+    const M = { password: "пароль", "2fa": "код 2FA", bot_pin: "PIN бота" };
+    logBox.replaceChildren(h("table", {}, h("tr", {}, h("th", {}, "Час"), h("th", {}, "Хто"), h("th", {}, "Спосіб"), h("th", {}, "Результат"), h("th", { class: "m-hide" }, "IP / пристрій")),
+      rows.map((r) => h("tr", {}, h("td", {}, dm(r.ts), " ", hm(r.ts)), h("td", {}, r.user_name || "—"), h("td", {}, M[r.method] || r.method),
+        h("td", { class: r.success ? "" : "neg" }, r.success ? "успішно" : (r.detail || "невдало")), h("td", { class: "muted small m-hide" }, [r.ip, (r.user_agent || "").slice(0, 40)].filter(Boolean).join(" · "))))));
+  };
+  onlyFail.addEventListener("change", loadLog);
+  main.append(h("div", { class: "grid two" }, pinCard, sessCard),
+    h("div", { style: { marginTop: "12px" } }, reqBox),
+    h("div", { class: "section" }, h("h2", {}, "Журнал входів (90 днів)"), h("label", { class: "row small" }, onlyFail, "лише невдалі")), logBox);
+  await Promise.all([loadLog(), drawReq()]);
+};
+
+function permissionRequestCard(onDone) {
+  const card = h("div", { class: "card stack" }, h("h3", {}, "Запитати дозвіл директора"));
+  api.get("/api/settings/vacation-mode").then((v) => {
+    if (!v.active) { card.append(h("p", { class: "muted" }, "Запит дозволу доступний, коли директори вмикають режим «Ми у відпустці».")); return; }
+    const action = select(Object.entries(v.actions), "refund");
+    const orderId = h("input", { inputmode: "numeric", placeholder: "№ замовлення" });
+    const reason = h("input", { placeholder: "Причина" });
+    const extra = h("input", { placeholder: "m:<id матеріалу>=<к-сть>, p:<id товару>=<к-сть> або сума=450" });
+    card.append(field("Дія", action), h("div", { class: "form-grid" }, field("Замовлення", orderId), field("Причина", reason)), field("Деталі", extra),
+      h("button", { class: "btn primary", onclick: async () => {
+        const a = action.value;
+        const payload = { order_id: parseInt(orderId.value, 10) || undefined, reason: reason.value.trim() || undefined };
+        const m = /^(m|p):(\d+)=([\d.,]+)$/.exec(extra.value.trim());
+        if (a === "inventory" && m) payload.items = [{ [m[1] === "m" ? "material_id" : "product_id"]: +m[2], actual: parseFloat(m[3].replace(",", ".")) }];
+        if (a === "material_receipt" && m) { payload[m[1] === "m" ? "material_id" : "product_id"] = +m[2]; payload.qty = parseFloat(m[3].replace(",", ".")); }
+        const amt = /сума\s*=\s*([\d.,]+)/i.exec(extra.value);
+        if (a === "correction") { if (!amt) return toast("Для виправлення вкажіть у деталях: сума=450", true); payload.data = { amount: toKop(amt[1]) }; }
+        if (a === "materials_after_close") { if (!m || m[1] !== "m") return toast("Вкажіть матеріал: m:<id>=<кількість>", true); payload.materials = [{ material_id: +m[2], qty: parseFloat(m[3].replace(",", ".")) }]; }
+        await run(() => api.post("/api/permission-requests", { action: a, payload }), "Запит надіслано директорам");
+        onDone && onDone();
+      } }, "Надіслати запит"));
+  }).catch(() => {});
+  return card;
+}
+
 function twofaSettingsCard(st) {
   const roles = st.twofa_roles || [];
   const dir = h("input", { type: "checkbox", checked: roles.includes("director") });
-  const adm = h("input", { type: "checkbox", checked: roles.includes("admin") });
   return h("div", { class: "card stack" }, h("h3", { class: "row", style: { gap: "8px" } }, icon("lock"), "Безпека входу"),
     h("p", { class: "muted small", style: { margin: 0 } }, "Після правильного пароля на новому пристрої — 6-значний код у Telegram (дійсний 5 хв). Пристрій можна запам'ятати на 30 днів. Працює, якщо в людини підключено Telegram."),
-    h("label", { class: "row" }, dir, "Директор"), h("label", { class: "row" }, adm, "Адміністратор"),
+    h("label", { class: "row" }, dir, "Директори"),
     h("button", { class: "btn primary", onclick: async () => {
-      const v = [dir.checked ? "director" : null, adm.checked ? "admin" : null].filter(Boolean);
+      const v = dir.checked ? ["director"] : [];
       state.settings = await run(() => api.put("/api/settings", { twofa_roles: v }), "Збережено"); reload();
     } }, "Зберегти"));
 }
@@ -2889,10 +3310,9 @@ VIEWS.utilities = async (main) => {
     h("button", { class: "btn", "aria-label": "Попередній місяць", onclick: () => go(addMonths(month, -1)) }, icon("left", "sm")),
     h("button", { class: "btn", onclick: () => go(today().slice(0, 7) + "-01") }, "Цей місяць"),
     h("button", { class: "btn", "aria-label": "Наступний місяць", onclick: () => go(addMonths(month, 1)) }, icon("right", "sm"))));
-  const [g, sum, readings, runs, prev, charges, hist] = await Promise.all([
+  const [g, sum, readings, runs, hist] = await Promise.all([
     api.get("/api/generator"), api.get("/api/utilities/summary?month=" + month), api.get("/api/utilities/readings"),
-    api.get("/api/generator/runs?month=" + month), api.get("/api/utilities/allocation?month=" + month), api.get("/api/utilities/charges?month=" + month),
-    api.get("/api/generator/history?months=6").catch(() => [])]);
+    api.get("/api/generator/runs?month=" + month), api.get("/api/generator/history?months=6").catch(() => [])]);
   const st = state.settings || {};
 
   const e = sum.electricity, gen = sum.generator;
@@ -2989,52 +3409,26 @@ VIEWS.utilities = async (main) => {
       } }, "Зберегти")));
   }
 
-  const mode = st.utilities_charge_mode || "none";
-  const split = select([["revenue", "пропорційно виручці"], ["equal", "порівну"]], st.utilities_split || "revenue");
-  const share = h("input", { type: "number", min: 0, max: 100, step: 1, value: (st.utilities_charge_share_bp ?? 10000) / 100 });
-  const fixedAmt = h("input", { inputmode: "decimal", value: kopToInput(st.utilities_fixed_amount || 0) });
-  const fixedPer = select([["shift", "за зміну"], ["month", "за місяць"]], st.utilities_fixed_per || "shift");
-  let newMode = mode;
-  const modeBox = h("div", { class: "stack" });
-  const drawMode = () => modeBox.replaceChildren(...[
-    newMode === "month_end" ? h("div", { class: "form-grid" }, field("Як ділити", split), field("Яку частку витрат розподіляти, %", share)) : null,
-    newMode === "fixed" ? h("div", { class: "form-grid" }, field("Сума з майстра, ₴", fixedAmt), field("Списувати", fixedPer)) : null,
-    newMode === "fixed" ? h("p", { class: "muted small" }, "Сума автоматично віднімається від заробітку майстра при закритті зміни (або раз на місяць — при першій закритій зміні місяця).") : null,
-    newMode === "month_end" ? h("p", { class: "muted small" }, "Після завершення місяця натисніть «Розподілити» — сума електроенергії й генератора поділиться між майстрами.") : null,
-  ].filter(Boolean));
-  drawMode();
-  const ended = addMonths(month, 1) <= today();
-  const allocCard = h("div", { class: "card stack" }, h("h3", {}, "Розподіл витрат між майстрами"),
-    seg([["none", "Не списувати"], ["month_end", "Наприкінці місяця"], ["fixed", "Фіксована ставка"]], mode, (v) => { newMode = v; drawMode(); }),
-    modeBox,
-    h("button", { class: "btn primary", onclick: async () => {
-      const body = { utilities_charge_mode: newMode, utilities_split: split.value, utilities_charge_share_bp: Math.round(parseFloat(share.value || "0") * 100),
-        utilities_fixed_amount: toKop(fixedAmt.value) || 0, utilities_fixed_per: fixedPer.value };
-      state.settings = await run(() => api.put("/api/settings", body), "Спосіб розподілу збережено"); reload();
-    } }, "Зберегти спосіб розподілу"),
-    mode === "month_end" ? h("div", { class: "stack", style: { borderTop: "1px solid var(--line)", paddingTop: "12px" } },
-      h("b", {}, `${monthTitle(month)}: до розподілу ${money(prev.to_split)}`),
-      prev.rows.map((r) => h("div", { class: "sum-line" }, h("span", {}, r.master_name, h("span", { class: "muted small" }, ` · виручка ${money(r.revenue)}`)), h("b", {}, money(r.amount)))),
-      prev.already_charged ? h("p", { class: "muted small" }, `За цей місяць уже списано ${money(prev.already_charged)}.`) : null,
-      !prev.costs.electricity_confirmed ? h("p", { class: "muted small" }, "Електроенергію за місяць ще не підтверджено — вона не увійде в розподіл.") : null,
-      h("div", { class: "row" },
-        !prev.already_charged ? h("button", { class: "btn primary", disabled: !ended || !prev.to_split || null, onclick: () => confirmSheet("Розподілити витрати?",
-          `${money(prev.to_split)} буде списано з майстрів за ${monthTitle(month).toLowerCase()}. Повторно за цей місяць списати не можна.`, "Розподілити",
-          async () => { await run(() => api.post("/api/utilities/allocate", { month }), "Розподілено"); reload(); }) }, ended ? "Розподілити" : "Доступно після завершення місяця") : null,
-        prev.already_charged ? h("button", { class: "btn danger", onclick: () => confirmSheet("Скасувати списання за місяць?", "Буде створено сторно; після цього можна розподілити знову.", "Скасувати списання",
-          async (reason) => { await run(() => api.post("/api/utilities/reverse", { month, reason }), "Списання скасовано"); reload(); }, { danger: true, withReason: true }) }, "Скасувати списання") : null)) : null,
-    charges.length ? h("details", {}, h("summary", { class: "small" }, `Списання за місяць (${charges.length})`),
-      charges.map((c) => h("div", { class: "sum-line small" }, h("span", {}, `${dm(c.charged_on)} · ${c.master_name}`, c.reversed ? h("span", { class: "muted" }, " (скасовано)") : null), h("span", {}, money(c.amount))))) : null);
-
   main.append(generatorCard(g, reload), kpis,
     h("div", { class: "grid two", style: { marginTop: "12px" } }, detail, elecCard),
-    h("div", { style: { marginTop: "12px" } }, genCard),
-    h("div", { style: { marginTop: "12px" } }, allocCard));
+    h("div", { style: { marginTop: "12px" } }, genCard));
 };
 
 VIEWS.shifts = async (main) => {
   const [closed, all, payouts] = await Promise.all([api.get("/api/shifts?status=closed"), api.get("/api/shifts"), api.get("/api/payouts")]);
-  main.append(topbar("Зміни й виплати", "Каса змін, нарахування майстрам і виплати", h("button", { class: "btn", onclick: () => payoutForm(null) }, icon("plus", "sm"), "Інша виплата / аванс")));
+  main.append(topbar("Зміни й виплати", "Каса змін, нарахування майстрам і виплати",
+    h("button", { class: "btn", onclick: () => bonusSheet() }, icon("box", "sm"), "Бонуси за товари"),
+    h("button", { class: "btn", onclick: () => payoutForm(null) }, icon("plus", "sm"), "Інша виплата / аванс")));
+  async function bonusSheet() {
+    const rows = await Promise.all(state.masters.map((m) => api.get(`/api/bonuses?master_id=${m.id}`).then((b) => [m, b]).catch(() => [m, null])));
+    openSheet("Бонуси за товари (10%)", h("div", { class: "stack" },
+      h("p", { class: "muted small" }, "Виплачуються раз на місяць. Повернення товару після виплати віднімається з наступного бонусу."),
+      rows.map(([m, b]) => h("div", { class: "sum-line" }, h("span", {}, m.full_name, h("span", { class: "muted small" }, ` · накопичено ${money(b ? b.unpaid : 0)}`)),
+        b && b.unpaid > 0 ? h("button", { class: "btn sm primary", onclick: async () => {
+          const r = await run(() => api.post("/api/bonuses/pay", { master_id: m.id }), "Бонус виплачено");
+          if (r.paid) { closeSheet(); reload(); }
+        } }, "Виплатити") : h("span", { class: "muted small" }, "—")))));
+  }
   main.append(h("h2", {}, "Очікують підтвердження виплати"));
   if (!closed.length) main.append(h("div", { class: "card" }, emptyState("Немає закритих змін, що очікують виплати")));
   for (const s of closed) {
@@ -3046,7 +3440,7 @@ VIEWS.shifts = async (main) => {
         h("div", { class: "right" }, h("div", { class: "kpi-value" }, money(s.payout_due)), h("div", { class: "muted small" }, r.cash?.mode === "take_from_till" ? "доплатити на карту" : "до виплати"))),
       h("div", { class: "row small" },
         h("span", { class: "chip plain" }, `Клієнтів: ${r.clients_count}`), h("span", { class: "chip plain" }, `Послуг: ${r.services_count}`),
-        h("span", { class: "chip plain" }, `Виручка: ${money(r.revenue)}`), r.cancellations ? h("span", { class: "chip st-pending" }, `Скасувань: ${r.cancellations}`) : null),
+        r.revenue !== undefined ? h("span", { class: "chip plain" }, `Виручка: ${money(r.revenue)}`) : null, r.cancellations ? h("span", { class: "chip st-pending" }, `Скасувань: ${r.cancellations}`) : null),
       r.cash ? h("div", { class: "row small" },
         h("span", { class: "chip st-completed" }, `Заробіток: ${money(r.master_earning)}`),
         r.cash.master_takes ? h("span", { class: "chip st-confirmed" }, `Взяв з каси: ${money(r.cash.master_takes)}`) : null,
@@ -3078,14 +3472,18 @@ VIEWS.shifts = async (main) => {
     const amount = h("input", { inputmode: "decimal", value: shift ? kopToInput(shift.payout_due) : "" });
     const method = select(Object.entries(PAY_CHOICES), shift?.report?.cash?.mode === "take_from_till" ? "card" : "cash");
     const note = h("input", { placeholder: shift ? "" : "Аванс, премія…" });
+    const tag = select([["advance", "Аванс"], ["bonus", "Премія"], ["correction_overpayment", "Повернення переплати"]], "advance");
+    const idem = uuid();
     const btn = h("button", { class: "btn gold big", onclick: async () => {
       btn.disabled = true;
       try {
-        await run(() => api.post("/api/payouts", { master_id: +mst.value, amount: toKop(amount.value), shift_id: shift ? shift.id : null, method: method.value, note: note.value || null }), "Виплату підтверджено");
+        await run(() => api.post("/api/payouts", { master_id: +mst.value, amount: toKop(amount.value), shift_id: shift ? shift.id : null, method: method.value,
+          note: note.value || null, tag: shift ? null : tag.value, __idem: idem }), "Виплату підтверджено");
         closeSheet(); reload();
       } catch (_) { btn.disabled = false; }
     } }, "Підтвердити виплату");
-    openSheet(shift ? "Виплата за зміну" : "Виплата майстру", h("div", { class: "stack" }, field("Майстер", mst), field("Сума, ₴", amount), field("Спосіб", method), field("Примітка", note), btn));
+    openSheet(shift ? "Виплата за зміну" : "Виплата майстру", h("div", { class: "stack" }, field("Майстер", mst), field("Сума, ₴", amount), field("Спосіб", method),
+      shift ? null : field("Тип", tag), field("Примітка", note), btn));
   }
 };
 
@@ -3111,7 +3509,7 @@ VIEWS.orders = async (main) => {
     const t = search.value.trim().toLowerCase();
     const rows = list.filter((o) => (!pay || (pay === "cash" ? o.payment_method === "cash" : o.payment_method !== "cash"))
       && (!t || `#${o.id} ${o.id} ${o.client_name} ${o.service_name} ${o.master_name}`.toLowerCase().includes(t)));
-    const sum = (f) => rows.reduce((a, o) => a + f(o), 0);
+    const sum = (f) => rows.filter((o) => o.status === "completed").reduce((a, o) => a + f(o), 0);
     const cash = sum((o) => (o.payment_method === "cash" ? o.amount : 0));
     const total = sum((o) => o.amount);
     const kpis = h("div", { class: "grid kpi kpi-6" },
@@ -3129,7 +3527,7 @@ VIEWS.orders = async (main) => {
       days[days.length - 1].items.push(o);
     }
     const dayTitle = (d) => `${WD_LONG[(new Date(d + "T12:00").getDay() + 6) % 7]}, ${Number(d.slice(8, 10))} ${MONTHS_GEN[+d.slice(5, 7) - 1]}`;
-    const dayTotal = (g) => g.items.reduce((a, o) => a + o.amount, 0);
+    const dayTotal = (g) => g.items.filter((o) => o.status === "completed").reduce((a, o) => a + o.amount, 0);
     const table = h("div", { class: "card table-wrap only-desk" }, h("table", { class: "orders-table" },
       h("tr", {}, h("th", {}, "Час"), h("th", {}, "Клієнт і послуга"), h("th", {}, "Майстер"), h("th", {}, "Оплата"),
         h("th", { class: "num" }, "Сума"), h("th", { class: "num" }, "Матеріали"), h("th", { class: "num" }, "Майстру"), h("th", { class: "num" }, "Салону")),
@@ -3138,7 +3536,8 @@ VIEWS.orders = async (main) => {
           h("td", { class: "num" }, h("b", {}, money(dayTotal(g)))), h("td", { colspan: 3 })),
         g.items.map((o) => h("tr", { class: "click" + (o.needs_materials ? " no-mat" : ""), onclick: () => (o.needs_materials ? orderMaterialsSheet(o, load) : orderSheet(o.id, load)) },
           h("td", {}, h("b", {}, hm(o.closed_at)), h("div", { class: "muted small" }, "#", o.id, o.revision > 1 ? " · виправлено" : "")),
-          h("td", {}, h("div", {}, o.client_name, o.needs_materials ? h("span", { class: "chip st-overdue", style: { marginLeft: "6px" } }, "без матеріалів") : null), h("div", { class: "muted small" }, o.service_name)),
+          h("td", {}, h("div", {}, o.client_name, o.needs_materials ? h("span", { class: "chip st-overdue", style: { marginLeft: "6px" } }, "без матеріалів") : null,
+            o.status !== "completed" ? h("span", { class: "chip " + (o.status === "unpaid" ? "st-pending" : "st-cancelled"), style: { marginLeft: "6px" } }, ORDER_STATUS[o.status]) : null), h("div", { class: "muted small" }, o.service_name)),
           h("td", {}, h("span", { class: "row nowrap", style: { gap: "8px" } }, avatar(o.master_name, "xs"), h("span", {}, o.master_name))),
           h("td", {}, h("span", { class: "row nowrap", style: { gap: "6px" } }, icon(payIco(o.payment_method), "sm"), PAY[o.payment_method])),
           h("td", { class: "num" }, h("b", {}, money(o.amount))), h("td", { class: "num muted" }, money(o.materials_cost)),
@@ -3149,7 +3548,9 @@ VIEWS.orders = async (main) => {
       h("div", { class: "ord-day-head" }, h("span", {}, dayTitle(g.d)), h("b", {}, money(dayTotal(g)))),
       h("div", { class: "card ord-list" }, g.items.map((o) => h("button", { class: "ord-item" + (o.needs_materials ? " no-mat" : ""), onclick: () => (o.needs_materials ? orderMaterialsSheet(o, load) : orderSheet(o.id, load)) },
         h("div", { class: "ord-time" }, hm(o.closed_at)),
-        h("div", { class: "grow ord-main" }, h("b", {}, o.client_name), h("div", { class: "muted small" }, o.service_name),
+        h("div", { class: "grow ord-main" }, h("b", {}, o.client_name,
+          o.status !== "completed" ? h("span", { class: "chip " + (o.status === "unpaid" ? "st-pending" : "st-cancelled"), style: { marginLeft: "6px" } }, ORDER_STATUS[o.status]) : null),
+          h("div", { class: "muted small" }, o.service_name),
           h("div", { class: "muted small ord-master" }, avatar(o.master_name, "xs"), h("span", {}, o.master_name + (o.revision > 1 ? " · виправлено" : "")))),
         h("div", { class: "ord-amt" }, h("b", {}, money(o.amount)), h("span", { class: "small muted row", style: { gap: "4px" } }, icon(payIco(o.payment_method), "sm"), PAY[o.payment_method]))))))));
     body.replaceChildren(kpis, table, cards);
@@ -3161,33 +3562,50 @@ VIEWS.orders = async (main) => {
   await load();
 };
 
+const ORDER_STATUS = { completed: "Оплачено", unpaid: "Не оплачено", cancelled: "Скасовано", refunded: "Повернено" };
 async function orderSheet(id, onChange) {
   const o = await run(() => api.get("/api/orders/" + id));
+  const isDir = state.user && state.user.role === "director";
   const amount = h("input", { inputmode: "decimal", value: kopToInput(o.amount) });
+  const price = h("input", { inputmode: "decimal", value: kopToInput(o.price_snapshot) });
   const method = select(Object.entries(o.payment_method === "transfer" ? PAY : PAY_CHOICES), o.payment_method);
-  const share = h("input", { type: "number", min: 0, max: 100, step: 0.5, value: o.share_bp / 100 });
-  const mode = select(Object.entries(MAT_MODES), o.materials_mode);
   const reason = h("input", { placeholder: "Обов'язково: чому виправляємо" });
+  const done = () => { closeSheet(); onChange && onChange(); };
+  const live = o.status === "completed" || o.status === "unpaid";
+  const voidBtn = (kind, label, danger) => h("button", { class: "btn" + (danger ? " danger" : ""), onclick: () => confirmSheet(
+    label + "?", kind === "refund" ? "Гроші повертаються клієнту; заробіток майстра сторнується. Якщо вже виплачено — утримається з наступної виплати."
+      : "Замовлення анулюється, матеріали повертаються на склад, запис стає скасованим.", label,
+    async (why) => { await run(() => api.post(`/api/orders/${id}/${kind}`, { reason: why, version: o.version }), "Готово"); done(); },
+    { danger: true, withReason: true }) }, label);
   openSheet(`Замовлення #${o.id}`,
     h("div", { class: "stack" },
       h("div", {}, h("b", {}, o.service_name), " · ", o.client_name, " · ", o.master_name),
-      h("div", { class: "muted small" }, dmy(o.closed_at), " ", hm(o.closed_at), " · редакція ", o.revision),
+      h("div", { class: "muted small" }, dmy(o.closed_at), " ", hm(o.closed_at), " · редакція ", o.revision, " · ",
+        h("span", { class: "status st-" + (o.status === "completed" ? "completed" : o.status === "unpaid" ? "pending" : "cancelled") }, ORDER_STATUS[o.status] || o.status)),
       orderAuthors(o),
       h("div", { class: "card" },
-        h("div", { class: "sum-line" }, h("span", {}, "Сума"), h("b", {}, money(o.amount))),
+        h("div", { class: "sum-line" }, h("span", {}, "Ціна (P)"), h("span", {}, money(o.price_snapshot))),
+        o.discount ? h("div", { class: "sum-line" }, h("span", {}, "Знижка (за рахунок салону)"), h("span", {}, money(o.discount))) : null,
+        h("div", { class: "sum-line" }, h("span", {}, o.status === "unpaid" ? "До сплати (A)" : "Сплачено (A)"), h("b", {}, money(o.amount))),
         h("div", { class: "sum-line" }, h("span", {}, "Матеріали"), h("span", {}, money(o.materials_cost))),
         o.materials.map((m) => h("div", { class: "sum-line muted small" }, h("span", {}, "· ", m.name, " × ", m.qty), h("span", {}, money(m.total)))),
-        h("div", { class: "sum-line" }, h("span", {}, `Майстру (${pct(o.share_bp)}, ${MAT_MODES[o.materials_mode].toLowerCase()})`), h("b", {}, money(o.master_earning))),
-        h("div", { class: "sum-line total" }, h("span", {}, "Салону (після матеріалів)"), h("span", {}, money(o.salon_earning)))),
-      h("details", {}, h("summary", { class: "muted", style: { cursor: "pointer" } }, "Виправити замовлення (з записом у журнал)"),
+        h("div", { class: "sum-line" }, h("span", {}, `Майстру (${pct(o.master_rate_bp)} від ціни)`), h("b", {}, money(o.master_earning))),
+        isDir ? h("div", { class: "sum-line total" }, h("span", {}, "Салону"), h("span", { class: o.salon_earning < 0 ? "neg" : "" }, money(o.salon_earning))) : null),
+      isDir && o.status === "unpaid" ? h("div", { class: "card stack" }, h("b", {}, "Клієнт оплатив пізніше"),
+        h("div", { class: "row" }, ...Object.entries(PAY_CHOICES).map(([k, v]) => h("button", { class: "btn primary", onclick: async () => {
+          await run(() => api.post(`/api/orders/${id}/mark-paid`, { payment_method: k, amount: toKop(amount.value), version: o.version }), "Оплату зараховано"); done();
+        } }, v)))) : null,
+      isDir && live ? h("details", {}, h("summary", { class: "muted", style: { cursor: "pointer" } }, "Виправити замовлення (з записом у журнал)"),
         h("div", { class: "stack", style: { marginTop: "10px" } },
-          h("div", { class: "form-grid" }, field("Сума, ₴", amount), field("Оплата", method), field("Відсоток майстра", share), field("Матеріали", mode)),
+          h("div", { class: "form-grid" }, field("Ціна (P), ₴", price), field("Сплачено (A), ₴", amount), field("Оплата", method)),
           field("Причина", reason),
           h("button", { class: "btn gold", onclick: async () => {
             if (!reason.value.trim()) return toast("Вкажіть причину", true);
-            await run(() => api.patch("/api/orders/" + id, { amount: toKop(amount.value), payment_method: method.value, share_bp: Math.round(parseFloat(share.value) * 100), materials_mode: mode.value, reason: reason.value.trim() }), "Замовлення виправлено");
-            closeSheet(); onChange && onChange();
-          } }, "Зберегти виправлення"))),
+            await run(() => api.patch("/api/orders/" + id, { price: toKop(price.value), amount: toKop(amount.value), payment_method: method.value,
+              reason: reason.value.trim(), version: o.version }), "Замовлення виправлено");
+            done();
+          } }, "Зберегти виправлення"),
+          h("div", { class: "row" }, voidBtn("refund", "Повернення клієнту", true), voidBtn("cancel", "Анулювати замовлення", true)))) : null,
       orderHistory(o)));
 }
 
@@ -3369,13 +3787,12 @@ function servicesPicker(selected) {
 
 VIEWS.staff = async (main) => {
   const users = await api.get("/api/users");
-  main.append(topbar("Персонал", "Співробітники, ролі, частка майстра і доступ", h("button", { class: "btn primary", onclick: () => userForm(null) }, icon("plus", "sm"), "Співробітник")));
+  main.append(topbar("Персонал", "Співробітники, ролі і доступ", h("button", { class: "btn primary", onclick: () => userForm(null) }, icon("plus", "sm"), "Співробітник")));
   const def = state.settings;
   main.append(h("div", { class: "card table-wrap" }, h("table", {},
-    h("tr", {}, h("th", {}, "Ім'я"), h("th", {}, "Логін"), h("th", {}, "Роль"), h("th", {}, "Відсоток"), h("th", {}, "Матеріали"), h("th", {}, "Telegram"), h("th", {}, "PIN бота"), h("th", {}, "")),
-    users.map((u) => h("tr", { class: "click", onclick: () => userForm(u) }, h("td", {}, u.full_name), h("td", {}, u.username), h("td", {}, ROLES[u.role]),
-      h("td", {}, u.role === "master" ? (u.share_bp !== null ? pct(u.share_bp) : pct(def.default_share_bp) + " (стандарт)") : "—"),
-      h("td", { class: "small" }, u.role === "master" ? MAT_MODES[u.materials_mode || def.default_materials_mode] : "—"),
+    h("tr", {}, h("th", {}, "Ім'я"), h("th", {}, "Логін"), h("th", {}, "Роль"), h("th", {}, "Telegram"), h("th", {}, "PIN бота"), h("th", {}, "")),
+    users.map((u) => h("tr", { class: "click", onclick: () => userForm(u) }, h("td", {}, u.full_name,
+      u.role === "master" && u.master_rate_warning ? h("span", { class: "chip", title: "Ставка відрізняється від канонічних 50%" }, ` ставка ${pct(u.master_rate_bp)}`) : null), h("td", {}, u.username), h("td", {}, ROLES[u.role]),
       h("td", {}, u.telegram_linked ? "✓" : ""), h("td", {}, u.bot_pin_set ? "✓" : ""), h("td", {}, u.is_active ? "" : h("span", { class: "chip" }, "неактивний")))))));
 
   function userForm(u) {
@@ -3385,8 +3802,6 @@ VIEWS.staff = async (main) => {
     const fullName = h("input", { value: u?.full_name || "" });
     const phone = h("input", { value: u?.phone || "", type: "tel" });
     const role = select(Object.entries(ROLES), u?.role || "master");
-    const share = h("input", { type: "number", min: 0, max: 100, step: 0.5, value: u?.share_bp != null ? u.share_bp / 100 : "", placeholder: `стандарт ${pct(def.default_share_bp)}` });
-    const mode = select([["", "Стандарт салону"], ...Object.entries(MAT_MODES)], u?.materials_mode || "");
     const active = h("input", { type: "checkbox", checked: u ? u.is_active : true });
     const pin = h("input", { inputmode: "numeric", autocomplete: "off", maxlength: 8, placeholder: u?.bot_pin_set ? "задано — введіть новий, щоб змінити" : "4–8 цифр" });
     const svcIds = new Set(u?.service_ids || []);
@@ -3407,8 +3822,7 @@ VIEWS.staff = async (main) => {
     const save = h("button", { class: "btn gold big", onclick: async () => {
       const body = {
         full_name: fullName.value.trim(), phone: phone.value.trim() || null, role: role.value,
-        share_bp: share.value === "" ? null : Math.round(parseFloat(share.value) * 100),
-        materials_mode: mode.value || null, service_ids: [...svcIds],
+        service_ids: [...svcIds],
         ...(pin.value.trim() ? { bot_pin: pin.value.trim() } : {}),
         schedule: useOwn.checked ? Object.fromEntries(days.map((d) => [String(d.i), d.on.checked ? [d.a.value, d.b.value] : null])) : null,
       };
@@ -3428,7 +3842,6 @@ VIEWS.staff = async (main) => {
       h("div", { class: "form-grid" }, field("Логін", username), field(isNew ? "Пароль" : "Новий пароль", password)),
       h("div", { class: "form-grid" }, field("Ім'я", fullName), field("Телефон", phone)),
       h("div", { class: "form-grid" }, field("Роль", role), field("PIN для Telegram-бота", pin)),
-      h("div", { class: "form-grid" }, field("Відсоток майстра, %", share), field("Облік матеріалів", mode)),
       h("div", {}, h("div", { class: "kpi-label", style: { marginBottom: "6px" } }, "Послуги майстра"), svcBox),
       h("details", { class: "card", style: { padding: "4px 12px" } }, h("summary", { class: "row", style: { padding: "8px 0", cursor: "pointer", listStyle: "none" } }, icon("clock", "sm"), h("b", { class: "grow" }, "Тижневий шаблон графіка"), icon("right", "sm")),
         h("p", { class: "muted small", style: { margin: "4px 0 8px" } }, "Звичайний тиждень майстра. Вихідні й інші години на конкретні дати — у розділі «Графік роботи»."),
@@ -3477,7 +3890,7 @@ VIEWS.catalog = async (main) => {
   }
 };
 
-const MOVE_KIND = { receipt: "Прихід", order: "Списано на замовлення", order_return: "Повернуто (виправлення)", adjust: "Інвентаризація", writeoff: "Списання" };
+const MOVE_KIND = { receipt: "Прихід", order: "Списано на замовлення", order_return: "Повернуто (виправлення)", adjust: "Інвентаризація", writeoff: "Списання", sale: "Продаж товару", return: "Повернення товару", inventory: "Інвентаризація" };
 
 const UNIT_NAMES = { г: "грами (г)", мл: "мілілітри (мл)", шт: "штуки (шт)" };
 const PACK_FORMS = {
@@ -3652,11 +4065,60 @@ VIEWS.stock = async (main) => {
   main.append(topbar("Склад",
     canEdit ? h("button", { class: "btn primary", onclick: () => materialForm(null, list, refresh) }, icon("plus", "sm"), "Матеріал") : null));
   const search = h("input", { type: "search", placeholder: "Пошук: назва або тон", id: "stock-search", oninput: (e) => { q = e.target.value.trim().toLowerCase(); draw(); } });
-  const tabs = seg([["left", "Залишки"], ["moves", "Рух складу"]], tab, (v) => { tab = v; if (v === "left") movesFor = null; draw(); });
+  const tabs = seg([["left", "Залишки"], ["products", "Товари"], ["moves", "Рух складу"]], tab, (v) => { tab = v; if (v === "left") movesFor = null; draw(); });
   const sToggle = searchToggle(search);
   main.append(h("div", { class: "row stock-bar" }, tabs, sToggle.btn), sToggle.box, body);
+  function productForm(x) {
+    const name = h("input", { value: x?.name || "" });
+    const sku = h("input", { value: x?.sku || "" });
+    const cost = h("input", { inputmode: "decimal", value: x ? kopToInput(x.cost_price_cents) : "" });
+    const markup = h("input", { type: "number", min: 0, step: 5, value: x ? x.markup_bp / 100 : 100 });
+    const sale = h("input", { inputmode: "decimal", value: x ? kopToInput(x.sale_price_cents) : "", placeholder: "порожньо = собівартість + націнка" });
+    const qty = h("input", { type: "number", min: 0, value: 0 });
+    const active = h("input", { type: "checkbox", checked: x ? x.active : true });
+    openSheet(x ? x.name : "Новий товар", h("div", { class: "stack" },
+      field("Назва", name), h("div", { class: "form-grid" }, field("Артикул", sku), field("Собівартість, ₴", cost)),
+      h("div", { class: "form-grid" }, field("Націнка, % (підказка для ціни)", markup), field("Ціна продажу, ₴ (фіксована)", sale)),
+      x ? h("label", { class: "row" }, active, "Продається") : field("Початковий залишок, шт", qty),
+      h("p", { class: "muted small" }, "Майстру — 10% від ціни продажу, виплата раз на місяць."),
+      h("button", { class: "btn primary big", onclick: async () => {
+        const body2 = { name: name.value.trim(), sku: sku.value.trim() || null, cost_price_cents: toKop(cost.value) || 0,
+          markup_bp: Math.round(parseFloat(markup.value || "0") * 100), sale_price_cents: sale.value.trim() ? toKop(sale.value) : null };
+        if (x) { body2.active = active.checked; if (body2.sale_price_cents === null) delete body2.sale_price_cents; await run(() => api.patch(`/api/products/${x.id}`, body2), "Збережено"); }
+        else await run(() => api.post("/api/products", { ...body2, stock_qty: parseInt(qty.value, 10) || 0 }), "Товар додано");
+        closeSheet(); draw();
+      } }, "Зберегти")));
+  }
+  function productQty(x, kind) {
+    const qty = h("input", { type: "number", min: 0, value: kind === "inventory" ? x.stock_qty : 1 });
+    const cost = h("input", { inputmode: "decimal", placeholder: "сума за накладною (необов'язково)" });
+    openSheet(kind === "receive" ? `Прихід: ${x.name}` : `Інвентаризація: ${x.name}`, h("div", { class: "stack" },
+      field(kind === "receive" ? "Кількість, шт" : "Фактичний залишок, шт", qty), kind === "receive" ? field("Сума, ₴", cost) : null,
+      h("button", { class: "btn primary big", onclick: async () => {
+        if (kind === "receive") await run(() => api.post(`/api/products/${x.id}/receive`, { qty: parseInt(qty.value, 10), cost: cost.value.trim() ? toKop(cost.value) : null }), "Прихід записано");
+        else await run(() => api.post("/api/stock/inventory", { items: [{ product_id: x.id, actual: parseInt(qty.value, 10) }] }), "Залишок виправлено");
+        closeSheet(); draw();
+      } }, "Зберегти")));
+  }
 
   async function draw() {
+    if (tab === "products") {
+      const prods = await api.get("/api/products?all=true");
+      const shown = prods.filter((x) => !q || (x.name + " " + (x.sku || "") + " " + (x.barcode || "")).toLowerCase().includes(q));
+      body.replaceChildren(
+        canEdit ? h("div", { class: "row", style: { marginBottom: "10px" } }, h("button", { class: "btn primary", onclick: () => productForm(null) }, icon("plus", "sm"), "Товар")) : null,
+        shown.length ? h("div", { class: "card table-wrap" }, h("table", {},
+          h("tr", {}, h("th", {}, "Товар"), h("th", { class: "num" }, "Залишок"), h("th", { class: "num" }, "Собівартість"), h("th", { class: "num" }, "Ціна продажу"), canEdit ? h("th", {}, "") : null),
+          shown.map((x) => h("tr", { class: x.active ? "" : "inactive" }, h("td", {}, h("b", {}, x.name), x.sku ? h("span", { class: "muted small" }, ` · ${x.sku}`) : null),
+            h("td", { class: "num " + (x.stock_qty < 0 ? "neg" : "") }, `${x.stock_qty} шт`), h("td", { class: "num" }, money(x.cost_price_cents)),
+            h("td", { class: "num" }, money(x.sale_price_cents)),
+            canEdit ? h("td", { class: "right" }, h("div", { class: "stock-actions" },
+              h("button", { class: "btn sm", onclick: () => productQty(x, "receive") }, icon("plus", "sm"), "Прихід"),
+              h("button", { class: "btn sm", onclick: () => productQty(x, "inventory") }, "Інвентаризація"),
+              h("button", { class: "btn sm", onclick: () => productForm(x) }, icon("edit", "sm")))) : null))))
+          : h("div", { class: "card" }, emptyState("Товарів ще немає", "box")));
+      return;
+    }
     if (tab === "moves") {
       const mv = await api.get("/api/stock/moves" + (movesFor ? "?material_id=" + movesFor : ""));
       const mat = movesFor ? list.find((x) => x.id === movesFor) : null;
@@ -3862,8 +4324,6 @@ VIEWS.settings = async (main) => {
     history.replaceState(null, "", "#/settings");
   }
   const name = h("input", { value: s.salon_name });
-  const share = h("input", { type: "number", min: 0, max: 100, step: 0.5, value: s.default_share_bp / 100 });
-  const mode = select(Object.entries(MAT_MODES), s.default_materials_mode);
   const step = h("input", { type: "number", min: 5, step: 5, value: s.slot_step_min });
   const horizon = h("input", { type: "number", min: 1, value: s.booking_horizon_days });
   const lead = h("input", { type: "number", min: 0, value: s.booking_min_lead_min });
@@ -3888,11 +4348,9 @@ VIEWS.settings = async (main) => {
   });
   main.append(topbar("Налаштування", "Дані салону, робочі години, запис через бот і безпека"), h("div", { class: "grid two" },
     h("div", { class: "card stack" }, h("h3", {}, "Оплата майстрів"),
-      field("Стандартний відсоток майстра, %", share), field("Облік матеріалів за замовчуванням", mode),
-      h("label", { class: "row" }, takesCash, "Після зміни майстер бере заробіток з готівки в касі (решту доплачує директор)"),
-      h("p", { class: "muted small" }, "Індивідуальні умови задаються в картці майстра (розділ «Персонал»). Зміни діють для нових замовлень; закриті замовлення зберігають умови на момент закриття.")),
-    twofaSettingsCard(s),
-    apiKeysCard(),
+      h("p", { class: "muted small", style: { margin: 0 } }, "Майстру — 50% від ціни послуги (до знижки). Знижки й матеріали — за рахунок салону. Закриті замовлення не перераховуються."),
+      h("label", { class: "row" }, takesCash, "Після зміни майстер бере заробіток з готівки в касі (решту доплачує директор)")),
+    twofaSettingsCard(s), vacationCard(), alertsSettingsCard(),
     stockSettingsCard(s),
     perfCard(),
     antispamSettingsCard(s),
@@ -3920,7 +4378,7 @@ VIEWS.settings = async (main) => {
       h("button", { class: "btn", onclick: async () => { await run(() => api.post("/api/backups"), "Копію створено"); reload(); } }, "Створити копію зараз"))),
     h("button", { class: "btn gold big", style: { marginTop: "14px" }, onclick: async () => {
       const body = {
-        salon_name: name.value, default_share_bp: Math.round(parseFloat(share.value) * 100), default_materials_mode: mode.value,
+        salon_name: name.value,
         slot_step_min: +step.value, booking_horizon_days: +horizon.value, booking_min_lead_min: +lead.value, telegram_auto_confirm: auto.checked,
         off_hours_booking: offPolicy.value, workplaces: Math.max(1, parseInt(places.value || "2", 10)), max_masters: Math.max(1, parseInt(maxM.value || "4", 10)),
         master_takes_cash: takesCash.checked, reminders_enabled: remind.checked, card_terminal_mode: termMode.value, favorite_master_visits: Math.max(1, parseInt(favVisits.value || "3", 10)),
@@ -3930,44 +4388,6 @@ VIEWS.settings = async (main) => {
       state.settings = await run(() => api.put("/api/settings", body), "Налаштування збережено");
     } }, "Зберегти налаштування"));
 };
-
-function apiKeysCard() {
-  const list = h("div", { class: "stack" }, h("div", { class: "muted small" }, "Завантаження…"));
-  const name = h("input", { placeholder: "Назва, напр. «Google Таблиці»", maxlength: 80 });
-  const scope = select([["read", "Лише читання"], ["write", "Читання і зміни"]], "read");
-  const fmt = (iso) => (iso ? `${dm(iso)} ${hm(iso)}` : "ще не використовувався");
-  const load = async () => {
-    const keys = await api.get("/api/api-keys").catch(() => []);
-    list.replaceChildren(...(keys.length ? keys.map((k) => h("div", { class: "api-key" + (k.active ? "" : " revoked") },
-      h("div", { class: "grow" }, h("b", {}, k.name), " ", h("span", { class: "chip " + (k.scope === "write" ? "st-pending" : "st-confirmed") }, k.scope_label),
-        h("div", { class: "muted small" }, h("code", {}, k.prefix + "…"), " · створено ", dm(k.created_at), " · ",
-          k.active ? "востаннє: " + fmt(k.last_used_at) : "відкликано " + dm(k.revoked_at))),
-      k.active ? h("button", { class: "btn sm ghost", onclick: () => confirmSheet("Відкликати ключ?", `«${k.name}» одразу перестане працювати. Цю дію не скасувати.`, "Відкликати",
-        async () => { await run(() => api.post(`/api/api-keys/${k.id}/revoke`), "Ключ відкликано"); load(); }, { danger: true }) }, "Відкликати") : null))
-      : [h("div", { class: "muted small" }, "Ключів ще немає.")]));
-  };
-  const create = h("button", { class: "btn primary", onclick: async () => {
-    if (name.value.trim().length < 2) { name.focus(); return toast("Вкажіть назву ключа", true); }
-    create.disabled = true;
-    try {
-      const k = await run(() => api.post("/api/api-keys", { name: name.value.trim(), scope: scope.value }));
-      name.value = "";
-      const code = h("input", { value: k.key, readonly: true, class: "api-key-value", onfocus: (e) => e.target.select() });
-      openSheet("Новий ключ API", h("div", { class: "stack" },
-        h("div", { class: "callout" }, icon("alert"), h("div", { class: "small" }, "Скопіюйте ключ зараз — повністю його більше не буде видно. Зберігайте як пароль.")),
-        field(`${k.name} · ${k.scope_label}`, code),
-        h("button", { class: "btn primary big", onclick: async () => {
-          try { await navigator.clipboard.writeText(k.key); toast("Ключ скопійовано"); } catch (_) { code.select(); toast("Виділіть і скопіюйте ключ вручну", true); }
-        } }, icon("ok"), "Скопіювати ключ"),
-        h("p", { class: "muted small" }, "Приклад: ", h("code", {}, `curl -H "X-Api-Key: ${k.prefix}…" ${location.origin}/api/services`))));
-      load();
-    } finally { create.disabled = false; }
-  } }, icon("plus", "sm"), "Створити ключ");
-  load();
-  return h("div", { class: "card stack" }, h("h3", {}, "Ключі API для інтеграцій"),
-    h("p", { class: "muted small" }, "Для таблиць, автоматизацій і інших програм. Ключ діє від імені директора, але без доступу до користувачів, налаштувань, резервних копій і кадрових даних. «Лише читання» — тільки перегляд."),
-    list, h("div", { class: "ap-grid ap-grid-sm2" }, field("Назва", name), field("Права", scope)), create);
-}
 
 function driveBlock(d) {
   if (!d) return null;

@@ -8,7 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..errors import Forbidden, NotFound
-from ..models import AuditLog, LedgerEntry, MaterialsMode, Role, Setting, User
+from ..models import AuditLog, LedgerEntry, Role, Setting, User
 
 
 @dataclass(frozen=True)
@@ -28,16 +28,17 @@ class Actor:
         return cls(None, f"telegram:{tg_user_id}", "client", tg_user_id)
 
     @classmethod
+    def integration(cls, name: str = "mds-manager") -> "Actor":
+        """MDs Manager: лише читання через /api/ext/v1 (D-5)."""
+        return cls(None, f"integration:{name}", "integration")
+
+    @classmethod
     def system(cls) -> "Actor":
         return cls(None, "system", "system")
 
     @property
     def is_director(self) -> bool:
         return self.role in (Role.DIRECTOR, "system")
-
-    @property
-    def is_staff_manager(self) -> bool:
-        return self.role in (Role.DIRECTOR, Role.ADMIN, "system")
 
     @property
     def is_master(self) -> bool:
@@ -48,6 +49,14 @@ class Actor:
             return
         if self.role not in roles:
             raise Forbidden("Недостатньо прав для цієї дії")
+
+
+def check_version(entity: Any, expected: int | None, public: Any = None) -> None:
+    if expected is None or int(expected) == entity.version:
+        return
+    from ..errors import VersionConflict
+
+    raise VersionConflict(entity.version, public(entity) if public else None)
 
 
 def _jsonable(v: Any) -> Any:
@@ -116,8 +125,6 @@ def ledger(
 
 DEFAULT_SETTINGS: dict[str, Any] = {
     "salon_name": "M&D",
-    "default_share_bp": 5000,
-    "default_materials_mode": MaterialsMode.SALON,
     "schedule": {str(d): ["09:00", "20:00"] for d in range(6)},
     "slot_step_min": 30,
     "booking_horizon_days": 30,
@@ -131,6 +138,13 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "favorite_master_visits": 3,
     "reminders_enabled": True,
     "twofa_roles": ["director"],
+    "alerts_disabled": [],
+    "finance_pin_enabled": False,
+    "reports_hidden": [],
+    "alerts_digest_hour": 9,
+    "vacation_mode_active": False,
+    "vacation_mode_expires_at": None,
+    "jobs_daily_last": None,
     "stock_auto_writeoff_milli": 100,
     "antispam_whitelist": ["+380687166910"],
     "sms_enabled": False,
@@ -154,11 +168,6 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "generator_fuel_price": 0,
     "generator_amort_per_hour": 0,
     "generator_hours_initial_milli": 0,
-    "utilities_charge_mode": "none",
-    "utilities_split": "revenue",
-    "utilities_charge_share_bp": 10000,
-    "utilities_fixed_amount": 0,
-    "utilities_fixed_per": "shift",
     "fop_income_limit": 0,
     "card_terminal_mode": "off",
     "fop_tin": "",
@@ -178,6 +187,9 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "salon_phone": "",
     "salon_instagram": "",
 }
+
+
+INTERNAL_SETTINGS = ("vacation_mode_active", "vacation_mode_expires_at", "jobs_daily_last")
 
 
 def get_setting(s: Session, key: str) -> Any:
@@ -220,17 +232,27 @@ def update_settings(s: Session, actor: Actor, data: dict[str, Any]) -> dict[str,
     for key, value in data.items():
         if key not in DEFAULT_SETTINGS:
             raise ValidationError(f"Невідоме налаштування: {key}")
-        if key == "default_share_bp" and not (isinstance(value, int) and 0 <= value <= 10_000):
-            raise ValidationError("Відсоток майстра має бути від 0 до 100%")
-        if key == "default_materials_mode" and value not in MaterialsMode.ALL:
-            raise ValidationError("Невідомий режим обліку матеріалів")
+        if key in INTERNAL_SETTINGS:
+            raise ValidationError(f"{key}: змінюється окремою дією, не через налаштування")
+        if key == "alerts_disabled":
+            from .alerts import IMPORTANT
+
+            if not (isinstance(value, list) and all(k in IMPORTANT for k in value)):
+                raise ValidationError("Вимкнути можна лише важливі сповіщення")
+        if key == "reports_hidden":
+            from .analytics import REPORT_KEYS
+
+            if not (isinstance(value, list) and all(k in REPORT_KEYS for k in value)):
+                raise ValidationError("Невідомий звіт у списку прихованих")
+        if key == "alerts_digest_hour" and not (isinstance(value, int) and not isinstance(value, bool) and 0 <= value <= 23):
+            raise ValidationError("Година дайджесту — від 0 до 23")
         if key == "schedule":
             _validate_schedule(value)
         if key in ("slot_step_min", "booking_horizon_days", "booking_min_lead_min") and not (
             isinstance(value, int) and 0 <= value <= 365 * 24 * 60
         ):
             raise ValidationError(f"{key}: очікується ціле невід'ємне число")
-        if key in ("master_takes_cash", "telegram_auto_confirm", "reminders_enabled") and not isinstance(value, bool):
+        if key in ("master_takes_cash", "telegram_auto_confirm", "reminders_enabled", "finance_pin_enabled") and not isinstance(value, bool):
             raise ValidationError(f"{key}: так або ні")
         if key.startswith("antispam_") and key != "antispam_whitelist" and not (isinstance(value, int) and not isinstance(value, bool) and 0 <= value <= 1000):
             raise ValidationError(f"{key}: ціле число від 0 до 1000")
@@ -255,7 +277,7 @@ def update_settings(s: Session, actor: Actor, data: dict[str, Any]) -> dict[str,
             raise ValidationError("Критерії сегментів — додатні цілі числа")
         if key == "stock_auto_writeoff_milli" and not (isinstance(value, int) and not isinstance(value, bool) and 0 <= value <= 500):
             raise ValidationError("Автосписання залишку: від 0 до 0,5 упаковки")
-        if key == "twofa_roles" and not (isinstance(value, list) and all(r in ("director", "admin") for r in value)):
+        if key == "twofa_roles" and not (isinstance(value, list) and all(r == Role.DIRECTOR for r in value)):
             raise ValidationError("Двофакторний вхід: лише для директора та/або адміністратора")
         if key == "favorite_master_visits" and not (isinstance(value, int) and 1 <= value <= 50):
             raise ValidationError("Улюблений майстер: від 1 до 50 візитів")
@@ -264,23 +286,19 @@ def update_settings(s: Session, actor: Actor, data: dict[str, Any]) -> dict[str,
         if key in ("salon_address", "salon_phone", "salon_instagram", "salon_name") and not isinstance(value, str):
             raise ValidationError(f"{key}: очікується текст")
         if key in ("generator_fuel_lph_milli", "generator_fuel_price", "generator_amort_per_hour",
-                   "generator_hours_initial_milli", "utilities_fixed_amount", "fop_income_limit") and not (
+                   "generator_hours_initial_milli", "fop_income_limit") and not (
             isinstance(value, int) and not isinstance(value, bool) and 0 <= value <= 10**12
         ):
             raise ValidationError(f"{key}: очікується ціле невід'ємне число")
-        if key == "utilities_charge_share_bp" and not (isinstance(value, int) and 0 <= value <= 10_000):
-            raise ValidationError("Частка для розподілу — від 0 до 100%")
-        if key == "utilities_charge_mode" and value not in ("none", "month_end", "fixed"):
-            raise ValidationError("Режим списання: вимкнено, наприкінці місяця або фіксована ставка")
-        if key == "utilities_split" and value not in ("revenue", "equal"):
-            raise ValidationError("Розподіл: пропорційно виручці або порівну")
-        if key == "utilities_fixed_per" and value not in ("shift", "month"):
-            raise ValidationError("Фіксована ставка: за зміну або за місяць")
         if key == "card_terminal_mode":
             from .card_terminal_providers import MODES, configured
 
             if value not in MODES:
                 raise ValidationError("Режим «Термінала»: вимкнено, імітація або реальний")
+            from .card_terminal import AUTO_CLOSE_ENABLED
+
+            if value == "live" and not AUTO_CLOSE_ENABLED:
+                raise ValidationError("Автоматичні оплати «Терміналом» — з версії 0.4.0. Зараз: після оплати оберіть «Картка»")
             if value == "live" and not configured():
                 raise ValidationError("Для реальних оплат задайте ключі «Термінала» на сервері (MDS_PRIVAT_TERMINAL_*)")
         if key.startswith("fop_") and key != "fop_income_limit":

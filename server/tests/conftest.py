@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import os
 from datetime import datetime
+
+os.environ["MDS_ENV"] = "test"
 
 import pytest
 
@@ -32,17 +35,16 @@ def seed(db):
     sysa = Actor.system()
     with db.session() as s:
         d = users.create_user(s, sysa, username="director", password="Director123", full_name="Марина Д.", role=Role.DIRECTOR)
-        ad = users.create_user(s, sysa, username="admin", password="Admin1234", full_name="Адмін", role=Role.ADMIN)
         m1 = users.create_user(s, sysa, username="olena", password="Master123", full_name="Олена", role=Role.MASTER)
-        m2 = users.create_user(s, sysa, username="iryna", password="Master123", full_name="Ірина", role=Role.MASTER, share_bp=4000)
+        m2 = users.create_user(s, sysa, username="iryna", password="Master123", full_name="Ірина", role=Role.MASTER, master_rate_bp=4000)
         da = Actor.of(d)
         manicure = catalog.create_service(s, da, {"name": "Манікюр", "duration_min": 90, "price": 60000})
         haircut = catalog.create_service(s, da, {"name": "Стрижка", "duration_min": 60, "price": 50000})
         gel = catalog.create_material(s, da, {"name": "Гель-лак", "unit_cost": 3000})
-        ids = dict(director=d.id, admin=ad.id, m1=m1.id, m2=m2.id, manicure=manicure.id, haircut=haircut.id, gel=gel.id)
+        ids = dict(director=d.id, m1=m1.id, m2=m2.id, manicure=manicure.id, haircut=haircut.id, gel=gel.id)
     with db.session() as s:
         from mds.models import User
-        ids["actors"] = {k: Actor.of(s.get(User, ids[k])) for k in ("director", "admin", "m1", "m2")}
+        ids["actors"] = {k: Actor.of(s.get(User, ids[k])) for k in ("director", "m1", "m2")}
     return ids
 
 

@@ -87,7 +87,7 @@ def test_validation_and_permissions(db, seed):
             tax_report.income_report(s, seed["actors"]["director"], 2026, 5)
         with pytest.raises(ValidationError):
             tax_report.income_csv(s, seed["actors"]["director"], 2026, None, "week")
-        for who in ("admin", "m1"):
+        for who in ("m1", "m2"):
             with pytest.raises(Forbidden):
                 tax_report.income_report(s, seed["actors"][who], 2026)
 

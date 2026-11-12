@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from .. import clock
 from ..errors import Conflict, NotFound, ValidationError
 from ..models import (
-    EmployeeProfile, Order, PayrollAccrual, PayrollPayment, Role, TaxAccrual, TaxPayment, TaxRate, User,
+    EmployeeProfile, Order, OrderStatus, PayrollAccrual, PayrollPayment, Role, TaxAccrual, TaxPayment, TaxRate, User,
 )
 from . import notifications
 from .common import Actor, audit
@@ -114,6 +114,7 @@ def _min_wage(s: Session, on: date) -> int:
 
 def _income(s: Session, a: date, b: date) -> int:
     return int(s.scalar(select(func.coalesce(func.sum(Order.amount), 0)).where(
+        Order.status == OrderStatus.COMPLETED,
         Order.closed_at >= datetime.combine(a, time.min), Order.closed_at < datetime.combine(b + timedelta(days=1), time.min))) or 0)
 
 

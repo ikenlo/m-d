@@ -333,17 +333,9 @@ def staff_appt_kb(a: Appointment, is_director: bool) -> InlineKeyboardMarkup | N
     rows = []
     if a.status == ApptStatus.PENDING:
         rows.append([("✅ Підтвердити", f"s:cf:{a.id}"), ("⛔ Зайнято", f"s:busy:{a.id}")])
-    rows.append([("💳 Закрити замовлення", f"s:cl:{a.id}")])
     row = [("🕐 Інший час" if a.status == ApptStatus.PENDING else "🔁 Перенести", f"s:mv:{a.id}")]
     row.append(("🗑 Видалити", f"s:del:{a.id}") if is_director else ("❌ Скасувати", f"s:del:{a.id}"))
     rows.append(row)
     if a.status != ApptStatus.IN_PROGRESS:
         rows.append([("🚫 Не прийшов", f"s:ns:{a.id}")])
     return kb(rows)
-
-
-def pay_method_kb(appt_id: int, amount: int) -> InlineKeyboardMarkup:
-    return kb([
-        [("💵 Готівка", f"s:pm:{appt_id}:{amount}:cash"), ("💳 Картка", f"s:pm:{appt_id}:{amount}:card")],
-        [("« Назад", "s:list")],
-    ])

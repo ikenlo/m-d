@@ -5,7 +5,7 @@ from datetime import date
 from fastapi import APIRouter, BackgroundTasks, Depends, Request
 from sqlalchemy.orm import Session
 
-from ...services import bookings, orders
+from ...services import bookings, idempotency, orders
 from ...services.common import Actor
 from ..deps import get_actor, get_session
 from datetime import datetime
@@ -105,23 +105,40 @@ def get_appointment(appt_id: int, actor: Actor = Depends(get_actor), s: Session 
 
 @router.patch("/appointments/{appt_id}")
 def update_appointment(appt_id: int, body: AppointmentPatch, actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
-    data = body.model_dump(exclude_unset=True)
+    data = body.model_dump(exclude_unset=True, exclude={"version"})
     if data.get("starts_at"):
         data["starts_at"] = data["starts_at"].replace(tzinfo=None, second=0, microsecond=0)
+    _check_appt_version(s, actor, appt_id, body.version)
     return bookings.appt_public(bookings.reschedule(s, actor, appt_id, **data))
+
+
+def _check_appt_version(s: Session, actor: Actor, appt_id: int, expected: int | None) -> None:
+    from ...services.common import check_version
+
+    check_version(bookings.get_appointment(s, actor, appt_id), expected, bookings.appt_public)
 
 
 @router.post("/appointments/{appt_id}/status")
 def set_status(appt_id: int, body: StatusIn, actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
+    _check_appt_version(s, actor, appt_id, body.version)
     return bookings.appt_public(bookings.set_status(s, actor, appt_id, body.status, body.reason))
 
 
 @router.post("/appointments/{appt_id}/close")
 def close_order(appt_id: int, body: CloseOrderIn, actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
-    o = orders.close_order(
-        s, actor, appt_id, amount=body.amount, payment_method=body.payment_method,
-        materials=[m.model_dump() for m in body.materials], idempotency_key=body.idempotency_key,
-        client_name=body.client_name,
-    )
-    return orders.order_public(o)
+    payload = body.model_dump() | {"appointment_id": appt_id}
+
+    def do() -> dict:
+        o = orders.close_order(
+            s, actor, appt_id, amount=body.amount, payment_method=body.payment_method,
+            materials=[m.model_dump() for m in body.materials], idempotency_key=body.idempotency_key,
+            client_name=body.client_name, price=body.price, status=body.status,
+            products=[x.model_dump() for x in body.products],
+        )
+        s.flush()
+        s.refresh(o)
+        out = orders.order_public(o)
+        return orders.order_for_master(out) if actor.is_master else out
+
+    return idempotency.run(s, scope="close", user_id=actor.user_id, key=body.idempotency_key, payload=payload, fn=do)
 

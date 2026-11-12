@@ -19,7 +19,7 @@ def test_feed_is_human_readable(db, seed):
         o = orders.close_order(s, m1, aid, amount=65000, payment_method="card", client_name="Анна Коваленко")
         orders.correct_order(s, d, o.id, {"amount": 70000}, "Доплата за укладку")
         expenses.create_expense(s, d, category="rent", amount=2500000, spent_on=date(2026, 11, 2), description="Оренда листопад")
-        users.update_user(s, d, seed["m2"], {"share_bp": 4500})
+        users.update_user(s, d, seed["m2"], {"master_rate_bp": 4500})
         update_settings(s, d, {"slot_step_min": 15})
 
     with db.session() as s:
@@ -28,14 +28,14 @@ def test_feed_is_human_readable(db, seed):
     assert "Новий запис" in by_title and "Анна" in by_title["Новий запис"]["text"]
     assert "Стрижка" in by_title["Новий запис"]["text"] and "Олена" in by_title["Новий запис"]["text"]
     closed = by_title["Замовлення закрито"]
-    assert closed["amount"] == 65000 and "картка" in closed["text"] and "Майстру 325 ₴" in closed["text"]
+    assert closed["amount"] == 65000 and "картка" in closed["text"] and "Майстру 250 ₴" in closed["text"]
     assert closed["who"] == "Олена" and closed["category"] == "money"
     fixed = by_title["Замовлення виправлено"]
     assert fixed["reason"] == "Доплата за укладку"
     assert {"field": "Сума", "before": "650 ₴", "after": "700 ₴"} in fixed["changes"]
     assert by_title["Уточнено ім'я клієнта"]["text"] == "Анна → Анна Коваленко"
     assert by_title["Витрата: Оренда"]["amount"] == 2500000
-    assert {"field": "Відсоток майстра", "before": "40%", "after": "45%"} in by_title["Акаунт змінено"]["changes"]
+    assert {"field": "Ставка майстра", "before": "40%", "after": "45%"} in by_title["Акаунт змінено"]["changes"]
     assert {"field": "Крок слотів, хв", "before": "30", "after": "15"} in by_title["Налаштування змінено"]["changes"]
     assert not any(":" in x["title"] and x["title"].split(":")[0] in ("order", "appointment", "user") for x in f)
 

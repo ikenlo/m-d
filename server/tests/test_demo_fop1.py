@@ -51,7 +51,7 @@ def test_seed_fop1_income_under_limit_and_idempotent(db, seed):
     assert 0.7 * expected < q1 < 1.3 * expected
     with db.session() as s:
         fop = s.scalar(select(User).where(User.username == FOP_LOGIN))
-        assert fop.share_bp == 0
+        assert fop.master_rate_bp == 0
         bad = s.scalar(select(func.count(Order.id)).where(Order.amount != Order.master_earning + Order.materials_cost + Order.salon_earning))
         assert bad == 0 and s.scalar(select(func.count(Notification.id))) == 0
         assert s.scalar(select(func.count(Material.id))) == 20

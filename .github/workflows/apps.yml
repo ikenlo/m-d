@@ -123,7 +123,7 @@ jobs:
           target_commitish: ${{ github.sha }}
           body: |
             Застосунки MDS Connect 0.1.0 (відкривають веб-панель салону; оновлення сайту видно одразу).
-            - Android: MDS-Connect-0.1.0.apk — встановлення: docs/APPS.md
+            - Android: MDS-Connect-0.1.0.apk — встановлення: docs/OPERATIONS.md §8
             - Windows: MDS-Connect-Setup-0.1.0.exe — при першому запуску Windows може попередити
               «Невідомий видавець»: «Докладніше» → «Однаково запустити».
           files: |

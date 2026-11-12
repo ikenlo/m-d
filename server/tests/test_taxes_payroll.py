@@ -34,7 +34,7 @@ def test_rates_with_dates_and_history(db, seed):
     with db.session() as s:
         _rates(s, d)
         with pytest.raises(Forbidden):
-            taxes.add_rate(s, seed["actors"]["admin"], key="pdfo", valid_from=date(2027, 1, 1), rate_bp=1900)
+            taxes.add_rate(s, seed["actors"]["m1"], key="pdfo", valid_from=date(2027, 1, 1), rate_bp=1900)
         new = taxes.add_rate(s, d, key="min_wage", valid_from=date(2027, 1, 1), amount=900000)
         assert taxes.rate_for(s, "min_wage", date(2026, 12, 31)).amount == MIN_WAGE
         assert taxes.rate_for(s, "min_wage", date(2027, 1, 1)).id == new.id
@@ -127,7 +127,7 @@ def test_payroll_calc_payments_debt_corrections(db, seed):
         assert row["gross"] == 900000 and row["net"] == 900000 - 162000 - 45000 and row["debt"] == row["net"] - 770000
         assert summ["totals"]["to_budget"] == 162000 + 45000 + 198000
         assert len(taxes.payroll_history(s, d, m1)) == 3
-        assert orders.master_balance(s, m1) == {"accrued": 0, "paid": 0, "charged": 0, "balance": 0}
+        assert orders.master_balance(s, m1) == {"accrued": 0, "paid": 0, "balance": 0}
         assert s.scalar(select(PayrollAccrual).where(PayrollAccrual.reverses_id == p.id)).gross == -1000000
         assert not s.scalars(select(Order)).first()
 
@@ -164,7 +164,7 @@ def test_employee_profile_and_esv_min_base_rules(db, seed):
         emps = {e["user_id"]: e for e in taxes.list_employees(s, d)}
         assert emps[m1]["tin"] == "1234567890" and emps[m2]["hired_on"] == "2026-11-15" and emps[m2]["is_employee"]
         with pytest.raises(Forbidden):
-            taxes.set_employee(s, seed["actors"]["admin"], m1, {"tin": "1234567890"})
+            taxes.set_employee(s, seed["actors"]["m1"], m1, {"tin": "1234567890"})
 
 
 def test_quarter_report_and_csv(db, seed):
@@ -191,7 +191,7 @@ def test_quarter_report_and_csv(db, seed):
 def test_payroll_api_and_permissions(client_api):
     c, ids, d = client_api
     tok = lambda u, p: {"Authorization": "Bearer " + c.post("/api/auth/login", json={"username": u, "password": p}).json()["token"]}  # noqa: E731
-    m, a = tok("olena", "Master123"), tok("admin", "Admin1234")
+    m = tok("olena", "Master123")
     director_only = [
         ("get", "/api/taxes/rates", None), ("post", "/api/taxes/rates", {"key": "pdfo", "valid_from": "2026-01-01", "rate_bp": 1800}),
         ("get", "/api/taxes/fop", None), ("post", "/api/taxes/fop/accrue", {"key": "single_tax", "on": "2026-11-01"}),
@@ -203,7 +203,7 @@ def test_payroll_api_and_permissions(client_api):
         ("get", "/api/payroll/quarter?year=2026&quarter=4", None), ("get", "/api/payroll/quarter.csv?year=2026&quarter=4", None),
     ]
     bad = []
-    for who, hdr in (("master", m), ("admin", a)):
+    for who, hdr in (("master", m),):
         for method, url, body in director_only:
             r = getattr(c, method)(url, headers=hdr, **({"json": body} if body is not None else {}))
             if r.status_code != 403:

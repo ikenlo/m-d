@@ -10,17 +10,21 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from sqlalchemy.orm.exc import StaleDataError
 from starlette.middleware.gzip import GZipMiddleware
 
 from .. import __version__, clock, perf
 from ..config import Config
 from ..db import Database
-from ..errors import DomainError
+from ..errors import DomainError, VersionConflict
 from ..services import backup
-from .routers import api_keys, auth, calendar, card_terminal, callbacks, catalog, clients, money, sms, staff, stock_schedule, system, tax_report, taxes, utilities
+from .routers import alerts, auth, calendar, card_terminal, callbacks, catalog, clients, ext_api, money, products, security, sms, staff, stock_schedule, system, tax_report, taxes, utilities
 
 log = logging.getLogger("mds")
 STATIC = Path(__file__).resolve().parent.parent / "web" / "static"
+CSP = ("default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; "
+       "font-src 'self'; connect-src 'self'; worker-src 'self'; manifest-src 'self'; object-src 'none'; "
+       "base-uri 'self'; form-action 'self'; frame-ancestors 'none'")
 
 
 def _asset_version() -> str:
@@ -38,8 +42,9 @@ async def _backup_loop(cfg: Config, db: Database) -> None:
             res = await asyncio.to_thread(backup.backup_cycle, cfg, db)
             log.info("Резервна копія: %s; Google Drive: %s", res.get("local"),
                      (res.get("drive") or {}).get("name") or res.get("drive_error") or "не підключено")
-        except Exception:  # noqa: BLE001
+        except Exception as e:  # noqa: BLE001
             log.exception("Помилка резервного копіювання")
+            await asyncio.to_thread(backup.alert_local_failure, db, str(e))
         await asyncio.sleep(max(cfg.backup_interval_hours, 1) * 3600)
 
 
@@ -59,6 +64,9 @@ async def _reminders_loop(db: Database) -> None:
                     sms_center.refresh_statuses(s)
                 if tick % 12 == 0:
                     taxes.tax_reminders(s)
+                    from ..services import jobs
+
+                    jobs.hourly(s)
             if n:
                 log.info("Нагадувань поставлено в чергу: %s", n)
         except Exception:  # noqa: BLE001
@@ -101,7 +109,16 @@ def create_app(
 
     @app.exception_handler(DomainError)
     async def domain_error(_req: Request, exc: DomainError):
-        return JSONResponse({"error": exc.code, "detail": exc.message}, status_code=exc.status)
+        body = {"error": exc.code, "detail": exc.message}
+        if isinstance(exc, VersionConflict):
+            body["current_version"] = exc.current_version
+            if exc.current is not None:
+                body["current"] = exc.current
+        return JSONResponse(body, status_code=exc.status)
+
+    @app.exception_handler(StaleDataError)
+    async def stale_error(_req: Request, _exc: StaleDataError):
+        return JSONResponse({"error": "version_conflict", "detail": "Дані змінилися, оновіть сторінку"}, status_code=409)
 
     @app.exception_handler(RequestValidationError)
     async def validation_error(_req: Request, exc: RequestValidationError):
@@ -111,7 +128,7 @@ def create_app(
             {"error": "validation", "detail": f"Невірні дані: {field} — {first.get('msg', '')}"}, status_code=422
         )
 
-    for r in (auth, api_keys, card_terminal, staff, clients, catalog, calendar, callbacks, money, sms, stock_schedule, system, tax_report, taxes, utilities):
+    for r in (alerts, auth, card_terminal, staff, clients, catalog, calendar, callbacks, ext_api, money, products, security, sms, stock_schedule, system, tax_report, taxes, utilities):
         app.include_router(r.router)
 
     app.mount("/static", StaticFiles(directory=STATIC), name="static")
@@ -148,6 +165,10 @@ def create_app(
         resp.headers.setdefault("X-Frame-Options", "DENY")
         resp.headers.setdefault("Referrer-Policy", "same-origin")
         path = request.url.path
+        if not path.startswith(("/docs", "/redoc", "/openapi.json")):
+            resp.headers.setdefault("Content-Security-Policy", CSP)
+        if request.headers.get("x-forwarded-proto") == "https" or request.url.scheme == "https":
+            resp.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
         if path.startswith("/api/"):
             resp.headers.setdefault("Cache-Control", "no-store")
         elif path.startswith("/static/") and resp.status_code in (200, 304):

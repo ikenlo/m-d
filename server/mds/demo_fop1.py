@@ -57,6 +57,9 @@ TAXES = {2025: (30280, 80000, 176000), 2026: (33280, 86470, 190234)}
 
 
 def purge_demo(db: Database) -> dict:
+    from .config import require_non_production
+
+    require_non_production("Демо-дані")
     with db.session() as s:
         du = list(s.scalars(select(User.id).where(User.username.like(DEMO_PREFIX + "%"))))
         appts = list(s.scalars(select(Appointment.id).where(Appointment.master_id.in_(du)))) if du else []
@@ -124,6 +127,9 @@ def _price_weight(svc: Service) -> float:
 
 def seed_fop1(db: Database, start: date = date(2025, 1, 1), end: date | None = None, *, year_target: int = 110_000_000,
               future_days: int = 21, seed: int = 2025, clients: int = 380) -> dict:
+    from .config import require_non_production
+
+    require_non_production("Демо-дані")
     from .services import bookings, catalog, expenses, notifications, orders, schedule, stock, users, utilities
     from .services.common import Actor, get_setting, update_settings
 
@@ -140,15 +146,18 @@ def seed_fop1(db: Database, start: date = date(2025, 1, 1), end: date | None = N
         svc = {i: (x.duration_min, x.price, _price_weight(x), (x.category or "").lower()) for i, x in services.items()}
 
     R = random.Random(seed)
-    real_enqueue = notifications.enqueue
+    from .services import alerts
+
+    real_enqueue, real_alert = notifications.enqueue, alerts.raise_alert
     notifications.enqueue = lambda *a, **k: False
+    alerts.raise_alert = lambda *a, **k: 0
     st = {"orders": 0, "cancelled": 0, "no_show": 0, "expenses": 0, "stock_moves": 0, "readings": 0, "future": 0,
           "income_by_year": {}}
     try:
         clock.set_now(datetime.combine(start, datetime.min.time()).replace(hour=8))
         with db.session() as s:
             u = users.create_user(s, Actor.system(), username=FOP_LOGIN, password=secrets.token_urlsafe(12) + "a1",
-                                  full_name=FOP_NAME, role=Role.MASTER, share_bp=0)
+                                  full_name=FOP_NAME, role=Role.MASTER, master_rate_bp=0)
             users.update_user(s, da, u.id, {"schedule": {str(d): ["09:00", "19:00"] for d in range(5)},
                                             "service_ids": list(services)})
             fid, fa = u.id, Actor.of(u)
@@ -307,7 +316,7 @@ def seed_fop1(db: Database, start: date = date(2025, 1, 1), end: date | None = N
                         st["future"] += 1
                     t += timedelta(minutes=dur + 30)
     finally:
-        notifications.enqueue = real_enqueue
+        notifications.enqueue, alerts.raise_alert = real_enqueue, real_alert
         clock.set_now(None)
     st["income_by_year"] = {y: v // 100 for y, v in st["income_by_year"].items()}
     log.info("Демо «ФОП 1 група» готово: %s", st)

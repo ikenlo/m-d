@@ -45,7 +45,7 @@ def update_material(material_id: int, body: MaterialPatch, actor: Actor = Depend
 
 @router.get("/clients")
 def search_clients(q: str = "", actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
-    actor.require(Role.DIRECTOR, Role.ADMIN, Role.MASTER)
+    actor.require(Role.DIRECTOR, Role.MASTER)
     master_id = actor.user_id if actor.is_master else None
     return [catalog.client_public(c) for c in catalog.search_clients(s, q, master_id=master_id)]
 

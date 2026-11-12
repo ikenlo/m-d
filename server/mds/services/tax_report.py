@@ -8,7 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 
 from ..errors import ValidationError
-from ..models import Order, PaymentMethod, Role
+from ..models import Order, OrderStatus, PaymentMethod, Role
 from .common import Actor, get_setting
 
 METHOD_NAMES = {PaymentMethod.CASH: "Готівка", PaymentMethod.CARD: "Картка", PaymentMethod.TRANSFER: "Переказ на рахунок"}
@@ -28,7 +28,7 @@ def _period(year: int, quarter: int | None) -> tuple[date, date]:
 
 def _orders(s: Session, start: date, end: date) -> list[Order]:
     lo, hi = datetime.combine(start, datetime.min.time()), datetime.combine(end, datetime.min.time())
-    return list(s.scalars(select(Order).where(Order.closed_at >= lo, Order.closed_at < hi)
+    return list(s.scalars(select(Order).where(Order.closed_at >= lo, Order.closed_at < hi, Order.status == OrderStatus.COMPLETED)
                           .options(joinedload(Order.service), joinedload(Order.master)).order_by(Order.closed_at)))
 
 

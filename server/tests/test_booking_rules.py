@@ -46,7 +46,7 @@ def test_day_off_booking_only_when_place_is_free(db, seed):
 
 
 def test_free_windows_follow_custom_durations(db, seed):
-    adm, m1 = seed["actors"]["admin"], seed["actors"]["m1"]
+    adm, m1 = seed["actors"]["director"], seed["actors"]["m1"]
     with db.session() as s:
         _book(s, adm, seed, 10, dur=45)
         _book(s, adm, seed, 11, 0, dur=83, name="К2")
@@ -74,13 +74,13 @@ def test_max_masters_limit(db, seed):
         users.create_user(s, sysa, username="m3", password="Master123", full_name="Третя", role=Role.MASTER)
         with pytest.raises(ValidationError):
             users.create_user(s, sysa, username="m4", password="Master123", full_name="Четверта", role=Role.MASTER)
-        adm = users.create_user(s, sysa, username="adm2", password="Admin1234", full_name="Адмін 2", role=Role.ADMIN)
+        adm = users.create_user(s, sysa, username="dir2", password="Director123", full_name="Директор 2", role=Role.DIRECTOR)
         with pytest.raises(ValidationError):
             users.update_user(s, d, adm.id, {"role": Role.MASTER})
 
 
 def test_reschedule_into_off_hours_needs_confirmation(db, seed):
-    adm = seed["actors"]["admin"]
+    adm = seed["actors"]["director"]
     with db.session() as s:
         a = _book(s, adm, seed, 10)
         with pytest.raises(Conflict) as e:

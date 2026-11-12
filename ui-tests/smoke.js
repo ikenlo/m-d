@@ -42,7 +42,8 @@ async function login(page, user, pass) {
         where = `${user}/${mode.name}/#/${r}`;
         await page.goto(`${BASE}/#/${r}`);
         try {
-          await page.waitForFunction(() => document.querySelector(".main") && !document.querySelector(".view-skel"), null, { timeout: 15000 });
+          await page.waitForSelector(".main", { timeout: 15000 });
+          await page.waitForSelector(".view-skel", { state: "detached", timeout: 15000 });
         } catch (_) { fail(where, "сторінка не завантажилась за 15 с"); continue; }
         await page.waitForTimeout(400);
         const res = await page.evaluate(() => {
@@ -57,6 +58,11 @@ async function login(page, user, pass) {
         if (res.hscroll) fail(where, `горизонтальна прокрутка сторінки: ${res.hscroll}px > ширини`);
         if (res.plusOff !== undefined && Math.abs(res.plusOff) > 2) fail(where, `«+» не по центру (зсув ${res.plusOff}px)`);
         if (res.errorState) fail(where, "замість сторінки помилка: " + res.errorState);
+        if (r === "logic") {
+          await page.waitForTimeout(2500);
+          const nodes = await page.evaluate(() => [...document.querySelectorAll(".mermaid-box svg")].map((s) => s.querySelectorAll("g.node").length));
+          if (nodes.length !== 3 || nodes.some((n) => n < 5)) fail(where, `схеми «Логіки системи» не побудовані: ${JSON.stringify(nodes)}`);
+        }
         await page.screenshot({ path: path.join(OUT, `${user}-${mode.name}-${r}.png`), fullPage: mode.name === "desk" ? false : true });
       }
       await ctx.close();

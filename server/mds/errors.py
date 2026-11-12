@@ -32,3 +32,18 @@ class Forbidden(DomainError):
 class AuthError(DomainError):
     status = 401
     code = "auth"
+
+
+class VersionConflict(Conflict):
+    code = "version_conflict"
+
+    def __init__(self, current_version: int | None = None, current: dict | None = None,
+                 message: str = "Дані змінилися, оновіть сторінку"):
+        super().__init__(message)
+        self.current_version = current_version
+        self.current = current
+
+
+class TooManyRequests(DomainError):
+    status = 429
+    code = "too_many_requests"

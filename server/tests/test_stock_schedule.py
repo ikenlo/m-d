@@ -27,7 +27,7 @@ def test_material_pack_cost_and_initial_stock(db, seed):
 
 
 def test_closing_coloring_writes_off_stock_by_tone(db, seed):
-    d, adm, m1 = seed["actors"]["director"], seed["actors"]["admin"], seed["actors"]["m1"]
+    d, adm, m1 = seed["actors"]["director"], seed["actors"]["director"], seed["actors"]["m1"]
     with db.session() as s:
         t71 = mk_dye(s, d, "7-1")
         t80 = mk_dye(s, d, "8-0", stock_g=60)
@@ -45,7 +45,7 @@ def test_closing_coloring_writes_off_stock_by_tone(db, seed):
 
 
 def test_order_correction_returns_and_rewrites_stock(db, seed):
-    d, adm, m1 = seed["actors"]["director"], seed["actors"]["admin"], seed["actors"]["m1"]
+    d, adm, m1 = seed["actors"]["director"], seed["actors"]["director"], seed["actors"]["m1"]
     with db.session() as s:
         t = mk_dye(s, d)
         a = bookings.create_appointment(s, adm, master_id=seed["m1"], service_id=seed["haircut"],
@@ -59,7 +59,7 @@ def test_order_correction_returns_and_rewrites_stock(db, seed):
 
 
 def test_receive_adjust_writeoff_and_expense(db, seed):
-    d, m1, adm = seed["actors"]["director"], seed["actors"]["m1"], seed["actors"]["admin"]
+    d, m1, adm = seed["actors"]["director"], seed["actors"]["m1"], seed["actors"]["director"]
     with db.session() as s:
         t = mk_dye(s, d, stock_g=0)
         with pytest.raises(Forbidden):
@@ -78,7 +78,7 @@ def test_receive_adjust_writeoff_and_expense(db, seed):
 
 
 def test_schedule_day_overrides_template(db, seed):
-    d, adm = seed["actors"]["director"], seed["actors"]["admin"]
+    d, adm = seed["actors"]["director"], seed["actors"]["director"]
     tue = date(2026, 11, 3)
     with db.session() as s:
         schedule.set_day(s, adm, seed["m1"], tue, start="12:00", end="16:00")
@@ -171,7 +171,7 @@ def test_material_units_packs_and_unit_change_guard(db, seed):
 def test_auto_writeoff_of_tiny_remainder(db, seed):
     from mds.services.common import update_settings
 
-    d, adm, m1 = seed["actors"]["director"], seed["actors"]["admin"], seed["actors"]["m1"]
+    d, adm, m1 = seed["actors"]["director"], seed["actors"]["director"], seed["actors"]["m1"]
     with db.session() as s:
         t = mk_dye(s, d, stock_g=125)
         a = bookings.create_appointment(s, adm, master_id=seed["m1"], service_id=seed["haircut"],

@@ -43,8 +43,8 @@ def test_insights_compare_clients_weekdays_and_forecast(db, seed):
     assert f["actual"] == 100000 and f["booked"] == 50000 and f["booked_count"] == 1
     assert f["run_rate"] == 100000 * (30 * 86400) // (2 * 86400 + 12 * 3600) == 1200000
     assert f["forecast"] == 1200000
-    assert f["forecast_gross"] == 1200000 * (100000 - 46000) // 100000 == 648000
-    assert f["forecast_net"] == 648000 and f["operating_expenses"] == 0
+    assert f["forecast_gross"] == 1200000 * (100000 - 25000 - 20000) // 100000 == 660000
+    assert f["forecast_net"] == 660000 and f["operating_expenses"] == 0
 
 
 def test_forecast_uses_bookings_when_month_just_started(db, seed):

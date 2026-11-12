@@ -47,9 +47,12 @@ def for_appointment(appt_id: int, actor: Actor = Depends(get_actor), s: Session 
 
 @router.post("/card-payments/{payment_id}/mock-complete")
 def mock_complete(payment_id: int, ok: bool = True, actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
+    from ...config import is_production
     from ...errors import Forbidden
     from ...services import card_terminal_providers as tp
 
+    if is_production():
+        raise Forbidden("Імітація оплати недоступна в робочому середовищі")
     p = card_terminal._get(s, actor, payment_id)
     if p.mode != "mock" or p.status != "pending":
         raise Forbidden("Доступно лише для імітації")

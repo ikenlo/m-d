@@ -8,7 +8,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Callable
 
@@ -57,14 +57,50 @@ def client_secret() -> str:
 
 
 def configured() -> bool:
-    return bool(client_id() and client_secret())
+    return sa_mode() or bool(client_id() and client_secret())
 
 
-def keep() -> int:
+def sa_mode() -> bool:
+    return bool(os.getenv("MDS_GDRIVE_SA_JSON", "").strip() and os.getenv("MDS_GDRIVE_FOLDER_ID", "").strip())
+
+
+def ready(data_dir: Path) -> bool:
+    return sa_mode() or (bool(client_id() and client_secret()) and bool(load_state(data_dir).get("refresh_token")))
+
+
+def keep_days() -> int:
     try:
-        return max(int(os.getenv("MDS_GDRIVE_KEEP", "180")), 1)
+        return max(int(os.getenv("MDS_BACKUP_KEEP_DAYS", "30")), 1)
     except ValueError:
-        return 180
+        return 30
+
+
+def _sa_info() -> dict:
+    raw = os.getenv("MDS_GDRIVE_SA_JSON", "").strip()
+    if not raw.startswith("{") and Path(raw).is_file():
+        raw = Path(raw).read_text(encoding="utf-8")
+    info = json.loads(raw)
+    if not info.get("client_email") or not info.get("private_key"):
+        raise RuntimeError("MDS_GDRIVE_SA_JSON: потрібні client_email і private_key")
+    return info
+
+
+_sa_cache: dict = {}
+
+
+def _sa_access_token() -> str:
+    import jwt
+
+    if _sa_cache.get("exp", 0) > time.time() + 60:
+        return _sa_cache["token"]
+    info = _sa_info()
+    now = int(time.time())
+    assertion = jwt.encode({"iss": info["client_email"], "scope": "https://www.googleapis.com/auth/drive",
+                            "aud": info.get("token_uri") or TOKEN_URL, "iat": now, "exp": now + 3600},
+                           info["private_key"], algorithm="RS256")
+    tok = _token_request({"grant_type": "urn:ietf:params:oauth:grant-type:jwt-bearer", "assertion": assertion})
+    _sa_cache.update(token=tok["access_token"], exp=time.time() + int(tok.get("expires_in", 3600)))
+    return _sa_cache["token"]
 
 
 def _state_path(data_dir: Path) -> Path:
@@ -102,12 +138,16 @@ def status(data_dir: Path) -> dict:
         "last_file": st.get("last_file"),
         "last_error": st.get("last_error"),
         "last_error_at": st.get("last_error_at"),
-        "keep": keep(),
+        "keep_days": keep_days(),
+        "mode": "service_account" if sa_mode() else "oauth",
+        "encrypted": bool(os.getenv("MDS_BACKUP_ENCRYPTION_KEY", "").strip()),
     }
 
 
 def auth_url(redirect_uri: str, state: str) -> str:
-    if not configured():
+    if sa_mode():
+        raise Conflict("Google Drive підключено через Service Account — вхід не потрібен")
+    if not (client_id() and client_secret()):
         raise Conflict("Google Drive не налаштовано на сервері (MDS_GDRIVE_CLIENT_ID / MDS_GDRIVE_CLIENT_SECRET)")
     q = {
         "client_id": client_id(), "redirect_uri": redirect_uri, "response_type": "code", "scope": SCOPE,
@@ -191,20 +231,30 @@ def _folder_id(data_dir: Path, access: str) -> str:
 
 
 def upload(data_dir: Path, path: Path) -> dict:
-    access = _access_token(data_dir)
-    folder = _folder_id(data_dir, access)
-    meta = json.dumps({"name": path.name, "parents": [folder], "mimeType": "application/x-sqlite3"}).encode()
-    data = path.read_bytes()
-    start = _check(http("POST", f"{UPLOAD}?uploadType=resumable&fields=id,name,size",
+    from .backup_crypto import encrypt_file, load_key
+
+    key = load_key()
+    if sa_mode() and key is None:
+        raise RuntimeError("Для копій на Google Drive задайте MDS_BACKUP_ENCRYPTION_KEY (шифрування обов'язкове)")
+    access = _sa_access_token() if sa_mode() else _access_token(data_dir)
+    folder = os.getenv("MDS_GDRIVE_FOLDER_ID", "").strip() if sa_mode() else _folder_id(data_dir, access)
+    src = encrypt_file(path, key) if key else path
+    try:
+        data = src.read_bytes()
+    finally:
+        if src != path:
+            src.unlink(missing_ok=True)
+    meta = json.dumps({"name": src.name, "parents": [folder], "mimeType": "application/octet-stream"}).encode()
+    start = _check(http("POST", f"{UPLOAD}?uploadType=resumable&fields=id,name,size&supportsAllDrives=true",
                         {"Authorization": f"Bearer {access}", "Content-Type": "application/json; charset=UTF-8",
-                         "X-Upload-Content-Type": "application/x-sqlite3", "X-Upload-Content-Length": str(len(data))},
+                         "X-Upload-Content-Type": "application/octet-stream", "X-Upload-Content-Length": str(len(data))},
                         meta), "початок завантаження")
     loc = start.headers.get("location")
     if not loc:
         raise RuntimeError("Google Drive не повернув адресу для завантаження")
-    done = _check(http("PUT", loc, {"Content-Type": "application/x-sqlite3", "Content-Length": str(len(data))}, data),
+    done = _check(http("PUT", loc, {"Content-Type": "application/octet-stream", "Content-Length": str(len(data))}, data),
                   "завантаження файлу")
-    info = done.json()
+    info = done.json() | {"encrypted": key is not None}
     _rotate(access, folder)
     st = load_state(data_dir)
     st.update({"last_ok_at": clock.now().isoformat(timespec="seconds"), "last_file": info.get("name", path.name),
@@ -214,16 +264,18 @@ def upload(data_dir: Path, path: Path) -> dict:
 
 
 def _rotate(access: str, folder: str) -> None:
+    cut = (datetime.now(timezone.utc) - timedelta(days=keep_days())).strftime("%Y-%m-%dT%H:%M:%S")
     q = urllib.parse.urlencode({
-        "q": f"'{folder}' in parents and trashed = false and name contains 'mds-'",
+        "q": f"'{folder}' in parents and trashed = false and name contains 'mds-' and createdTime < '{cut}'",
         "orderBy": "createdTime desc", "fields": "files(id,name)", "pageSize": "1000",
+        "supportsAllDrives": "true", "includeItemsFromAllDrives": "true",
     })
     r = http("GET", f"{API}/files?{q}", {"Authorization": f"Bearer {access}"})
     if r.status != 200:
         log.warning("Не вдалося отримати список копій на диску: %s", r.status)
         return
-    for f in r.json().get("files", [])[keep():]:
-        http("DELETE", f"{API}/files/{f['id']}", {"Authorization": f"Bearer {access}"})
+    for f in r.json().get("files", []):
+        http("DELETE", f"{API}/files/{f['id']}?supportsAllDrives=true", {"Authorization": f"Bearer {access}"})
 
 
 def record_error(data_dir: Path, err: str) -> bool:

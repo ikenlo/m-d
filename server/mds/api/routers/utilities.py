@@ -154,24 +154,3 @@ def generator_motohours(body: MotohoursIn, actor: Actor = Depends(get_actor), s:
 @router.get("/utilities/summary")
 def summary(month: date | None = None, actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
     return u.month_summary(s, actor, _month(month))
-
-
-@router.get("/utilities/allocation")
-def allocation_preview(month: date, actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
-    return u.allocation_preview(s, actor, month)
-
-
-@router.post("/utilities/allocate")
-def allocate(body: MonthIn, actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
-    return u.allocate_month(s, actor, body.month)
-
-
-@router.post("/utilities/reverse")
-def reverse(body: MonthIn, actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
-    return {"reversed": u.reverse_month(s, actor, body.month, body.reason or "")}
-
-
-@router.get("/utilities/charges")
-def charges(month: date | None = None, master_id: int | None = None,
-            actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
-    return u.charges_list(s, actor, m=month, master_id=master_id)

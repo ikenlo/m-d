@@ -111,7 +111,7 @@ def material_public(m: Material) -> dict:
     return mp(m)
 
 
-MATERIAL_FIELDS = ("name", "tone", "category", "unit", "pack_name", "pack_size", "unit_cost", "is_active")
+MATERIAL_FIELDS = ("name", "tone", "category", "unit", "pack_name", "pack_size", "unit_cost", "markup_bp", "is_active")
 UNITS = ("г", "мл", "шт")
 PACK_NAMES = ("шт", "туба", "тюбик", "банка", "флакон", "пляшка", "каністра", "упаковка", "пачка", "набір",
               "коробка", "рулон", "пара", "ампула", "саше", "балон")
@@ -136,6 +136,11 @@ def _check_material(data: dict, creating: bool) -> dict:
             out["unit_cost"] = 0
         if int(out["unit_cost"]) < 0:
             raise ValidationError("Ціна упаковки не може бути від'ємною")
+    if "markup_bp" in out:
+        if out["markup_bp"] is None:
+            out["markup_bp"] = 10000
+        if not isinstance(out["markup_bp"], int) or not (0 <= out["markup_bp"] <= 100000):
+            raise ValidationError("Націнка — від 0 до 1000%")
     if "pack_size" in out:
         out["pack_size"] = int(out["pack_size"] or 1)
         if out["pack_size"] <= 0:
@@ -159,7 +164,7 @@ def _check_material(data: dict, creating: bool) -> dict:
 
 
 def create_material(s: Session, actor: Actor, data: dict) -> Material:
-    actor.require(Role.DIRECTOR, Role.ADMIN)
+    actor.require(Role.DIRECTOR)
     vals = _check_material(data, creating=True)
     vals.setdefault("unit_cost", 0)
     m = Material(**vals)
@@ -174,7 +179,7 @@ def create_material(s: Session, actor: Actor, data: dict) -> Material:
 
 
 def update_material(s: Session, actor: Actor, material_id: int, data: dict) -> Material:
-    actor.require(Role.DIRECTOR, Role.ADMIN)
+    actor.require(Role.DIRECTOR)
     m: Material = get_or_404(s, Material, material_id, "Матеріал")
     before = material_public(m)
     vals = _check_material(data, creating=False)
@@ -260,7 +265,7 @@ def get_or_create_client(
 
 
 def create_client(s: Session, actor: Actor, name: str, phone: str, notes: str | None = None) -> Client:
-    actor.require(Role.DIRECTOR, Role.ADMIN)
+    actor.require(Role.DIRECTOR)
     c = get_or_create_client(s, actor, name, phone)
     if notes and notes != c.notes:
         before = c.notes
@@ -270,7 +275,7 @@ def create_client(s: Session, actor: Actor, name: str, phone: str, notes: str | 
 
 
 def update_client(s: Session, actor: Actor, client_id: int, data: dict) -> Client:
-    actor.require(Role.DIRECTOR, Role.ADMIN)
+    actor.require(Role.DIRECTOR)
     c: Client = get_or_404(s, Client, client_id, "Клієнта")
     before = client_public(c)
     if "phone" in data and not (data["phone"] or "").strip():

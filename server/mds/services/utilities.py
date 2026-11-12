@@ -13,16 +13,10 @@ from ..models import (
     Expense,
     ExpenseCategory,
     GeneratorRun,
-    MasterCharge,
     MeterReading,
-    Order,
     Role,
-    Shift,
-    ShiftStatus,
-    User,
 )
-from . import notifications
-from .common import Actor, audit, get_setting, ledger
+from .common import Actor, audit, get_setting
 from .expenses import create_expense, update_expense
 
 MONTHS = ["січень", "лютий", "березень", "квітень", "травень", "червень", "липень", "серпень",
@@ -214,7 +208,7 @@ def current_run(s: Session) -> GeneratorRun | None:
 
 
 def start_generator(s: Session, actor: Actor, *, power_outage: bool = True, note: str | None = None) -> GeneratorRun:
-    actor.require(Role.DIRECTOR, Role.ADMIN, Role.MASTER)
+    actor.require(Role.DIRECTOR, Role.MASTER)
     if current_run(s):
         raise Conflict("Генератор уже працює")
     st = generator_settings(s)
@@ -231,7 +225,7 @@ def start_generator(s: Session, actor: Actor, *, power_outage: bool = True, note
 
 
 def stop_generator(s: Session, actor: Actor) -> GeneratorRun:
-    actor.require(Role.DIRECTOR, Role.ADMIN, Role.MASTER)
+    actor.require(Role.DIRECTOR, Role.MASTER)
     g = current_run(s)
     if g is None:
         raise Conflict("Генератор не працює")
@@ -265,7 +259,7 @@ def add_run(s: Session, actor: Actor, *, started_at: datetime, hours, power_outa
 
 
 def record_hours(s: Session, actor: Actor, *, on: date, current=None, hours=None, note: str | None = None) -> GeneratorRun:
-    actor.require(Role.DIRECTOR, Role.ADMIN)
+    actor.require(Role.DIRECTOR)
     if (current is None) == (hours is None):
         raise ValidationError("Вкажіть показник лічильника мотогодин або кількість відпрацьованих годин")
     if on > clock.now().date():
@@ -362,7 +356,7 @@ def set_motohours(s: Session, actor: Actor, current) -> dict:
 
 
 def generator_state(s: Session, actor: Actor) -> dict:
-    actor.require(Role.DIRECTOR, Role.ADMIN, Role.MASTER)
+    actor.require(Role.DIRECTOR, Role.MASTER)
     now = clock.now()
     st = generator_settings(s)
     run = current_run(s)
@@ -394,7 +388,7 @@ def generator_forecast(s: Session, actor: Actor, today: date) -> dict:
 
 
 def list_runs(s: Session, actor: Actor, month: date) -> list[dict]:
-    actor.require(Role.DIRECTOR, Role.ADMIN)
+    actor.require(Role.DIRECTOR)
     a, b = _month_bounds(month)
     now = clock.now()
     return [run_public(g, now) for g in s.scalars(select(GeneratorRun).where(
@@ -411,182 +405,12 @@ def generator_totals(s: Session, start: datetime, end: datetime) -> dict:
             "amort_cost": int(row[4]), "total_cost": int(row[5])}
 
 
-def charges_total(s: Session, *, master_id: int | None = None, d_from: date | None = None, d_to: date | None = None) -> int:
-    q = select(func.coalesce(func.sum(MasterCharge.amount), 0))
-    if master_id:
-        q = q.where(MasterCharge.master_id == master_id)
-    if d_from:
-        q = q.where(MasterCharge.charged_on >= d_from)
-    if d_to:
-        q = q.where(MasterCharge.charged_on <= d_to)
-    return int(s.scalar(q) or 0)
-
-
-def _charge(s: Session, actor: Actor, *, master_id: int, kind: str, amount: int, charged_on: date,
-            dedupe_key: str, shift_id: int | None = None, basis: dict | None = None) -> MasterCharge | None:
-    if amount <= 0:
-        return None
-    if s.scalar(select(MasterCharge.id).where(MasterCharge.dedupe_key == dedupe_key)):
-        return None
-    c = MasterCharge(master_id=master_id, kind=kind, charged_on=charged_on, period=month_start(charged_on),
-                     shift_id=shift_id, amount=amount, dedupe_key=dedupe_key, basis=basis, created_by=actor.user_id)
-    s.add(c)
-    try:
-        with s.begin_nested():
-            s.flush()
-    except IntegrityError:
-        return None
-    ledger(s, actor, "master_charge", "master_charge", c.id, master_id=master_id, amount=0,
-           master_amount=-amount, salon_amount=amount, details={"kind": kind, **(basis or {})})
-    audit(s, actor, "master_charge", c.id, "create", None,
-          {"master_id": master_id, "amount": amount, "kind": kind, "charged_on": charged_on})
-    return c
-
-
-def shift_charge(s: Session, master_id: int, sh: Shift) -> tuple[int, str | None, str | None]:
-    if get_setting(s, "utilities_charge_mode") != "fixed":
-        return 0, None, None
-    amount = int(get_setting(s, "utilities_fixed_amount") or 0)
-    if amount <= 0:
-        return 0, None, None
-    day = (sh.closed_at or clock.now()).date()
-    if get_setting(s, "utilities_fixed_per") == "shift":
-        return amount, "utilities_shift", f"util-shift:{sh.id}"
-    key = f"util-fixed-month:{day:%Y-%m}:{master_id}"
-    if s.scalar(select(MasterCharge.id).where(MasterCharge.dedupe_key == key)):
-        return 0, None, None
-    return amount, "utilities_fixed_month", key
-
-
-def charge_on_shift_close(s: Session, actor: Actor, sh: Shift) -> int:
-    amount, kind, key = shift_charge(s, sh.master_id, sh)
-    if not amount:
-        return 0
-    c = _charge(s, actor, master_id=sh.master_id, kind=kind, amount=amount, charged_on=sh.closed_at.date(),
-                dedupe_key=key, shift_id=sh.id, basis={"mode": "fixed", "per": get_setting(s, "utilities_fixed_per")})
-    return c.amount if c else 0
-
-
-def month_costs(s: Session, m: date) -> dict:
-    a, b = _month_bounds(m)
-    r = s.scalar(select(MeterReading).where(MeterReading.month == month_start(m)))
-    g = generator_totals(s, a, b)
-    elec = r.cost if r and r.expense_id else 0
-    return {"electricity": elec, "electricity_confirmed": bool(r and r.expense_id), "electricity_reading": bool(r),
-            "generator": g["total_cost"], "total": elec + g["total_cost"]}
-
-
-def _largest_remainder(total: int, weights: dict[int, int]) -> dict[int, int]:
-    wsum = sum(weights.values())
-    if wsum <= 0 or total <= 0:
-        return {k: 0 for k in weights}
-    base = {k: total * w // wsum for k, w in weights.items()}
-    rest = total - sum(base.values())
-    order = sorted(weights, key=lambda k: (-(total * weights[k] % wsum), k))
-    for k in order[:rest]:
-        base[k] += 1
-    return base
-
-
-def allocation_preview(s: Session, actor: Actor, m: date) -> dict:
-    actor.require(Role.DIRECTOR)
-    m = month_start(m)
-    costs = month_costs(s, m)
-    share = int(get_setting(s, "utilities_charge_share_bp") or 0)
-    to_split = costs["total"] * share // 10000
-    a, b = _month_bounds(m)
-    split = get_setting(s, "utilities_split")
-    masters = {u.id: u.full_name for u in s.scalars(select(User).where(User.role == Role.MASTER))}
-    rev = dict(s.execute(select(Order.master_id, func.sum(Order.amount))
-                         .where(Order.closed_at >= a, Order.closed_at < b).group_by(Order.master_id)).all())
-    if split == "equal":
-        worked = {mid for (mid,) in s.execute(select(Shift.master_id).where(
-            Shift.opened_at >= a, Shift.opened_at < b, Shift.status != ShiftStatus.OPEN).distinct())}
-        weights = {mid: 1 for mid in worked | {k for k, v in rev.items() if v}}
-    else:
-        weights = {k: int(v) for k, v in rev.items() if v}
-    alloc = _largest_remainder(to_split, weights)
-    existing = charges_total(s, d_from=m, d_to=month_end(m))
-    return {"month": m.isoformat(), "costs": costs, "share_bp": share, "to_split": to_split, "split": split,
-            "already_charged": existing,
-            "rows": [{"master_id": k, "master_name": masters.get(k, f"#{k}"), "revenue": int(rev.get(k) or 0),
-                      "amount": v} for k, v in sorted(alloc.items(), key=lambda x: -x[1])]}
-
-
-def allocate_month(s: Session, actor: Actor, m: date) -> dict:
-    actor.require(Role.DIRECTOR)
-    m = month_start(m)
-    if get_setting(s, "utilities_charge_mode") != "month_end":
-        raise Conflict("Розподіл наприкінці місяця вимкнено в налаштуваннях")
-    if month_end(m) >= clock.now().date():
-        raise Conflict("Розподілити можна після завершення місяця")
-    if charges_total(s, d_from=m, d_to=month_end(m)) != 0:
-        raise Conflict("За цей місяць уже є списання з майстрів — спершу скасуйте їх")
-    p = allocation_preview(s, actor, m)
-    if p["to_split"] <= 0 or not p["rows"]:
-        raise ValidationError("Немає що розподіляти: немає витрат або виручки майстрів за місяць")
-    created = []
-    for row in p["rows"]:
-        c = _charge(s, actor, master_id=row["master_id"], kind="utilities_month", amount=row["amount"],
-                    charged_on=month_end(m), dedupe_key=f"util-month:{m:%Y-%m}:{row['master_id']}",
-                    basis={"mode": "month_end", "split": p["split"], "share_bp": p["share_bp"],
-                           "month_total": p["costs"]["total"]})
-        if c:
-            created.append(c)
-            u = s.get(User, row["master_id"])
-            notifications.enqueue(s, u.telegram_chat_id if u else None,
-                                  f"💡 Комунальні та генератор за {MONTHS[m.month - 1]}: ваша частка {_fmt(c.amount)} "
-                                  "(врахована у вашому балансі).")
-    return {**p, "created": len(created)}
-
-
-def reverse_month(s: Session, actor: Actor, m: date, reason: str) -> int:
-    actor.require(Role.DIRECTOR)
-    if not (reason or "").strip():
-        raise ValidationError("Вкажіть причину скасування")
-    m = month_start(m)
-    rows = list(s.scalars(select(MasterCharge).where(
-        MasterCharge.period == m, MasterCharge.reversed.is_(False), MasterCharge.amount > 0)))
-    for c in rows:
-        c.reversed = True
-        c.dedupe_key = None
-        r = MasterCharge(master_id=c.master_id, kind="reversal", charged_on=c.charged_on, period=c.period,
-                         shift_id=c.shift_id, amount=-c.amount, reverses_id=c.id, basis={"reason": reason},
-                         created_by=actor.user_id)
-        s.add(r)
-        s.flush()
-        ledger(s, actor, "master_charge_reversal", "master_charge", c.id, master_id=c.master_id, amount=0,
-               master_amount=c.amount, salon_amount=-c.amount, details={"reason": reason})
-        audit(s, actor, "master_charge", c.id, "reverse", {"amount": c.amount}, {"amount": 0}, reason)
-    return len(rows)
-
-
-def charges_list(s: Session, actor: Actor, *, m: date | None = None, master_id: int | None = None) -> list[dict]:
-    if actor.is_master:
-        master_id = actor.user_id
-    else:
-        actor.require(Role.DIRECTOR)
-    q = select(MasterCharge)
-    if m:
-        q = q.where(MasterCharge.period == month_start(m))
-    if master_id:
-        q = q.where(MasterCharge.master_id == master_id)
-    return [{"id": c.id, "master_id": c.master_id, "master_name": c.master.full_name, "kind": c.kind,
-             "charged_on": c.charged_on.isoformat(), "amount": c.amount, "reversed": c.reversed,
-             "shift_id": c.shift_id} for c in s.scalars(q.order_by(MasterCharge.id.desc()).limit(500))]
-
-
 def month_summary(s: Session, actor: Actor, m: date) -> dict:
     actor.require(Role.DIRECTOR)
     m = month_start(m)
     a, b = _month_bounds(m)
     r = s.scalar(select(MeterReading).where(MeterReading.month == m))
     g = generator_totals(s, a, b)
-    charges = {}
-    for c in s.scalars(select(MasterCharge).where(MasterCharge.charged_on >= m, MasterCharge.charged_on <= month_end(m))):
-        row = charges.setdefault(c.master_id, {"master_id": c.master_id, "master_name": c.master.full_name, "amount": 0})
-        row["amount"] += c.amount
-    charged = sum(x["amount"] for x in charges.values())
     elec = r.cost if r else 0
     other_util = int(s.scalar(select(func.coalesce(func.sum(Expense.amount), 0)).where(
         Expense.category == ExpenseCategory.UTILITIES, Expense.is_deleted.is_(False),
@@ -601,8 +425,5 @@ def month_summary(s: Session, actor: Actor, m: date) -> dict:
                       "fuel_cost": g["fuel_cost"], "amort_cost": g["amort_cost"], "total": g["total_cost"]},
         "other_utilities": other_util,
         "total": total,
-        "charged_to_masters": charged,
-        "by_master": sorted(charges.values(), key=lambda x: -x["amount"]),
-        "net_impact": -(total - charged),
-        "mode": get_setting(s, "utilities_charge_mode"),
+        "net_impact": -total,
     }

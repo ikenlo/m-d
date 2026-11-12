@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from .. import clock
 from ..errors import NotFound, ValidationError
-from ..models import Appointment, ApptStatus, Client, Order, Role, Service, User
+from ..models import Appointment, ApptStatus, Client, Order, OrderStatus, Role, Service, User
 from .catalog import client_public, normalize_phone
 from .common import Actor, audit, get_or_404, get_setting
 
@@ -39,7 +39,8 @@ def segment(visits: int, spent: int, last_visit: datetime | None, created_at: da
 
 def _order_stats(s: Session, client_ids: list[int] | None = None, master_id: int | None = None) -> dict[int, dict]:
     q = select(Order.client_id, func.count(Order.id), func.coalesce(func.sum(Order.amount), 0),
-               func.min(Order.closed_at), func.max(Order.closed_at)).group_by(Order.client_id)
+               func.min(Order.closed_at), func.max(Order.closed_at)).where(
+        Order.status == OrderStatus.COMPLETED).group_by(Order.client_id)
     if client_ids is not None:
         q = q.where(Order.client_id.in_(client_ids or [0]))
     if master_id:
@@ -62,7 +63,7 @@ def _row(c: Client, st: dict | None, now: datetime, cfg: dict, finance: bool = T
 
 def list_clients(s: Session, actor: Actor, *, q: str = "", segment_key: str = "", sort: str = "name", page: int = 1,
                  per_page: int = 50, birthdays_days: int | None = None) -> dict:
-    actor.require(Role.DIRECTOR, Role.ADMIN)
+    actor.require(Role.DIRECTOR)
     now, cfg = clock.now(), _cfg(s)
     stmt = select(Client)
     if q.strip():
@@ -149,7 +150,7 @@ def _by_month(orders: list[Order]) -> list[dict]:
 def update_card(s: Session, actor: Actor, client_id: int, data: dict) -> Client:
     from ..errors import Conflict
 
-    actor.require(Role.DIRECTOR, Role.ADMIN)
+    actor.require(Role.DIRECTOR)
     c = get_or_404(s, Client, client_id, "Клієнта")
     before = client_public(c)
     for k in ("phone", "phone2"):
@@ -188,13 +189,13 @@ def update_card(s: Session, actor: Actor, client_id: int, data: dict) -> Client:
 
 
 def find_by_phone(s: Session, actor: Actor, phone: str) -> Client | None:
-    actor.require(Role.DIRECTOR, Role.ADMIN, Role.MASTER)
+    actor.require(Role.DIRECTOR, Role.MASTER)
     n = normalize_phone(phone)
     return s.scalar(select(Client).where((Client.phone == n) | (Client.phone2 == n)))
 
 
 def duplicates(s: Session, actor: Actor) -> list[list[dict]]:
-    actor.require(Role.DIRECTOR, Role.ADMIN)
+    actor.require(Role.DIRECTOR)
     groups: dict[str, list[Client]] = {}
     for c in s.scalars(select(Client).where(Client.search_name.is_not(None))):
         groups.setdefault(c.search_name, []).append(c)
@@ -278,7 +279,8 @@ def analytics(s: Session, actor: Actor, date_from: date, date_to: date) -> dict:
     a, b = datetime.combine(date_from, datetime.min.time()), datetime.combine(date_to + timedelta(days=1), datetime.min.time())
     stats = _order_stats(s)
     clients = list(s.scalars(select(Client)))
-    period = list(s.execute(select(Order.client_id, Order.amount, Order.closed_at).where(Order.closed_at >= a, Order.closed_at < b)))
+    period = list(s.execute(select(Order.client_id, Order.amount, Order.closed_at).where(
+        Order.closed_at >= a, Order.closed_at < b, Order.status == OrderStatus.COMPLETED)))
     by_client = Counter(cid for cid, _, _ in period)
     new_ids = {cid for cid, st in stats.items() if st["first_visit"] and a <= st["first_visit"] < b}
     repeat_orders = sum(1 for cid, _, closed in period if stats.get(cid) and stats[cid]["first_visit"] < closed)

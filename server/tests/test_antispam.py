@@ -36,7 +36,7 @@ def test_bot_limits_active_per_day_and_block(db, seed):
         bookings.set_status(s, seed["actors"]["director"], b.id, "cancelled")
         with pytest.raises(TooMany, match="за добу"):
             _book(s, seed, 16)
-        _book(s, seed, 16, actor=seed["actors"]["admin"])
+        _book(s, seed, 16, actor=seed["actors"]["director"])
         c = s.query(Client).one()
         catalog.update_client(s, seed["actors"]["director"], c.id, {"blocked": True, "blocked_reason": "спам"})
         update_settings(s, seed["actors"]["director"], {"antispam_max_active": 0, "antispam_max_per_day": 0})

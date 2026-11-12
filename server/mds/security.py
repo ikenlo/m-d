@@ -42,14 +42,20 @@ def validate_password_strength(password: str) -> str | None:
     return None
 
 
-def create_token(secret: str, user_id: int, token_version: int, ttl_hours: int) -> str:
+def create_token(secret: str, user_id: int, token_version: int, ttl_hours: int, *, idle_minutes: int | None = None,
+                 started: int | None = None) -> str:
     now = datetime.now(timezone.utc)
-    payload = {
-        "sub": str(user_id),
-        "tv": token_version,
-        "iat": int(now.timestamp()),
-        "exp": int((now + timedelta(hours=ttl_hours)).timestamp()),
-    }
+    started = started or int(now.timestamp())
+    absolute = started + ttl_hours * 3600
+    exp = absolute if idle_minutes is None else min(absolute, int((now + timedelta(minutes=idle_minutes)).timestamp()))
+    payload = {"sub": str(user_id), "tv": token_version, "iat": int(now.timestamp()), "st": started, "abs": absolute, "exp": exp}
+    return jwt.encode(payload, secret, algorithm="HS256")
+
+
+def create_scoped_token(secret: str, user_id: int, token_version: int, purpose: str, ttl_minutes: int) -> str:
+    now = datetime.now(timezone.utc)
+    payload = {"sub": str(user_id), "tv": token_version, "p": purpose, "iat": int(now.timestamp()),
+               "exp": int((now + timedelta(minutes=ttl_minutes)).timestamp())}
     return jwt.encode(payload, secret, algorithm="HS256")
 
 

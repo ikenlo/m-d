@@ -6,6 +6,7 @@ import getpass
 import logging
 import os
 import sys
+from pathlib import Path
 
 from . import clock
 from .config import Config
@@ -104,10 +105,16 @@ def bootstrap_catalog(cfg: Config) -> int:
 
 
 def cmd_start(cfg: Config, args) -> None:
+    from .config import require_non_production
+
+    mark = os.environ.get("MDS_WIPE_DATA", "").strip()
+    if mark:
+        require_non_production("MDS_WIPE_DATA")
+    if os.environ.get("MDS_DEMO_FOP1", "").strip():
+        require_non_production("MDS_DEMO_FOP1")
     upgrade(cfg.database_url)
     bootstrap_director(cfg)
     bootstrap_catalog(cfg)
-    mark = os.environ.get("MDS_WIPE_DATA", "").strip()
     if mark:
         from .wipe import already_wiped
 
@@ -124,17 +131,23 @@ def _wipe(cfg: Config, mark: str | None) -> None:
     from .services.backup import make_backup
     from .wipe import wipe_data
 
-    print("Резервна копія перед очищенням даних:", make_backup(cfg.database_url, cfg.backup_dir, cfg.backup_keep), flush=True)
+    print("Резервна копія перед очищенням даних:", make_backup(cfg.database_url, cfg.backup_dir, cfg.backup_keep_days), flush=True)
     print("Очищено:", wipe_data(_db(cfg), mark), flush=True)
 
 
 def cmd_wipe_data(cfg: Config, args) -> None:
+    from .config import require_non_production
+
+    require_non_production("wipe-data")
     if not args.yes:
         raise SystemExit("Незворотна дія. Додайте --yes, щоб підтвердити (резервна копія буде зроблена).")
     _wipe(cfg, None)
 
 
 def cmd_demo_fop1(cfg: Config, _args) -> None:
+    from .config import require_non_production
+
+    require_non_production("demo-fop1")
     from sqlalchemy import select
 
     from .demo_fop1 import FOP_LOGIN, purge_demo, seed_fop1
@@ -146,7 +159,7 @@ def cmd_demo_fop1(cfg: Config, _args) -> None:
         if s.scalar(select(User.id).where(User.username == FOP_LOGIN)):
             print("Демо «ФОП 1 група» вже є — пропуск", flush=True)
             return
-    print("Резервна копія перед заміною демо-даних:", make_backup(cfg.database_url, cfg.backup_dir, cfg.backup_keep), flush=True)
+    print("Резервна копія перед заміною демо-даних:", make_backup(cfg.database_url, cfg.backup_dir, cfg.backup_keep_days), flush=True)
     print(purge_demo(db), flush=True)
     print(seed_fop1(db), flush=True)
 
@@ -165,7 +178,7 @@ def cmd_create_user(cfg: Config, args) -> None:
 def cmd_backup(cfg: Config, _args) -> None:
     from .services.backup import make_backup
 
-    print(make_backup(cfg.database_url, cfg.backup_dir, cfg.backup_keep))
+    print(make_backup(cfg.database_url, cfg.backup_dir, cfg.backup_keep_days))
 
 
 def cmd_serve(cfg: Config, args, *, with_bot: bool = False) -> None:
@@ -185,6 +198,31 @@ def cmd_bot(cfg: Config, _args) -> None:
     asyncio.run(run_bot(cfg.telegram_token, _db(cfg)))
 
 
+def cmd_restore_check(_cfg: Config, args) -> None:
+    import json
+    import shutil
+    import tempfile
+
+    from .services.backup import check_backup
+
+    with tempfile.TemporaryDirectory() as tmp:
+        copy = Path(tmp) / "restore.db"
+        shutil.copy2(args.file, copy)
+        res = check_backup(copy)
+    print(json.dumps(res, ensure_ascii=False))
+    if not res["ok"]:
+        raise SystemExit("Копія НЕ придатна до відновлення")
+
+
+def cmd_decrypt_backup(_cfg: Config, args) -> None:
+    from .services.backup_crypto import decrypt_file, load_key
+
+    key = load_key()
+    if key is None:
+        raise SystemExit("Задайте MDS_BACKUP_ENCRYPTION_KEY")
+    print(decrypt_file(Path(args.file), key, Path(args.out)))
+
+
 def main(argv: list[str] | None = None) -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     p = argparse.ArgumentParser(prog="mds", description="MDS Connect — система салону M&D")
@@ -200,7 +238,7 @@ def main(argv: list[str] | None = None) -> None:
     cu = sub.add_parser("create-user", help="додати співробітника")
     cu.add_argument("username")
     cu.add_argument("--full-name", required=True)
-    cu.add_argument("--role", choices=["director", "admin", "master"], required=True)
+    cu.add_argument("--role", choices=["director", "master"], required=True)
     cu.add_argument("--password")
 
     for name in ("run", "serve", "start"):
@@ -210,6 +248,11 @@ def main(argv: list[str] | None = None) -> None:
 
     sub.add_parser("bot", help="лише Telegram-бот")
     sub.add_parser("backup", help="резервна копія зараз")
+    rc = sub.add_parser("restore-check", help="перевірити, що копію можна відновити (цілісність і рядки)")
+    rc.add_argument("file")
+    dc = sub.add_parser("decrypt-backup", help="розшифрувати копію з Google Drive (ключ MDS_BACKUP_ENCRYPTION_KEY)")
+    dc.add_argument("file")
+    dc.add_argument("out")
     sub.add_parser("demo-fop1", help="ЗАМІНИТИ демо-дані на сценарій «ФОП 1 група» (лише тестове середовище)")
 
     wd = sub.add_parser("wipe-data", help="ОЧИСТИТИ робочі дані (лишаються акаунти, послуги, налаштування)")
@@ -222,6 +265,8 @@ def main(argv: list[str] | None = None) -> None:
         "migrate": cmd_migrate,
         "create-user": cmd_create_user,
         "backup": cmd_backup,
+        "restore-check": cmd_restore_check,
+        "decrypt-backup": cmd_decrypt_backup,
         "serve": cmd_serve,
         "run": lambda c, a: cmd_serve(c, a, with_bot=True),
         "bot": cmd_bot,

@@ -65,7 +65,7 @@ def test_master_has_no_director_functions(env):
     c, seed, ids, m1 = env
     denied = [
         ("post", "/api/users", {"username": "x1", "password": "Abcdef123", "full_name": "X", "role": "director"}),
-        ("patch", f"/api/users/{seed['m1']}", {"share_bp": 10000}),
+        ("patch", f"/api/users/{seed['m1']}", {"master_rate_bp": 10000}),
         ("post", f"/api/users/{seed['m2']}/reset-password", {"password": "Abcdef123"}),
         ("post", "/api/services", {"name": "X", "duration_min": 30, "price": 100}),
         ("patch", f"/api/services/{seed['haircut']}", {"price": 1}),
@@ -79,7 +79,7 @@ def test_master_has_no_director_functions(env):
         ("post", f"/api/stock/{seed['gel']}/adjust", {"actual": 100}),
         ("post", f"/api/stock/{seed['gel']}/writeoff", {"qty": 1, "note": "x"}),
         ("get", "/api/stock/moves", None),
-        ("put", "/api/settings", {"default_share_bp": 10000}),
+        ("put", "/api/settings", {"slot_step_min": 15}),
         ("get", "/api/journal/ledger", None),
         ("get", "/api/journal/audit", None),
         ("get", "/api/backups", None),

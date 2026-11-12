@@ -22,7 +22,7 @@ def book(s, actor, master, service, start, phone="0671112233", name="Анна", 
 
 
 def test_create_and_prevent_double_booking(db, seed):
-    adm = seed["actors"]["admin"]
+    adm = seed["actors"]["director"]
     with db.session() as s:
         a = book(s, adm, seed["m1"], seed["manicure"], at(10))
         assert a.ends_at == at(11, 30)
@@ -37,7 +37,7 @@ def test_create_and_prevent_double_booking(db, seed):
 
 
 def test_cancelled_frees_slot(db, seed):
-    adm = seed["actors"]["admin"]
+    adm = seed["actors"]["director"]
     with db.session() as s:
         a = book(s, adm, seed["m1"], seed["manicure"], at(10))
         bookings.set_status(s, adm, a.id, ApptStatus.CANCELLED, "клієнт захворів")
@@ -47,7 +47,7 @@ def test_cancelled_frees_slot(db, seed):
 
 
 def test_free_slots(db, seed):
-    adm = seed["actors"]["admin"]
+    adm = seed["actors"]["director"]
     with db.session() as s:
         book(s, adm, seed["m1"], seed["haircut"], at(12))
     with db.session() as s:
@@ -72,7 +72,7 @@ def test_master_schedule_override(db, seed):
 
 
 def test_reschedule_checks_conflicts_and_audits(db, seed):
-    adm = seed["actors"]["admin"]
+    adm = seed["actors"]["director"]
     with db.session() as s:
         book(s, adm, seed["m1"], seed["haircut"], at(10))
         b = book(s, adm, seed["m1"], seed["haircut"], at(12), phone="0509999999")
@@ -89,7 +89,7 @@ def test_reschedule_checks_conflicts_and_audits(db, seed):
 
 
 def test_master_sees_and_edits_only_own(db, seed):
-    adm, m1, m2 = seed["actors"]["admin"], seed["actors"]["m1"], seed["actors"]["m2"]
+    adm, m1, m2 = seed["actors"]["director"], seed["actors"]["m1"], seed["actors"]["m2"]
     with db.session() as s:
         a = book(s, adm, seed["m1"], seed["haircut"], at(10))
         book(s, adm, seed["m2"], seed["haircut"], at(10), phone="0501111111")
@@ -104,7 +104,7 @@ def test_master_sees_and_edits_only_own(db, seed):
 
 
 def test_status_transitions(db, seed):
-    adm = seed["actors"]["admin"]
+    adm = seed["actors"]["director"]
     with db.session() as s:
         a = book(s, adm, seed["m1"], seed["haircut"], at(10), status=ApptStatus.PENDING)
         bookings.set_status(s, adm, a.id, ApptStatus.CONFIRMED)

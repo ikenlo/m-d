@@ -31,6 +31,9 @@ def appt_public(a: Appointment) -> dict:
         "cancel_reason": a.cancel_reason,
         "awaiting_client": bool(a.awaiting_client),
         "order_id": a.order.id if a.order else None,
+        "price_from": bool(a.service.price_from),
+        "needs_materials": bool(a.service.needs_materials),
+        "version": a.version,
     }
 
 
@@ -205,7 +208,7 @@ def free_slots(
 
 
 def _check_access(actor: Actor, master_id: int) -> None:
-    if actor.is_staff_manager:
+    if actor.is_director:
         return
     if actor.is_master and actor.user_id == master_id:
         return
@@ -419,7 +422,12 @@ def set_status(
         a.cancel_reason = reason or ("Скасовано клієнтом" if actor.role == "client" else None)
     s.flush()
     audit(s, actor, "appointment", a.id, status, before, _snapshot(a), reason)
+    from . import alerts
+
+    if status == ApptStatus.NO_SHOW:
+        alerts.no_show(s, a)
     if status == ApptStatus.CANCELLED:
+        alerts.appointment_cancelled(s, a, actor)
         notifications.notify_appointment(s, a, "❌ Запис скасовано", actor.user_id)
         if actor.role != "client" and notify_client:
             notifications.enqueue(
@@ -445,7 +453,7 @@ def list_appointments(
 ) -> list[Appointment]:
     if actor.is_master:
         master_id = actor.user_id
-    elif not actor.is_staff_manager:
+    elif not actor.is_director:
         raise Forbidden("Недостатньо прав")
     q = (
         select(Appointment)
@@ -545,7 +553,7 @@ def pending_list(s: Session, actor: Actor) -> list[Appointment]:
     )
     if actor.is_master:
         q = q.where(Appointment.master_id == actor.user_id)
-    elif not actor.is_staff_manager:
+    elif not actor.is_director:
         raise Forbidden("Недостатньо прав")
     return list(s.scalars(q.order_by(Appointment.starts_at)))
 
@@ -575,7 +583,7 @@ def _when(t: datetime) -> str:
 
 
 def decline_busy(s: Session, actor: Actor, appt_id: int) -> dict:
-    actor.require(Role.DIRECTOR, Role.ADMIN, Role.MASTER)
+    actor.require(Role.DIRECTOR, Role.MASTER)
     a = get_appointment(s, actor, appt_id)
     if a.status != ApptStatus.PENDING:
         raise Conflict("Запис уже не очікує підтвердження")
@@ -590,7 +598,7 @@ def decline_busy(s: Session, actor: Actor, appt_id: int) -> dict:
 
 
 def propose_time(s: Session, actor: Actor, appt_id: int, starts_at: datetime) -> tuple[Appointment, bool]:
-    actor.require(Role.DIRECTOR, Role.ADMIN, Role.MASTER)
+    actor.require(Role.DIRECTOR, Role.MASTER)
     a = get_appointment(s, actor, appt_id)
     if a.status != ApptStatus.PENDING:
         raise Conflict("Запис уже не очікує підтвердження")
@@ -711,7 +719,7 @@ def shift_appointments(s: Session, actor: Actor, *, master_id: int, minutes: int
 def unclosed(s: Session, actor: Actor, master_id: int | None = None) -> list[Appointment]:
     if actor.is_master:
         master_id = actor.user_id
-    elif not actor.is_staff_manager:
+    elif not actor.is_director:
         raise Forbidden("Недостатньо прав")
     now = clock.now()
     q = select(Appointment).where(Appointment.status.in_(ApptStatus.CLOSABLE), Appointment.ends_at <= now,
