@@ -16,6 +16,12 @@
 - Черга вхідних вебхуків Meta для MDs Manager (частина 1): таблиця `webhook_queue` (міграція `0032`), налаштування
   `MDS_META_VERIFY_TOKEN`, `MDS_META_APP_SECRET`, `MDS_WEBHOOK_PROCESSING_TIMEOUT_MINUTES` (5 хв). Ендпоінтів ще немає.
   Рішення директора 12.11.2026 записано в канон: D-5 (виняток — ack черги від Manager), D-6a (вебхуки Meta приймає Connect).
+- `GET /api/webhooks/meta` (публічний): перевірка підписки Meta (`hub.verify_token`); без заданого токена — завжди 403.
+- `POST /api/webhooks/meta` (публічний): подія Meta → `webhook_queue` (`instagram` / `facebook` / `unknown`); підпис
+  `X-Hub-Signature-256`, якщо задано `MDS_META_APP_SECRET`; не JSON — 400, понад 1 МБ — 413.
+- `GET /api/ext/v1/webhooks` (ключ Manager): найстаріші `pending` (`limit` 1–100) → `processing`; завислі довше тайм-ауту
+  повертаються в чергу.
+- `POST /api/ext/v1/webhooks/{uuid}/ack` (ключ Manager): `completed` або `failed` (до 5 спроб, потім `failed`).
 
 ## [0.3.0] — 2026-11-12
 

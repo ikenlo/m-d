@@ -18,3 +18,10 @@ python -m pytest
 | [docs/API.md](docs/API.md) · [docs/DATABASE.md](docs/DATABASE.md) · [docs/BOT.md](docs/BOT.md) | довідники |
 | [docs/OPERATIONS.md](docs/OPERATIONS.md) · [docs/SECURITY.md](docs/SECURITY.md) | запуск, бекапи, безпека |
 | [docs/ROADMAP.md](docs/ROADMAP.md) · [CHANGELOG.md](CHANGELOG.md) | план і історія версій |
+
+## Webhook Queue
+
+Вебхуки Meta (Instagram, Facebook) приймає Connect на публічному `/api/webhooks/meta` і лише кладе їх у чергу
+`webhook_queue`. Обробляє їх MDs Manager: забирає `GET /api/ext/v1/webhooks` і підтверджує
+`POST /api/ext/v1/webhooks/{uuid}/ack` (ключ `X-API-Key`). Правила — [CANON.md](docs/CANON.md) D-5, D-6a і §7;
+ендпоінти — [API.md](docs/API.md); змінні `MDS_META_*` — `server/.env.example`.

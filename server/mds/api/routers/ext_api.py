@@ -1,14 +1,15 @@
-"""Зовнішній API для MDs Manager: лише GET, ключ у заголовку X-API-Key (D-5)."""
+"""Зовнішній API для MDs Manager: ключ у заголовку X-API-Key. Лише GET, крім ack черги вебхуків (D-5)."""
 from __future__ import annotations
 
 import hmac
 from datetime import date
 
 from fastapi import APIRouter, Depends, Header, Request
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from ...errors import AuthError, NotFound
-from ...services import integration
+from ...services import integration, webhooks
 from ...services.common import Actor
 from ..deps import get_session
 
@@ -56,3 +57,18 @@ def clients(limit: int = 500, offset: int = 0, a: Actor = Depends(ext_actor), s:
 def daily(date_from: date | None = None, date_to: date | None = None,
           a: Actor = Depends(ext_actor), s: Session = Depends(get_session)):
     return integration.daily(s, a, date_from=date_from, date_to=date_to)
+
+
+@router.get("/webhooks")
+def webhooks_pull(request: Request, limit: int = 50, a: Actor = Depends(ext_actor), s: Session = Depends(get_session)):
+    return webhooks.pull(s, a, limit=limit, timeout_minutes=request.app.state.config.webhook_processing_timeout_minutes)
+
+
+class AckIn(BaseModel):
+    status: str
+    error: str | None = None
+
+
+@router.post("/webhooks/{uuid}/ack")
+def webhooks_ack(uuid: str, body: AckIn, a: Actor = Depends(ext_actor), s: Session = Depends(get_session)):
+    return webhooks.ack(s, a, uuid, body.status, body.error)
