@@ -19,8 +19,13 @@ permissions:
 jobs:
   android:
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.ver.outputs.version }}
     steps:
       - uses: actions/checkout@v4
+      - name: Версія застосунку (versionName)
+        id: ver
+        run: echo "version=$(sed -n 's/^ *versionName \"\(.*\)\"/\1/p' apps/android/app/build.gradle)" >> "$GITHUB_OUTPUT"
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -45,11 +50,11 @@ jobs:
         run: |
           gradle assembleRelease --no-daemon
           mkdir -p ../../out
-          cp app/build/outputs/apk/release/app-release.apk ../../out/MDS-Connect-0.1.0.apk
+          cp app/build/outputs/apk/release/app-release.apk ../../out/MDS-Connect-${{ steps.ver.outputs.version }}.apk
       - uses: actions/upload-artifact@v4
         with:
           name: android-apk
-          path: out/MDS-Connect-0.1.0.apk
+          path: out/MDS-Connect-${{ steps.ver.outputs.version }}.apk
 
   android-smoke:
     needs: android
@@ -71,7 +76,7 @@ jobs:
           disable-animations: true
           script: |
             adb shell svc power stayon true; adb shell input keyevent 224; adb shell wm dismiss-keyguard; sleep 3; true
-            adb install -r MDS-Connect-0.1.0.apk
+            adb install -r MDS-Connect-${{ needs.android.outputs.version }}.apk
             adb shell am start -n ua.md.connect/.MainActivity
             for i in $(seq 1 24); do sleep 5; adb shell am broadcast -a android.intent.action.CLOSE_SYSTEM_DIALOGS >/dev/null 2>&1; adb shell am start -n ua.md.connect/.MainActivity >/dev/null 2>&1; adb shell uiautomator dump /sdcard/ui.xml >/dev/null; adb pull /sdcard/ui.xml ui.xml >/dev/null; grep -q "Увійти" ui.xml && break; echo "спроба $i:"; grep -o 'text="[^"]*"' ui.xml | head -8; done
             adb exec-out screencap -p > screen.png || true
@@ -103,7 +108,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: windows-exe
-          path: apps/windows/dist/MDS-Connect-Setup-0.1.0.exe
+          path: apps/windows/dist/MDS-Connect-Setup-*.exe
 
   release:
     if: github.event_name == 'workflow_dispatch' && inputs.release
@@ -118,14 +123,15 @@ jobs:
           merge-multiple: true
       - uses: softprops/action-gh-release@v2
         with:
-          tag_name: apps-v0.1.0
-          name: MDS Connect 0.1.0 — застосунки
+          tag_name: apps-v${{ needs.android.outputs.version }}
+          name: MDS Connect ${{ needs.android.outputs.version }} — застосунки
           target_commitish: ${{ github.sha }}
           body: |
-            Застосунки MDS Connect 0.1.0 (відкривають веб-панель салону; оновлення сайту видно одразу).
-            - Android: MDS-Connect-0.1.0.apk — встановлення: docs/OPERATIONS.md §8
-            - Windows: MDS-Connect-Setup-0.1.0.exe — при першому запуску Windows може попередити
+            Застосунки MDS Connect (відкривають веб-панель салону; оновлення сайту видно одразу).
+            - Android ${{ needs.android.outputs.version }}: MDS-Connect-${{ needs.android.outputs.version }}.apk — встановлення: docs/OPERATIONS.md §8.
+              Друк чеків Checkbox на Wi-Fi/Bluetooth-принтер (docs/CHECKBOX.md); на Android 12+ застосунок попросить дозвіл «Пристрої поблизу».
+            - Windows: MDS-Connect-Setup-*.exe — при першому запуску Windows може попередити
               «Невідомий видавець»: «Докладніше» → «Однаково запустити».
           files: |
-            out/MDS-Connect-0.1.0.apk
-            out/MDS-Connect-Setup-0.1.0.exe
+            out/MDS-Connect-*.apk
+            out/MDS-Connect-Setup-*.exe

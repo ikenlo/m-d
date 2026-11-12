@@ -36,7 +36,14 @@
   ([CONTEXT_MANAGER_INTEGRATION.md](CONTEXT_MANAGER_INTEGRATION.md); рішення директора D-5, D-6a від 12.11.2026).
 - [ ] PR у `main`, злиття директором, змінні `MDS_META_*` на Railway, деплой, налаштування Meta App.
 
-## Наступна — 0.3.2 (прибирання після 0.3.0)
+## 0.3.2 — POS-термінал, Checkbox (ПРРО), розділи налаштувань (2026-11-12)
+
+- [x] POS-термінал ПриватБанку (ECR по TCP, режим `ecr`), ручний режим «Картка» з підтвердженням ([TERMINAL.md](TERMINAL.md)).
+- [x] Checkbox (ПРРО): фіскальні чеки, черга, друк ESC/POS через планшет; застосунок Android 0.1.11 ([CHECKBOX.md](CHECKBOX.md)).
+- [x] «Налаштування» за розділами, «Меню» з групами; коміт транзакції до відповіді.
+- [ ] Перевірка на обладнанні — «Перевірка обладнання (Hardware Integration Checklist)» нижче.
+
+## Наступна — 0.3.3 (прибирання після 0.3.0)
 
 - [ ] Видалити застарілі колонки `users.materials_mode`, `orders.materials_mode`, `orders.share_bp` новою міграцією ([FINANCE.md](FINANCE.md) «Застаріле»).
 - [ ] Архівувати й видалити таблицю `master_charges` після відповіді директора на Q-1 ([CANON.md](CANON.md) §2).

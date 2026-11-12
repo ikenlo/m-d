@@ -39,7 +39,7 @@
 | | `card_payments` | оплати «Терміналом» і POS-терміналом (`mode = ecr`): статус `pending`/`processing`/`paid`/`failed`/`unknown`, RRN, код авторизації, маска картки, чек. Налаштування POS — `settings`: `pos_terminal_enabled`, `pos_terminal_ip`, `pos_terminal_port` |
 | Комунальні | `meter_readings` | місяць (UNIQUE), показники (тисячні кВт·год), тариф, вартість, сплачено, витрата |
 | | `generator_runs` | запуск: знімок л/год, ціни бензину, амортизації; `running` UNIQUE (лише один працює) |
-| | `master_charges` | історичні списання з майстрів; код не пише й не читає; видалити в 0.3.2 (Q-1) |
+| | `master_charges` | історичні списання з майстрів; код не пише й не читає; видалити в 0.3.3 (Q-1) |
 | Податки | `tax_rates`, `tax_accruals`, `tax_payments`, `payroll_accruals`, `payroll_payments`, `employee_profiles` | ставки з датами; нарахування зі сторно (`reverses_id`, `dedupe_key`) |
 | Журнали | `audit_log` | хто, коли, сутність, дія, було/стало, причина |
 | | `notifications` | черга Telegram: `sent_at`, `attempts` (до 5), `last_error` |
@@ -73,7 +73,7 @@
 | `users.finance_pin_hash`, `auth_throttle` | PIN «Фінансів»; лічильники спроб (бот: користувач і чат; IP; PIN фінансів) у БД (D-7) |
 | `expenses.archived_at` | разом із `is_deleted` (архів, не видалення) |
 | `notifications` | + `user_id`, `kind`, `level`, `group_key`, `dedupe_key`, `digest_pending`, `read_at`, `handled_at/by` |
-| `materials_mode`, `orders.share_bp`, `master_charges` | лишаються до 0.3.2, потім видаляються |
+| `materials_mode`, `orders.share_bp`, `master_charges` | лишаються до 0.3.3, потім видаляються |
 
 Гілка `feat/ext-api-md-manager` (міграція `0025`, `appointment_attribution`) застаріла: read-only API 0.3.0 нових таблиць
 не потребує. Не зливати.
