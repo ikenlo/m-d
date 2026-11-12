@@ -24,21 +24,26 @@ python -m mds run           # API + панель + бот + бекапи, http:/
 | `MDS_DATA_DIR` | `RAILWAY_VOLUME_MOUNT_PATH` або `./data` | БД, бекапи, `secret.key`, `gdrive.json` |
 | `MDS_DATABASE_URL` | `sqlite:///<data>/mds.db` | БД |
 | `MDS_SECRET_KEY` | файл `data/secret.key` | підпис JWT — у продакшені задати змінною |
-| `MDS_TOKEN_TTL_HOURS` | 12 | строк дії сесії (**[0.3.0]** + автовихід 30 хв) |
+| `MDS_TOKEN_TTL_HOURS` | 12 | абсолютний строк сесії |
 | `MDS_TIMEZONE` | `Europe/Kyiv` | час салону |
 | `MDS_HOST`, `MDS_PORT` / `PORT` | `0.0.0.0`, 8000 | адреса |
 | `MDS_TELEGRAM_TOKEN` | — | бот (без нього бот не стартує) |
 | `MDS_DIRECTOR_USERNAME`, `MDS_DIRECTOR_PASSWORD`, `MDS_DIRECTOR_NAME` | — | перший директор (`start`), пароль після входу видалити |
 | `MDS_BACKUP_INTERVAL_HOURS`, `MDS_BACKUP_KEEP`, `MDS_BACKUP_DIR` | 6, 40, `data/backups` | локальні бекапи |
-| `MDS_GDRIVE_CLIENT_ID`, `MDS_GDRIVE_CLIENT_SECRET`, `MDS_GDRIVE_KEEP` | —, —, 180 | Google Drive (OAuth); **[0.3.0+]** `MDS_GDRIVE_SA_JSON`, `MDS_GDRIVE_FOLDER_ID` (Q-7) |
+| `MDS_IDLE_MINUTES` | 30 | автовихід без дій |
+| `MDS_GDRIVE_SA_JSON`, `MDS_GDRIVE_FOLDER_ID` | — | Google Drive через Service Account (рекомендовано; JSON або шлях до файлу) |
+| `MDS_GDRIVE_CLIENT_ID`, `MDS_GDRIVE_CLIENT_SECRET` | — | Google Drive через OAuth (як було) |
+| `MDS_BACKUP_ENCRYPTION_KEY` | — | AES-256-GCM, 32 байти в base64; для Service Account обов'язковий |
+| `MDS_BACKUP_KEEP_DAYS` | 30 | скільки днів зберігати копії (сервер і Drive) |
+| `MDS_AI_PROVIDER`, `MDS_AI_LLAMA_URL` | `rules`, `http://localhost:8080/v1` | рекомендації: правила або локальна llama |
 | `MDS_TWOFA_DISABLED` | — | аварійно вимкнути 2FA |
-| `MDS_PRIVAT_TERMINAL_CLID`, `_SECRET`, `_CLIENT_TOKEN` | — | «Термінал» (режим `live`; **[0.3.0]** не використовується, D-6c) |
-| `MDS_TURBOSMS_TOKEN`, `MDS_TURBOSMS_SENDER` | — | **[0.3.0−]** SMS із Connect вимикаються (D-6a) |
+| `MDS_PRIVAT_TERMINAL_CLID`, `_SECRET`, `_CLIENT_TOKEN` | — | «Термінал» (режим `live` — з 0.4.0, D-6c) |
+| `MDS_TURBOSMS_TOKEN`, `MDS_TURBOSMS_SENDER` | — | не використовуються: SMS із Connect вимкнено (D-6a) |
 | `MDS_INTEGRATION_TOKEN` | — | ключ `/api/ext/v1` для MDs Manager (гілка ext) |
-| **[0.3.0+]** `MDS_ENV` | `production` | `production` / `test`; у `production` заборонені `MDS_WIPE_DATA`, `MDS_DEMO_FOP1`, `wipe-data`, `demo-fop1`, mock-оплати |
+| `MDS_ENV` | `production` | `production` / `test`; у `production` заборонені `MDS_WIPE_DATA`, `MDS_DEMO_FOP1`, `wipe-data`, `demo-fop1`, mock-оплати |
 | `MDS_WIPE_DATA`, `MDS_DEMO_FOP1` | — | лише тестове середовище (§7) |
 
-Файл `.env.example` зі списком — **[0.3.0+]**.
+Повний список — `server/.env.example`.
 
 ## 3. Railway (поточний хостинг; тимчасовий — канон: VPS)
 
@@ -61,8 +66,9 @@ systemd: `ExecStart=/opt/m-d/server/.venv/bin/python -m mds start --host 127.0.0
   (SQLite backup API), кожна перевіряється `PRAGMA integrity_check`, лишаються останні `MDS_BACKUP_KEEP`.
 - Вручну: «Налаштування → Створити копію зараз / Зберегти на диск зараз» або `python -m mds backup`.
 - PostgreSQL — `pg_dump` за розкладом (вбудовані бекапи лише для SQLite).
-- **[0.3.0+]** (CANON §6): 30 днів за віком; шифрування перед завантаженням; третя копія на ПК (кнопка
-  «Завантажити копію»); помилка локального бекапу → Telegram обом директорам; Service Account.
+- Зберігання — 30 днів за віком (`MDS_BACKUP_KEEP_DAYS`), завжди лишається найсвіжіша копія.
+- Помилка локального бекапу → Telegram директорам; помилка Drive → Telegram (раз на добу).
+- Третя копія — на ПК: «Налаштування → Резервні копії → Завантажити» (`GET /api/backups/{name}`).
 
 ### Google Drive
 
@@ -74,8 +80,10 @@ systemd: `ExecStart=/opt/m-d/server/.venv/bin/python -m mds start --host 127.0.0
 5. Директор: «Налаштування → Резервні копії → Підключити Google Drive».
 Копії йдуть у папку «MDS Connect — резервні копії», зберігаються останні `MDS_GDRIVE_KEEP`.
 Помилка завантаження → повідомлення директорам (не частіше разу на добу).
-**[0.3.0+]** Service Account (Q-7): у SA немає власного місця на звичайному Google-акаунті — потрібен Shared Drive
-(Workspace) або папка користувача Workspace, інакше `storageQuotaExceeded`.
+**Service Account** (рекомендовано, Q-7): задати `MDS_GDRIVE_SA_JSON`, `MDS_GDRIVE_FOLDER_ID` і `MDS_BACKUP_ENCRYPTION_KEY`.
+Копії шифруються (AES-256-GCM, файл `*.db.enc`) перед завантаженням. У SA немає власного місця на звичайному
+Google-акаунті — потрібен Shared Drive (Workspace) з доступом SA, інакше `storageQuotaExceeded`.
+Розшифрувати: `python -m mds decrypt-backup файл.db.enc mds.db` (ключ — у змінній).
 
 ## 5. Відновлення
 
@@ -84,8 +92,8 @@ systemd: `ExecStart=/opt/m-d/server/.venv/bin/python -m mds start --host 127.0.0
 3. Запустити: міграції доведуть схему до поточної версії.
 4. Перевірити: `GET /api/health`, вхід директора, останні замовлення.
 `data/secret.key` не обов'язковий: без нього всі просто увійдуть заново.
-**[0.3.0+]** скрипт `scripts/test_restore.sh` (відновлення в тимчасову теку + `integrity_check` + підрахунок рядків)
-і перевірка в CI.
+Репетиція: `./scripts/test_restore.sh [файл]` або `python -m mds restore-check файл.db` — копія в тимчасовій теці,
+`integrity_check`, кількість рядків у ключових таблицях, версія схеми. Робити раз на місяць.
 
 ## 6. Оновлення і міграції
 
@@ -103,7 +111,7 @@ python -m mds migrate      # до запуску; зробіть бекап пе
 - `MDS_WIPE_DATA=<мітка>` або `python -m mds wipe-data --yes` — бекап, потім видалення записів, замовлень,
   клієнтів, змін, виплат, витрат, складу, податків, журналів. Лишаються акаунти, послуги, налаштування.
   З тією самою міткою не повторюється.
-- **[0.3.0]** обидва — помилка, якщо `MDS_ENV=production` (або не задано).
+- Обидва — помилка запуску, якщо `MDS_ENV=production` (або не задано).
 
 ## 8. Застосунки Android і Windows
 

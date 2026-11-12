@@ -1,7 +1,7 @@
 # База даних
 
 Джерело правди — `server/mds/models.py` і міграції `server/migrations/versions/`. Тут — довідник і правила.
-**[0.3.0+]** / **[0.3.0−]** — що додається / прибирається в релізі канону ([FINANCE.md](FINANCE.md), [CANON.md](CANON.md)).
+Стан — міграція `0030` (канон 0.3.0). Правила — [FINANCE.md](FINANCE.md), [CANON.md](CANON.md).
 
 ## Правила
 
@@ -20,14 +20,14 @@
 
 | Група | Таблиця | Ключове |
 |---|---|---|
-| Персонал | `users` | `role` (`director`, `master`; **[0.3.0−]** `admin` → `director`), `token_version`, `failed_logins`/`locked_until`, `bot_pin_hash`, `booking_lock` (лічильник для блокування рядка), графік JSON. **[0.3.0]** `share_bp` → `master_rate_bp` (5000); `materials_mode` застаріле |
+| Персонал | `users` | `role` (`director`, `master`; колишні `admin` → `director`, міграція 0027), `token_version`, `failed_logins`/`locked_until`, `bot_pin_hash`, `booking_lock` (лічильник для блокування рядка), графік JSON, `master_rate_bp` (5000; колишній `share_bp`), `finance_pin_hash`; `materials_mode` — застаріле, не читається |
 | | `master_services` | які послуги виконує майстер |
 | Каталог | `services` | ціна (коп.), тривалість, `price_from` («від»), `needs_materials`, розділ/тип/вид |
-| | `materials` | одиниця г/мл/шт, упаковка (`pack_size`), `unit_cost` (ціна упаковки), `stock_milli`, мінімум. **[0.3.0+]** `markup_bp` |
+| | `materials` | одиниця г/мл/шт, упаковка (`pack_size`), `unit_cost` (ціна упаковки), `stock_milli`, мінімум. `markup_bp` |
 | Склад | `stock_moves` | рух матеріалів: `ts`, `kind`, `qty_milli` ±, `cost`, `order_id`, `user_id`, `note` |
 | Клієнти | `clients` | телефони (`phone` UNIQUE, може бути NULL; `phone2`), Telegram, Instagram, згода, сегментні поля |
 | | `callback_requests` | заявки «передзвоніть» |
-| Календар | `appointments` | майстер, послуга, `starts_at`/`ends_at`, `price`, `status`, `source`. **[0.3.0+]** `version` |
+| Календар | `appointments` | майстер, послуга, `starts_at`/`ends_at`, `price`, `status`, `source`, `version` |
 | | `schedule_days` | винятки графіка на дату, UNIQUE(master, day) |
 | Гроші | `orders` | UNIQUE `appointment_id`, UNIQUE `idempotency_key`, `amount`, `materials_cost`, `payment_method`, знімок `share_bp`/`materials_mode`, `master_earning`, `salon_earning`, `revision`, хто закрив/редагував |
 | | `order_materials` | рядки матеріалів: `qty` (тисячні), `unit_cost`, `total` — знімок на момент закриття |
@@ -38,12 +38,12 @@
 | | `card_payments` | оплати «Терміналом»: статус, RRN, код авторизації, маска картки, чек |
 | Комунальні | `meter_readings` | місяць (UNIQUE), показники (тисячні кВт·год), тариф, вартість, сплачено, витрата |
 | | `generator_runs` | запуск: знімок л/год, ціни бензину, амортизації; `running` UNIQUE (лише один працює) |
-| | `master_charges` | **[0.3.0−]** списання з майстрів; лише читання до 0.3.1 (Q-1) |
+| | `master_charges` | історичні списання з майстрів; код не пише й не читає; видалити в 0.3.1 (Q-1) |
 | Податки | `tax_rates`, `tax_accruals`, `tax_payments`, `payroll_accruals`, `payroll_payments`, `employee_profiles` | ставки з датами; нарахування зі сторно (`reverses_id`, `dedupe_key`) |
 | Журнали | `audit_log` | хто, коли, сутність, дія, було/стало, причина |
 | | `notifications` | черга Telegram: `sent_at`, `attempts` (до 5), `last_error` |
 | Вхід | `login_challenges`, `trusted_devices` | 2FA-коди (хеш), довірені пристрої (хеш токена, `token_version`) |
-| SMS | `sms_campaigns`, `sms_messages` | **[0.3.0]** надсилання вимикається; дані лишаються |
+| SMS | `sms_campaigns`, `sms_messages` | надсилання вимкнено (D-6a); історія лишається |
 | Інше | `settings` | ключ → JSON; значення перевіряє `common.update_settings` |
 | | `expense_files` | не використовується (функцію відкочено); видалити або використати — окреме рішення |
 | Гілка ext | `appointment_attribution` (міграція 0025) | лише в `feat/ext-api-md-manager`, не злита |
@@ -51,7 +51,7 @@
 Статуси: запис `pending → confirmed → in_progress → completed | cancelled | no_show`;
 зміна `open → closed → paid`.
 
-## Зміни 0.3.0 (фаза 2)
+## Зміни 0.3.0 (міграції 0025–0030)
 
 | Зміна | Деталі |
 |---|---|
@@ -65,16 +65,17 @@
 | `users.master_rate_bp` | перейменування `share_bp` з копіюванням |
 | `users.role = 'admin'` → `'director'` | D-4, з записом в `audit_log` |
 | `idempotency_keys` | `key` PK, `response_json`, `created_at` |
-| `products`, `order_products`, `bonus_accruals` | [FINANCE.md](FINANCE.md) §6. Продаж без послуги потребує замовлення без запису (`orders.appointment_id` NULL — рішення в пакеті 2.3) |
-| журнал руху складу | розширити `stock_moves` (`item_type`, ціна одиниці, причини канону) або нова `stock_movements` — рішення в пакеті 2.13 |
+| `products`, `order_products`, `bonus_accruals` | [FINANCE.md](FINANCE.md) §6. Продаж без послуги — замовлення з `appointment_id`/`service_id`/`client_id` = NULL |
+| журнал руху складу | розширено `stock_moves`: `item_type` (material/product), `product_id`, `reason` (receipt/consumption/sale/return/inventory/correction), `unit_price`; старі рядки заповнені міграцією |
 | `permission_requests` | id, user_id, action, payload_json, status, created_at, resolved_at, resolved_by, note |
 | `login_events` | user_id, ip, user_agent, method, success, ts; 90 днів |
-| `users.finance_pin_hash`, лічильник спроб PIN бота | D-7 — у БД, не в пам'яті |
-| `expenses.archived_at` | замість/поряд із `is_deleted` |
+| `users.finance_pin_hash`, `auth_throttle` | PIN «Фінансів»; лічильники спроб (бот: користувач і чат; IP; PIN фінансів) у БД (D-7) |
+| `expenses.archived_at` | разом із `is_deleted` (архів, не видалення) |
+| `notifications` | + `user_id`, `kind`, `level`, `group_key`, `dedupe_key`, `digest_pending`, `read_at`, `handled_at/by` |
 | `materials_mode`, `orders.share_bp`, `master_charges` | лишаються до 0.3.1, потім видаляються |
 
-Порядок міграцій: гілка `feat/ext-api-md-manager` має `0025`. Якщо її частина (лише читання, D-5) зливається —
-до міграцій фази 2, щоб не було двох «голів» Alembic.
+Увага: гілка `feat/ext-api-md-manager` теж має міграцію `0025` (`appointment_attribution`). Перед злиттям її треба
+перенумерувати після `0030`, інакше Alembic матиме дві «голови».
 
 ## Чутливі дані
 
