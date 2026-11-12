@@ -35,7 +35,7 @@
 | | `payouts` | UNIQUE `shift_id` (може бути NULL — довільна виплата), `cash_shift_id` (взято з каси), `method` |
 | | `expenses` | категорія, сума, дата, спосіб оплати, `is_deleted` (архів) |
 | | `ledger` | журнал проведень (лише додавання): `kind`, `ref_type/ref_id`, суми amount/master/salon/materials |
-| | `card_payments` | оплати «Терміналом»: статус, RRN, код авторизації, маска картки, чек |
+| | `card_payments` | оплати «Терміналом» і POS-терміналом (`mode = ecr`): статус `pending`/`processing`/`paid`/`failed`/`unknown`, RRN, код авторизації, маска картки, чек. Налаштування POS — `settings`: `pos_terminal_enabled`, `pos_terminal_ip`, `pos_terminal_port` |
 | Комунальні | `meter_readings` | місяць (UNIQUE), показники (тисячні кВт·год), тариф, вартість, сплачено, витрата |
 | | `generator_runs` | запуск: знімок л/год, ціни бензину, амортизації; `running` UNIQUE (лише один працює) |
 | | `master_charges` | історичні списання з майстрів; код не пише й не читає; видалити в 0.3.2 (Q-1) |

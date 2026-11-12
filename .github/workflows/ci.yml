@@ -57,6 +57,10 @@ jobs:
           for i in $(seq 1 30); do curl -sf http://localhost:8770/api/health && break; sleep 1; done
       - name: Перевірка сторінок
         run: node ui-tests/smoke.js http://localhost:8770
+      - name: Оплата карткою (ручний режим і макет POS-термінала)
+        run: node ui-tests/terminal.js http://localhost:8770
+      - name: E2E з емулятором POS-термінала
+        run: node ui-tests/e2e_fake_terminal.js http://localhost:8770
       - name: Знімки екранів
         if: always()
         uses: actions/upload-artifact@v4

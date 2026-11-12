@@ -526,8 +526,15 @@ function fitToKeyboard(ov) {
 }
 let unfitSheet = () => {};
 
+let sheetLocked = false;
+let isProcessingPayment = false;
+function lockSheet(on) {
+  sheetLocked = on;
+  const sh = document.querySelector("#overlay .sheet");
+  if (sh) { sh.classList.toggle("sheet-locked", on); sh.setAttribute("aria-busy", on ? "true" : "false"); }
+}
 function openSheet(title, ...content) {
-  closeSheet();
+  closeSheet(true);
   const ov = h("div", { class: "overlay", id: "overlay", onclick: (e) => { if (e.target === ov) closeSheet(); } },
     h("div", { class: "sheet", role: "dialog", "aria-modal": "true" },
       h("div", { class: "sheet-head" }, h("h2", {}, title), h("button", { class: "x", onclick: closeSheet, "aria-label": "Закрити" }, icon("x"))),
@@ -536,7 +543,9 @@ function openSheet(title, ...content) {
   unfitSheet = fitToKeyboard(ov);
   return ov;
 }
-function closeSheet() {
+function closeSheet(force) {
+  if (sheetLocked && force !== true) return;
+  if (force === true) sheetLocked = false;
   unfitSheet(); unfitSheet = () => {};
   const o = document.getElementById("overlay");
   if (o) o.remove();
@@ -1186,15 +1195,11 @@ function closeOrderSheet(a, onChange) {
     });
   }).catch(() => {});
   const PAY_ICON = { cash: "banknote", card: "card", transfer: "transfer" };
-  const pick = (k) => (e) => { method = k; [...methods.children].forEach((b) => b.classList.remove("on")); e.currentTarget.classList.add("on");
-    btn.replaceChildren(icon("ok"), k === "terminal" ? "Оплатити на терміналі" : "Закрити замовлення"); };
+  const pick = (k) => (e) => { method = k; [...methods.children].forEach((b) => b.classList.remove("on")); e.currentTarget.classList.add("on"); };
   const methods = h("div", { class: "choice", style: { gridTemplateColumns: "1fr 1fr" } }, Object.entries(PAY_CHOICES).map(([k, t]) =>
     h("button", { type: "button", onclick: pick(k) }, icon(PAY_ICON[k]), t)));
-  api.get("/api/card-terminal/status").then((st) => {
-    if (st.mode === "off") return;
-    methods.style.gridTemplateColumns = "1fr 1fr 1fr";
-    methods.append(h("button", { type: "button", onclick: pick("terminal") }, icon("card"), st.mode === "mock" ? "Термінал (імітація)" : "Термінал (NFC)"));
-  }).catch(() => {});
+  let ecr = false;
+  api.get("/api/card-terminal/status").then((st) => { ecr = st.mode === "ecr"; }).catch(() => {});
   const [first0, ...rest0] = (a.client.name || "").split(/\s+/).filter(Boolean);
   const firstName = h("input", { value: first0 || "", placeholder: "Ім'я", autocomplete: "off", autocapitalize: "words", id: "close-first" });
   const lastName = h("input", { value: rest0.join(" "), placeholder: "Прізвище", autocomplete: "off", autocapitalize: "words", id: "close-last" });
@@ -1225,27 +1230,37 @@ function closeOrderSheet(a, onChange) {
       noMatOk = true;
       return toast("Фарбування без матеріалів? Вкажіть фарбу й окисник — або натисніть «Закрити» ще раз (замовлення світитиметься червоним, поки не допишете)", true, 6000);
     }
-    if (method === "terminal") {
-      if (kop < 100) return toast("Оплата карткою — від 1 грн", true);
-      btn.disabled = true;
-      try {
-        const p = await run(() => api.post("/api/card-payments", { appointment_id: a.id, amount: kop, materials, client_name: clientName }));
-        closeSheet();
-        terminalPaySheet(p, onChange);
-      } catch (_) { btn.disabled = false; }
-      return;
-    }
-    btn.disabled = true;
-    try {
+    const closeBody = () => {
       const body = { amount: kop, payment_method: method, materials, products, idempotency_key: key, client_name: clientName,
         status: unpaid.checked ? "unpaid" : "completed" };
       if (priceEditable) body.price = p;
+      return body;
+    };
+    const closeNow = async (body) => {
       const o = await run(() => api.post(`/api/appointments/${a.id}/close`, body));
-      closeSheet();
+      closeSheet(true);
       toast(`Замовлення закрито. Заробіток майстра: ${money(o.master_earning)}`);
       state.materials = await api.get("/api/materials").catch(() => state.materials);
       onChange();
-    } catch (_) { btn.disabled = false; }
+    };
+    if (method === "card" && !unpaid.checked) {
+      if (isProcessingPayment) return;
+      if (ecr) {
+        if (kop < 100) return toast("Оплата карткою — від 1 грн", true);
+        return terminalCheckout({ a, kop, materials, products, clientName, price: priceEditable ? p : null,
+          manualClose: () => closeNow({ ...closeBody(), payment_method: "card", idempotency_key: uuid() }), onChange });
+      }
+      isProcessingPayment = true;
+      lockSheet(true);
+      try {
+        if (!confirm("Підтвердіть, що оплата карткою успішно пройшла на терміналі")) return;
+        lockSheet(false);
+        await closeNow(closeBody());
+      } catch (_) {  } finally { isProcessingPayment = false; lockSheet(false); }
+      return;
+    }
+    btn.disabled = true;
+    try { await closeNow(closeBody()); } catch (_) { btn.disabled = false; }
   } }, icon("ok"), "Закрити замовлення");
 
   openSheet("Закрити замовлення",
@@ -1259,55 +1274,61 @@ function closeOrderSheet(a, onChange) {
   amount.addEventListener("focus", () => setTimeout(() => amount.select(), 0));
 }
 
-function terminalPaySheet(p, onChange) {
-  const bridge = window.MDSAndroid && typeof window.MDSAndroid.startTerminal === "function" ? window.MDSAndroid : null;
-  const msg = h("p", { class: "muted" });
-  let busy = false;
-  const done = (r) => {
-    if (r.status === "paid") {
-      window.mdsTerminalResult = null;
-      closeSheet();
-      toast(`Оплачено карткою ${money(r.amount)}${r.masked_pan ? " · " + r.masked_pan : ""}. Замовлення закрито`);
-      onChange();
-      return true;
-    }
-    if (r.status === "failed") {
-      window.mdsTerminalResult = null;
-      msg.textContent = "Оплата не пройшла: " + (r.message || "відмова") + ". Закрийте вікно і спробуйте ще раз або оберіть інший спосіб.";
-      actions.replaceChildren(h("button", { class: "btn", onclick: closeSheet }, "Закрити"));
-      return true;
-    }
-    msg.textContent = r.message || "Очікуємо оплату на терміналі…";
-    return false;
+function terminalCheckout({ a, kop, materials, products, clientName, price, manualClose, onChange }) {
+  if (isProcessingPayment) return;
+  isProcessingPayment = true;
+  lockSheet(true);
+  let payment = null, cancelled = false;
+  const text = h("p", { class: "pw-text", "data-testid": "pay-wait-text" }, "Очікування оплати на терміналі...");
+  const sub = h("p", { class: "pw-sub" }, `${money(kop)} · клієнт прикладає або вставляє картку`);
+  const mark = h("div", { class: "pw-mark" }, h("i", { class: "spinner", "aria-hidden": "true" }));
+  const actions = h("div", { class: "pw-actions" });
+  const box = h("div", { class: "pay-wait", role: "alertdialog", "aria-modal": "true", "aria-live": "polite", "data-testid": "pay-wait" },
+    h("div", { class: "pw-card" }, mark, text, sub, actions));
+  document.body.append(box);
+  const finish = () => { box.remove(); isProcessingPayment = false; lockSheet(false); };
+  const success = (r) => {
+    mark.replaceChildren(h("span", { class: "pw-ok" }, icon("check", "lg")));
+    text.textContent = "Оплату проведено";
+    sub.textContent = `${money(r.amount)}${r.masked_pan ? " · " + r.masked_pan : ""}${r.rrn ? " · RRN " + r.rrn : ""}`;
+    actions.replaceChildren();
+    setTimeout(() => { finish(); closeSheet(true); toast("Оплачено карткою. Замовлення закрито"); onChange(); }, 1200);
   };
-  const check = async () => {
-    if (busy) return;
-    busy = true;
-    try { done(await run(() => api.post(`/api/card-payments/${p.id}/check`))); } catch (_) {  }
-    busy = false;
+  const failure = (msg) => {
+    mark.replaceChildren(h("span", { class: "pw-err" }, icon("x", "lg")));
+    text.textContent = msg;
+    sub.textContent = "Спробуйте ще раз або оберіть «Готівка».";
+    actions.replaceChildren(
+      h("button", { class: "btn", "data-testid": "pay-wait-close", onclick: finish }, "Закрити"),
+      h("button", { class: "link-btn", "data-testid": "pay-manual", onclick: async () => {
+        if (!confirm("Ви підтверджуєте, що оплата пройшла успішно?")) return;
+        try { box.remove(); lockSheet(false); await manualClose(); } catch (_) {  } finally { finish(); }
+      } }, "Закрити вручну"));
   };
-  const launch = () => { if (bridge) bridge.startTerminal(p.deeplink); };
-  window.mdsTerminalResult = () => { check(); };
-  const actions = h("div", { class: "row" },
-    p.mode === "mock" ? [
-      h("button", { class: "btn primary", onclick: async () => { try { done(await run(() => api.post(`/api/card-payments/${p.id}/mock-complete?ok=true`))); } catch (_) {} } }, "Імітувати оплату"),
-      h("button", { class: "btn", onclick: async () => { try { done(await run(() => api.post(`/api/card-payments/${p.id}/mock-complete?ok=false`))); } catch (_) {} } }, "Імітувати відмову")]
-      : bridge ? h("button", { class: "btn primary", onclick: launch }, icon("card"), "Відкрити «Термінал»") : null,
-    h("button", { class: "btn", onclick: check }, "Перевірити оплату"),
-    h("button", { class: "btn", onclick: async () => {
-      try {
-        const r = await run(() => api.post(`/api/card-payments/${p.id}/cancel`));
-        if (r.status === "failed") { window.mdsTerminalResult = null; closeSheet(); toast("Оплату скасовано"); } else done(r);
-      } catch (_) {  }
-    } }, "Скасувати"));
-  openSheet("Оплата карткою",
-    h("div", { class: "stack" },
-      h("div", { class: "huge", style: { textAlign: "center", fontWeight: 700 } }, money(p.amount)),
-      p.mode === "mock" ? h("p", { class: "muted small" }, "Режим імітації: гроші не списуються.")
-        : bridge ? h("p", { class: "muted small" }, "Відкриється «Термінал» ПриватБанку — клієнт прикладає картку або телефон до планшета.")
-        : h("p", { class: "muted small" }, "Відкрийте MDS на планшеті з застосунком «Термінал» ПриватБанку, щоб прийняти оплату. Після оплати натисніть «Перевірити оплату»."),
-      msg, actions));
-  if (p.mode !== "mock") launch();
+  const cancelBtn = h("button", { class: "btn sm", "data-testid": "pay-cancel", onclick: async () => {
+    cancelBtn.disabled = true;
+    cancelled = true;
+    try {
+      const r = payment ? await api.post(`/api/card-payments/${payment.id}/cancel`) : null;
+      toast(r && r.message && r.status === "processing" ? r.message : "Оплату скасовано");
+    } catch (e) { toast(e.message, true); }
+    finish();
+  } }, "Скасувати");
+  actions.append(cancelBtn);
+  (async () => {
+    try {
+      payment = await api.post("/api/card-payments", { appointment_id: a.id, amount: kop, materials, products, client_name: clientName, price });
+      if (cancelled) { await api.post(`/api/card-payments/${payment.id}/cancel`).catch(() => {}); return; }
+      const r = await api.post(`/api/card-payments/${payment.id}/pay`);
+      if (r.status === "paid" && r.order_id) {
+        if (cancelled) { toast("Термінал провів оплату — замовлення закрито"); closeSheet(true); onChange(); return; }
+        return success(r);
+      }
+      if (!cancelled) failure(r.error || r.message || "Оплата не пройшла");
+    } catch (e) {
+      if (!cancelled) failure(e.message);
+    }
+  })();
 }
 
 function inlineConfirm(anchor, text, okText) {
@@ -4362,10 +4383,11 @@ VIEWS.settings = async (main) => {
       h("label", { class: "row" }, auto, "Записи з Telegram одразу підтверджені"),
       field("Улюблений майстер клієнта — після скількох візитів", favVisits),
       h("label", { class: "row" }, remind, "Нагадування клієнтам у Telegram за добу і за 2 години (бот питає згоду)")),
-    h("div", { class: "card stack" }, h("h3", {}, "Оплата карткою — «Термінал» ПриватБанку (NFC)"),
+    h("div", { class: "card stack" }, h("h3", {}, "«Термінал» ПриватБанку (NFC, застаріле)"),
       field("Режим", termMode),
-      h("p", { class: "muted small" }, "Планшет з NFC і застосунком «Термінал» ПриватБанку стає платіжним терміналом: у закритті замовлення обираєте «Термінал», " +
-        "клієнт прикладає картку, замовлення закривається саме після підтвердження банку. Для реальних оплат ключі інтеграції задаються лише на сервері.")),
+      h("p", { class: "muted small" }, "Хмарна інтеграція із застосунком «Термінал» на телефоні відкладена; окремої кнопки в закритті замовлення немає. " +
+        "Для оплати карткою використовуйте «POS Термінал» нижче або ручне підтвердження.")),
+    posTerminalCard(),
     h("div", { class: "card stack" }, h("h3", {}, "Telegram-бот"),
       field("Код входу в розділ «Для майстрів»", staffCode),
       h("p", { class: "muted small" }, "Після коду кожен обирає себе й вводить особистий PIN (задається в розділі «Персонал»)."),
@@ -4388,6 +4410,43 @@ VIEWS.settings = async (main) => {
       state.settings = await run(() => api.put("/api/settings", body), "Налаштування збережено");
     } }, "Зберегти налаштування"));
 };
+
+function posTerminalCard() {
+  if (!state.user || state.user.role !== "director") return null;
+  const on = h("input", { type: "checkbox", "data-testid": "pos-enabled" });
+  const ip = h("input", { inputmode: "decimal", placeholder: "192.168.1.50", autocomplete: "off", "data-testid": "pos-ip" });
+  const port = h("input", { type: "number", min: 1, max: 65535, value: 2000, "data-testid": "pos-port" });
+  const result = h("div", { class: "small", "data-testid": "pos-check-result", "aria-live": "polite" });
+  api.get("/api/settings/terminal").then((c) => { on.checked = !!c.enabled; ip.value = c.ip || ""; port.value = c.port || 2000; }).catch(() => {});
+  const save = h("button", { class: "btn primary", "data-testid": "pos-save", onclick: async (e) => {
+    const b = e.currentTarget;
+    b.disabled = true;
+    try {
+      const c = await run(() => api.patch("/api/settings/terminal", { enabled: on.checked, ip: ip.value.trim(), port: parseInt(port.value || "2000", 10) }),
+        "Налаштування термінала збережено");
+      on.checked = c.enabled; ip.value = c.ip; port.value = c.port;
+    } catch (_) {  } finally { b.disabled = false; }
+  } }, "Зберегти налаштування");
+  const check = h("button", { class: "btn", "data-testid": "pos-check", onclick: async (e) => {
+    const b = e.currentTarget;
+    b.disabled = true;
+    result.replaceChildren(h("span", { class: "muted" }, "Перевіряємо зв'язок…"));
+    try {
+      const r = await api.post("/api/settings/terminal/check");
+      result.replaceChildren(r.ok
+        ? h("span", { class: "pos" }, `Зв'язок є: ${r.ip}:${r.port}, відповідь за ${r.ms} мс`)
+        : h("span", { class: "neg" }, `${r.error} (${r.ip}:${r.port})`));
+    } catch (err) { result.replaceChildren(h("span", { class: "neg" }, err.message)); }
+    b.disabled = false;
+  } }, "Перевірити зв'язок");
+  return h("div", { class: "card stack", "data-testid": "pos-card" }, h("h3", {}, "POS Термінал"),
+    h("label", { class: "row" }, on, "Увімкнути інтеграцію з терміналом"),
+    h("div", { class: "form-grid" }, field("IP-адреса термінала", ip), field("Порт", port)),
+    h("div", { class: "row" }, save, check), result,
+    h("p", { class: "muted small" }, "Термінал ПриватБанку (PAX/Newland) у локальній мережі салону. Коли інтеграцію ввімкнено, кнопка «Картка» " +
+      "надсилає суму на термінал і закриває замовлення після оплати. Вимкнено — після оплати на терміналі підтвердіть її вручну. " +
+      "Сервер має бути в одній мережі з терміналом (docs/TERMINAL.md)."));
+}
 
 function driveBlock(d) {
   if (!d) return null;
