@@ -1240,6 +1240,7 @@ function closeOrderSheet(a, onChange) {
       const o = await run(() => api.post(`/api/appointments/${a.id}/close`, body));
       closeSheet(true);
       toast(`Замовлення закрито. Заробіток майстра: ${money(o.master_earning)}`);
+      if (o.status === "completed") fiscalizeOrder(o.id);
       state.materials = await api.get("/api/materials").catch(() => state.materials);
       onChange();
     };
@@ -1274,6 +1275,36 @@ function closeOrderSheet(a, onChange) {
   amount.addEventListener("focus", () => setTimeout(() => amount.select(), 0));
 }
 
+let fiscalCfg = null;
+function loadFiscalCfg() {
+  if (fiscalCfg) return Promise.resolve(fiscalCfg);
+  return api.get("/api/checkbox/client-config").then((c) => (fiscalCfg = c)).catch(() => ({ enabled: false }));
+}
+window.mdsPrintResult = (ok, message) => toast(message || (ok ? "Чек надруковано" : "Чек не надруковано"), !ok);
+function printReceipt(b64, p) {
+  const bridge = window.MDSAndroid;
+  if (!p || p.printer_type === "none") return toast("Чек фіскалізовано, але принтер не налаштовано");
+  if (!bridge || (p.printer_type === "wifi" ? typeof bridge.printWifi : typeof bridge.printBluetooth) !== "function") {
+    return toast("Чек фіскалізовано. Друк — із планшета в застосунку MDS");
+  }
+  if (p.printer_type === "wifi") bridge.printWifi(p.printer_ip, p.printer_port, b64);
+  else bridge.printBluetooth(b64, p.printer_bt_name || "");
+}
+async function fiscalizeOrder(orderId, { quiet = false } = {}) {
+  const cfg = await loadFiscalCfg();
+  if (!cfg.enabled || !orderId) return null;
+  try {
+    const r = await api.post(`/api/orders/${orderId}/fiscalize`);
+    if (r.status === "done" && r.print_base64) printReceipt(r.print_base64, r.printer);
+    else if (r.status === "done") toast(`Чек фіскалізовано${r.fiscal_code ? " · ФН " + r.fiscal_code : ""}`);
+    else if (r.message) toast(r.message, r.status === "error");
+    return r;
+  } catch (e) {
+    if (!quiet) toast("Чек не створено: " + e.message, true);
+    return null;
+  }
+}
+
 function terminalCheckout({ a, kop, materials, products, clientName, price, manualClose, onChange }) {
   if (isProcessingPayment) return;
   isProcessingPayment = true;
@@ -1292,7 +1323,7 @@ function terminalCheckout({ a, kop, materials, products, clientName, price, manu
     text.textContent = "Оплату проведено";
     sub.textContent = `${money(r.amount)}${r.masked_pan ? " · " + r.masked_pan : ""}${r.rrn ? " · RRN " + r.rrn : ""}`;
     actions.replaceChildren();
-    setTimeout(() => { finish(); closeSheet(true); toast("Оплачено карткою. Замовлення закрито"); onChange(); }, 1200);
+    setTimeout(() => { finish(); closeSheet(true); toast("Оплачено карткою. Замовлення закрито"); onChange(); fiscalizeOrder(r.order_id); }, 1200);
   };
   const failure = (msg) => {
     mark.replaceChildren(h("span", { class: "pw-err" }, icon("x", "lg")));
@@ -1321,7 +1352,7 @@ function terminalCheckout({ a, kop, materials, products, clientName, price, manu
       if (cancelled) { await api.post(`/api/card-payments/${payment.id}/cancel`).catch(() => {}); return; }
       const r = await api.post(`/api/card-payments/${payment.id}/pay`);
       if (r.status === "paid" && r.order_id) {
-        if (cancelled) { toast("Термінал провів оплату — замовлення закрито"); closeSheet(true); onChange(); return; }
+        if (cancelled) { toast("Термінал провів оплату — замовлення закрито"); closeSheet(true); onChange(); fiscalizeOrder(r.order_id); return; }
         return success(r);
       }
       if (!cancelled) failure(r.error || r.message || "Оплата не пройшла");
@@ -3604,6 +3635,7 @@ async function orderSheet(id, onChange) {
       h("div", { class: "muted small" }, dmy(o.closed_at), " ", hm(o.closed_at), " · редакція ", o.revision, " · ",
         h("span", { class: "status st-" + (o.status === "completed" ? "completed" : o.status === "unpaid" ? "pending" : "cancelled") }, ORDER_STATUS[o.status] || o.status)),
       orderAuthors(o),
+      fiscalBlock(o),
       h("div", { class: "card" },
         h("div", { class: "sum-line" }, h("span", {}, "Ціна (P)"), h("span", {}, money(o.price_snapshot))),
         o.discount ? h("div", { class: "sum-line" }, h("span", {}, "Знижка (за рахунок салону)"), h("span", {}, money(o.discount))) : null,
@@ -3615,6 +3647,7 @@ async function orderSheet(id, onChange) {
       isDir && o.status === "unpaid" ? h("div", { class: "card stack" }, h("b", {}, "Клієнт оплатив пізніше"),
         h("div", { class: "row" }, ...Object.entries(PAY_CHOICES).map(([k, v]) => h("button", { class: "btn primary", onclick: async () => {
           await run(() => api.post(`/api/orders/${id}/mark-paid`, { payment_method: k, amount: toKop(amount.value), version: o.version }), "Оплату зараховано"); done();
+          fiscalizeOrder(id);
         } }, v)))) : null,
       isDir && live ? h("details", {}, h("summary", { class: "muted", style: { cursor: "pointer" } }, "Виправити замовлення (з записом у журнал)"),
         h("div", { class: "stack", style: { marginTop: "10px" } },
@@ -3628,6 +3661,17 @@ async function orderSheet(id, onChange) {
           } }, "Зберегти виправлення"),
           h("div", { class: "row" }, voidBtn("refund", "Повернення клієнту", true), voidBtn("cancel", "Анулювати замовлення", true)))) : null,
       orderHistory(o)));
+}
+
+function fiscalBlock(o) {
+  const box = h("div", { class: "row small", "data-testid": "fiscal-block" });
+  loadFiscalCfg().then((cfg) => {
+    if (!cfg.enabled || o.status !== "completed") return;
+    box.append(icon("receipt", "sm"), h("span", { class: "muted grow" }, o.fiscal_receipt_id ? "Фіскальний чек є" : "Фіскального чека ще немає"),
+      h("button", { class: "btn sm", onclick: async (e) => { const b = e.currentTarget; b.disabled = true; await fiscalizeOrder(o.id); b.disabled = false; } },
+        o.fiscal_receipt_id ? "Друкувати чек" : "Створити чек"));
+  });
+  return box;
 }
 
 const MISSING = { materials: "без матеріалів", phone: "без телефону" };
@@ -4388,6 +4432,7 @@ VIEWS.settings = async (main) => {
       h("p", { class: "muted small" }, "Хмарна інтеграція із застосунком «Термінал» на телефоні відкладена; окремої кнопки в закритті замовлення немає. " +
         "Для оплати карткою використовуйте «POS Термінал» нижче або ручне підтвердження.")),
     posTerminalCard(),
+    checkboxCard(),
     h("div", { class: "card stack" }, h("h3", {}, "Telegram-бот"),
       field("Код входу в розділ «Для майстрів»", staffCode),
       h("p", { class: "muted small" }, "Після коду кожен обирає себе й вводить особистий PIN (задається в розділі «Персонал»)."),
@@ -4410,6 +4455,65 @@ VIEWS.settings = async (main) => {
       state.settings = await run(() => api.put("/api/settings", body), "Налаштування збережено");
     } }, "Зберегти налаштування"));
 };
+
+function checkboxCard() {
+  if (!state.user || state.user.role !== "director") return null;
+  const on = h("input", { type: "checkbox", "data-testid": "cb-enabled" });
+  const ptype = select([["none", "Немає"], ["wifi", "Wi-Fi (мережевий)"], ["bluetooth", "Bluetooth"]], "none", { "data-testid": "cb-printer-type" });
+  const ip = h("input", { inputmode: "decimal", placeholder: "192.168.1.60", autocomplete: "off", "data-testid": "cb-printer-ip" });
+  const port = h("input", { type: "number", min: 1, max: 65535, value: 9100, "data-testid": "cb-printer-port" });
+  const bt = h("input", { placeholder: "Назва з налаштувань Bluetooth, напр. XP-58", autocomplete: "off", "data-testid": "cb-printer-bt" });
+  const width = select([["32", "58 мм (32 символи)"], ["42", "80 мм (42 символи)"], ["48", "80 мм (48 символів)"]], "32");
+  const cp = select([["cp1251", "Windows-1251 (уся українська абетка)"], ["cp866", "CP866 (без І, Ґ — замінюються)"]], "cp1251");
+  const keys = h("div", { class: "small" });
+  const queue = h("div", { class: "small muted" });
+  const result = h("div", { class: "small", "aria-live": "polite", "data-testid": "cb-result" });
+  const wifiBox = h("div", { class: "form-grid" }, field("IP-адреса принтера", ip), field("Порт", port));
+  const btBox = field("Bluetooth-принтер", bt);
+  const sync = () => { wifiBox.classList.toggle("hidden", ptype.value !== "wifi"); btBox.classList.toggle("hidden", ptype.value !== "bluetooth"); };
+  ptype.addEventListener("change", sync);
+  const fill = (c) => {
+    on.checked = !!c.enabled; ptype.value = c.printer_type; ip.value = c.printer_ip || ""; port.value = c.printer_port || 9100;
+    bt.value = c.printer_bt_name || ""; width.value = String(c.printer_width || 32); cp.value = c.printer_codepage || "cp1251";
+    keys.replaceChildren(c.keys_configured ? h("span", { class: "pos" }, "Ключі касира задані на сервері")
+      : h("span", { class: "neg" }, "Ключі не задані: MDS_CHECKBOX_LOGIN, MDS_CHECKBOX_PASSWORD, MDS_CHECKBOX_LICENSE_KEY у Railway → Variables"));
+    queue.textContent = c.queue && (c.queue.pending || c.queue.error) ? `Чеки в черзі: ${c.queue.pending}, з помилкою: ${c.queue.error}` : "";
+    sync();
+  };
+  api.get("/api/settings/checkbox").then(fill).catch(() => {});
+  const busy = async (btn, fn) => { btn.disabled = true; try { await fn(); } catch (err) { result.replaceChildren(h("span", { class: "neg" }, err.message)); } btn.disabled = false; };
+  const save = h("button", { class: "btn primary", "data-testid": "cb-save", onclick: (e) => busy(e.currentTarget, async () => {
+    const c = await run(() => api.patch("/api/settings/checkbox", { enabled: on.checked, printer_type: ptype.value, printer_ip: ip.value.trim(),
+      printer_port: parseInt(port.value || "9100", 10), printer_bt_name: bt.value.trim(), printer_width: +width.value, printer_codepage: cp.value }),
+      "Налаштування Checkbox збережено");
+    fiscalCfg = null;
+    fill(c);
+  }) }, "Зберегти налаштування");
+  const check = h("button", { class: "btn", "data-testid": "cb-check", onclick: (e) => busy(e.currentTarget, async () => {
+    result.replaceChildren(h("span", { class: "muted" }, "Перевіряємо Checkbox…"));
+    const r = await api.post("/api/checkbox/check");
+    const SH = { OPENED: "відкрита", OPENING: "відкривається", CREATED: "відкривається", CLOSING: "закривається", CLOSED: "закрита" };
+    result.replaceChildren(r.ok ? h("span", { class: "pos" }, `Зв'язок є, вхід касира успішний. Зміна ПРРО: ${SH[r.shift] || r.shift}`)
+      : h("span", { class: "neg" }, r.error));
+  }) }, "Перевірити зв'язок");
+  const shift = (action) => h("button", { class: "btn", "data-testid": `cb-shift-${action}`, onclick: (e) => busy(e.currentTarget, async () => {
+    const r = await api.post("/api/checkbox/shift", { action });
+    result.replaceChildren(h("span", { class: "pos" }, r.message));
+  }) }, action === "open" ? "Відкрити зміну ПРРО" : "Закрити зміну ПРРО");
+  const testPrint = h("button", { class: "btn", "data-testid": "cb-test-print", onclick: (e) => busy(e.currentTarget, async () => {
+    const r = await api.post("/api/checkbox/test-print");
+    printReceipt(r.print_base64, r.printer);
+  }) }, "Тестовий друк");
+  return h("div", { class: "card stack", "data-testid": "cb-card" }, h("h3", {}, "Checkbox (ПРРО)"),
+    keys, h("label", { class: "row" }, on, "Фіскалізувати оплачені замовлення (чек Checkbox)"),
+    field("Чековий принтер", ptype), wifiBox, btBox,
+    h("div", { class: "form-grid" }, field("Ширина стрічки", width), field("Кодова сторінка", cp)),
+    h("div", { class: "row" }, save, check), h("div", { class: "row" }, shift("open"), shift("close"), testPrint), result, queue,
+    h("p", { class: "muted small" }, "Після закриття оплаченого замовлення створюється фіскальний чек (готівка — CASH, картка — CASHLESS). Якщо Checkbox " +
+      "недоступний, замовлення все одно закривається, а чек створиться пізніше автоматично. Зміна ПРРО відкривається з першим чеком і " +
+      "закривається Checkbox о 23:50. Друк — лише з планшета в застосунку MDS (принтер Wi-Fi у мережі салону або спарений Bluetooth). " +
+      "Тестовий друк допоможе підібрати кодову сторінку, якщо замість літер друкуються символи."));
+}
 
 function posTerminalCard() {
   if (!state.user || state.user.role !== "director") return null;

@@ -26,6 +26,12 @@ node smoke.js http://localhost:8770
 на `127.0.0.1`, вільний порт): «Перевірити зв'язок», успіх, відмова → «Закрити вручну», «Скасувати», блокування вікна.
 Сервер має працювати з `MDS_ENV=test` (дозволяє IP `127.0.0.1`). Запуск: `node terminal.js http://localhost:8770`.
 
+`checkbox.js` — Checkbox (ПРРО): макет API Checkbox (HTTP, порт `CHECKBOX_MOCK_PORT`, 8779) і підмінений міст
+`MDSAndroid`; сервер — з `MDS_CHECKBOX_API_URL=http://127.0.0.1:8779` і будь-якими `MDS_CHECKBOX_LOGIN/_PASSWORD/_LICENSE_KEY`.
+
+`receipt_e2e.js` — друк чеків з емуляторами `server/scripts/fake_checkbox.py` і `fake_printer.py` (запускає їх сам;
+порти `CHECKBOX_MOCK_PORT` 8779, `FAKE_PRINTER_PORT` 9100): знімки надрукованих чеків — `out/receipt-*.png`.
+
 `e2e_fake_terminal.js` — наскрізна перевірка з емулятором `server/scripts/fake_terminal.py` (запускає його сам):
 налаштування директора → «Сьогодні» майстра → «Закрити» → «Картка» → спінер і блокування → схвалення → замовлення
 закрито. `HEADED=1 node e2e_fake_terminal.js http://localhost:8770` — у видимому браузері; `FAKE_TERMINAL_PORT`,

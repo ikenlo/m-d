@@ -71,7 +71,11 @@ def mark_paid(order_id: int, body: MarkPaidIn, actor: Actor = Depends(get_actor)
 
 @router.post("/orders/{order_id}/refund")
 def refund_order(order_id: int, body: VoidOrderIn, actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
-    return orders.order_public(orders.refund_order(s, actor, order_id, body.reason, expected_version=body.version))
+    o = orders.refund_order(s, actor, order_id, body.reason, expected_version=body.version)
+    from ...services import checkbox
+
+    checkbox.on_refund(s, actor, order_id)
+    return orders.order_public(o)
 
 
 @router.post("/orders/{order_id}/cancel")

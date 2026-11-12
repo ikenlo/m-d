@@ -51,6 +51,10 @@ jobs:
           MDS_ENV: test
           MDS_DATA_DIR: ${{ runner.temp }}/mds-ui
           MDS_PORT: "8770"
+          MDS_CHECKBOX_API_URL: http://127.0.0.1:8779
+          MDS_CHECKBOX_LOGIN: ci-cashier
+          MDS_CHECKBOX_PASSWORD: ci-not-a-secret
+          MDS_CHECKBOX_LICENSE_KEY: ci-not-a-secret
         run: |
           ./ui-tests/seed.sh
           cd server && nohup python -m mds serve > ${{ runner.temp }}/serve.log 2>&1 &
@@ -61,6 +65,10 @@ jobs:
         run: node ui-tests/terminal.js http://localhost:8770
       - name: E2E з емулятором POS-термінала
         run: node ui-tests/e2e_fake_terminal.js http://localhost:8770
+      - name: Checkbox (ПРРО) — чек і друк через макет
+        run: node ui-tests/checkbox.js http://localhost:8770
+      - name: Друк чеків — емулятори Checkbox і принтера ESC/POS
+        run: node ui-tests/receipt_e2e.js http://localhost:8770
       - name: Знімки екранів
         if: always()
         uses: actions/upload-artifact@v4

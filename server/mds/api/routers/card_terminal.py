@@ -1,13 +1,12 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Request
-from fastapi.security import HTTPAuthorizationCredentials
 from pydantic import Field
 from sqlalchemy.orm import Session
 
 from ...services import card_terminal, terminal
 from ...services.common import Actor
-from ..deps import bearer, get_actor, get_session, get_user
+from ..deps import actor_short, get_actor, get_session
 from ..schemas import BaseModel, MaterialLine, ProductLine
 
 router = APIRouter(prefix="/api", tags=["card-terminal"])
@@ -26,12 +25,6 @@ class TerminalSettingsIn(BaseModel):
     enabled: bool | None = None
     ip: str | None = Field(default=None, max_length=64)
     port: int | None = None
-
-
-def actor_short(request: Request, creds: HTTPAuthorizationCredentials | None = Depends(bearer)) -> Actor:
-    # Окрема коротка сесія: запити до термінала тривають до хвилини і не мають тримати з'єднання з БД.
-    with request.app.state.db.session() as s:
-        return Actor.of(get_user(request, creds, s))
 
 
 @router.get("/card-terminal/status")

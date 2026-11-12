@@ -35,6 +35,7 @@
 | | `payouts` | UNIQUE `shift_id` (може бути NULL — довільна виплата), `cash_shift_id` (взято з каси), `method` |
 | | `expenses` | категорія, сума, дата, спосіб оплати, `is_deleted` (архів) |
 | | `ledger` | журнал проведень (лише додавання): `kind`, `ref_type/ref_id`, суми amount/master/salon/materials |
+| | `fiscal_receipts` | черга чеків Checkbox (ПРРО): `uuid` (= id чека в Checkbox), `order_id`, `kind` (`sell`/`return`, UNIQUE з `order_id`), `payment_type`, `amount`, `related_uuid`, `status` (`pending`/`done`/`error`), `attempts`, `last_error`, `fiscal_code`, `fiscal_date`, `tax_url`. `orders.fiscal_receipt_id` — UUID чека продажу (міграція 0033) |
 | | `card_payments` | оплати «Терміналом» і POS-терміналом (`mode = ecr`): статус `pending`/`processing`/`paid`/`failed`/`unknown`, RRN, код авторизації, маска картки, чек. Налаштування POS — `settings`: `pos_terminal_enabled`, `pos_terminal_ip`, `pos_terminal_port` |
 | Комунальні | `meter_readings` | місяць (UNIQUE), показники (тисячні кВт·год), тариф, вартість, сплачено, витрата |
 | | `generator_runs` | запуск: знімок л/год, ціни бензину, амортизації; `running` UNIQUE (лише один працює) |

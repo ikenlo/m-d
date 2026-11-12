@@ -69,6 +69,7 @@ def report_for_master(r: dict) -> dict:
 def order_public(o: Order) -> dict:
     return {
         "id": o.id,
+        "fiscal_receipt_id": o.fiscal_receipt_id,
         "appointment_id": o.appointment_id,
         "master_id": o.master_id,
         "master_name": o.master.full_name,

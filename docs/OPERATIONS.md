@@ -38,6 +38,8 @@ python -m mds run           # API + панель + бот + бекапи, http:/
 | `MDS_AI_PROVIDER`, `MDS_AI_LLAMA_URL` | `rules`, `http://localhost:8080/v1` | рекомендації: правила або локальна llama |
 | `MDS_TWOFA_DISABLED` | — | аварійно вимкнути 2FA |
 | `MDS_PRIVAT_TERMINAL_CLID`, `_SECRET`, `_CLIENT_TOKEN` | — | «Термінал» (режим `live` — з 0.4.0, D-6c) |
+| `MDS_CHECKBOX_LOGIN`, `_PASSWORD`, `_LICENSE_KEY` | — | Checkbox (ПРРО): касир і ліцензія каси ([CHECKBOX.md](CHECKBOX.md)) |
+| `MDS_CHECKBOX_API_URL` | `https://api.checkbox.ua` | адреса API Checkbox (тестова каса — з кабінету) |
 | `MDS_TURBOSMS_TOKEN`, `MDS_TURBOSMS_SENDER` | — | не використовуються: SMS із Connect вимкнено (D-6a) |
 | `MDS_MANAGER_API_KEY` | — | ключ `X-API-Key` для `/api/ext/v1` (MDs Manager, лише читання); порожньо — вимкнено |
 | `MDS_ENV` | `production` | `production` / `test`; у `production` заборонені `MDS_WIPE_DATA`, `MDS_DEMO_FOP1`, `wipe-data`, `demo-fop1`, mock-оплати |
@@ -117,6 +119,8 @@ python -m mds migrate      # до запуску; зробіть бекап пе
 
 Оболонки над веб-панеллю (`apps/android` — WebView без бібліотек, мінімум Android 7; `apps/windows` — Electron,
 Windows 10/11 x64). Логіки немає — оновлення сайту видно одразу. Перевипуск лише при зміні оболонки.
+Виняток — міст `MDSAndroid` для обладнання салону: друк чеків на Wi-Fi/Bluetooth-принтер (`printWifi`, `printBluetooth`,
+з 0.1.11, [CHECKBOX.md](CHECKBOX.md)); дозвіл Bluetooth на Android 12+ запитується під час першого друку.
 - Версія: `versionCode/versionName` в `apps/android/app/build.gradle`, `version` в `apps/windows/package.json`,
   назви файлів у `.github/workflows/apps.yml`.
 - PR → workflow «Apps» збирає APK (і запускає на емуляторі) та EXE. Реліз: Actions → Apps → Run workflow → `release`.

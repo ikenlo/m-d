@@ -43,6 +43,10 @@ class Config:
     telegram_token: str = field(default_factory=lambda: _env("TELEGRAM_TOKEN", ""))
     manager_api_key: str = field(default_factory=lambda: _env("MANAGER_API_KEY", ""))
     meta_verify_token: str = field(default_factory=lambda: _env("META_VERIFY_TOKEN", ""))
+    checkbox_api_url: str = field(default_factory=lambda: _env("CHECKBOX_API_URL", "https://api.checkbox.ua"))
+    checkbox_login: str = field(default_factory=lambda: _env("CHECKBOX_LOGIN", ""))
+    checkbox_password: str = field(default_factory=lambda: _env("CHECKBOX_PASSWORD", ""))
+    checkbox_license_key: str = field(default_factory=lambda: _env("CHECKBOX_LICENSE_KEY", ""))
     meta_app_secret: str = field(default_factory=lambda: _env("META_APP_SECRET", ""))
     webhook_processing_timeout_minutes: int = field(default_factory=lambda: int(_env("WEBHOOK_PROCESSING_TIMEOUT_MINUTES", "5")))
     backup_dir: Path | None = None
