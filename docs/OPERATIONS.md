@@ -134,7 +134,7 @@ Windows 10/11 x64). Логіки немає — оновлення сайту в
 - Версія — `server/mds/__init__.py::__version__` і `server/pyproject.toml::version` + розділ
   `## [X.Y.Z] — дата` першим у `CHANGELOG.md` (корінь репозиторію; тест `test_version.py`).
 - Після злиття `.github/workflows/release.yml` створює тег `vX.Y.Z` і GitHub Release з описом із CHANGELOG.
-- Поточний реліз — **0.3.1** (черга вебхуків Meta); канон — 0.3.0 (D-1); наступний — 0.3.2 ([ROADMAP.md](ROADMAP.md)).
+- Поточний реліз — **0.3.2** (POS-термінал, Checkbox, розділи налаштувань); канон — 0.3.0 (D-1); наступний — 0.3.3 ([ROADMAP.md](ROADMAP.md)).
 
 ## 10. Моніторинг
 
