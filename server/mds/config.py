@@ -42,6 +42,9 @@ class Config:
     timezone: str = field(default_factory=lambda: _env("TIMEZONE", "Europe/Kyiv"))
     telegram_token: str = field(default_factory=lambda: _env("TELEGRAM_TOKEN", ""))
     manager_api_key: str = field(default_factory=lambda: _env("MANAGER_API_KEY", ""))
+    meta_verify_token: str = field(default_factory=lambda: _env("META_VERIFY_TOKEN", ""))
+    meta_app_secret: str = field(default_factory=lambda: _env("META_APP_SECRET", ""))
+    webhook_processing_timeout_minutes: int = field(default_factory=lambda: int(_env("WEBHOOK_PROCESSING_TIMEOUT_MINUTES", "5")))
     backup_dir: Path | None = None
     backup_interval_hours: int = field(default_factory=lambda: int(_env("BACKUP_INTERVAL_HOURS", "6")))
     backup_keep_days: int = field(default_factory=lambda: int(_env("BACKUP_KEEP_DAYS", "30")))

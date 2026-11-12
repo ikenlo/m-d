@@ -12,6 +12,28 @@
 
 ## [Невипущене]
 
+## [0.3.1] — 2026-11-12
+
+Webhook queue for Manager integration: Connect приймає вебхуки Meta (Instagram, Facebook) у чергу, MDs Manager забирає
+їх і підтверджує обробку. Контекст і налаштування Meta — [docs/CONTEXT_MANAGER_INTEGRATION.md](docs/CONTEXT_MANAGER_INTEGRATION.md).
+
+### Додано
+- Черга вхідних вебхуків Meta для MDs Manager: таблиця `webhook_queue` (міграція `0032`), налаштування
+  `MDS_META_VERIFY_TOKEN`, `MDS_META_APP_SECRET`, `MDS_WEBHOOK_PROCESSING_TIMEOUT_MINUTES` (5 хв).
+  Рішення директора 12.11.2026 записано в канон: D-5 (виняток — ack черги від Manager), D-6a (вебхуки Meta приймає Connect).
+- `GET /api/webhooks/meta` (публічний): перевірка підписки Meta (`hub.verify_token`); без заданого токена — завжди 403.
+- `POST /api/webhooks/meta` (публічний): подія Meta → `webhook_queue` (`instagram` / `facebook` / `unknown`); підпис
+  `X-Hub-Signature-256`, якщо задано `MDS_META_APP_SECRET`; не JSON — 400, понад 1 МБ — 413.
+- `GET /api/ext/v1/webhooks` (ключ Manager): найстаріші `pending` (`limit` 1–100) → `processing`; завислі довше тайм-ауту
+  повертаються в чергу.
+- `POST /api/ext/v1/webhooks/{uuid}/ack` (ключ Manager): `completed` або `failed` (до 5 спроб, потім `failed`).
+- Щогодинне очищення черги (`jobs.hourly`): `completed` старші 7 днів, `failed` старші 30 днів.
+- `docs/CONTEXT_MANAGER_INTEGRATION.md` — архітектура, контракт API, життєвий цикл черги, налаштування Meta App.
+
+### Міграції і оновлення
+- `0032` — нова таблиця `webhook_queue`; наявні таблиці не змінюються. Застосовується автоматично при старті.
+- Перед увімкненням вебхуків задати на Railway `MDS_META_VERIFY_TOKEN` і `MDS_META_APP_SECRET` (README, «Webhook Queue»).
+
 ## [0.3.0] — 2026-11-12
 
 Реліз канону (рішення директора 11.11.2026). Правила — [docs/CANON.md](docs/CANON.md) і [docs/FINANCE.md](docs/FINANCE.md).

@@ -74,6 +74,50 @@ def test_upgrade_from_pr80_api_keys_state(tmp_path):
     tables = set(inspect(engine).get_table_names())
     assert "auth_throttle" in tables and "api_keys" not in tables
     with engine.connect() as conn:
-        assert conn.execute(text("SELECT version_num FROM alembic_version")).scalar() == "0031"
+        from alembic.script import ScriptDirectory
+
+        from mds.migrate import alembic_config
+
+        head = ScriptDirectory.from_config(alembic_config(url)).get_current_head()
+        assert conn.execute(text("SELECT version_num FROM alembic_version")).scalar() == head
         diff = compare_metadata(MigrationContext.configure(conn, opts={"compare_type": True}), Base.metadata)
     assert diff == []
+
+
+def test_webhook_queue_table_and_defaults(tmp_path, fixed_clock):
+    from sqlalchemy import inspect
+
+    from mds.db import Database
+    from mds.models import WebhookQueue
+
+    url = f"sqlite:///{tmp_path / 'wq.db'}"
+    upgrade(url)
+    insp = inspect(create_engine(url))
+    assert {c["name"] for c in insp.get_columns("webhook_queue")} == {
+        "id", "uuid", "source", "payload", "status", "retry_count", "error_message",
+        "received_at", "processing_started_at", "processed_at"}
+    assert {i["name"] for i in insp.get_indexes("webhook_queue")} >= {"ix_webhook_queue_status", "ix_webhook_queue_received_at"}
+    with Database(url).session() as s:
+        a = WebhookQueue(source="instagram", payload={"object": "instagram", "entry": []})
+        b = WebhookQueue(source="facebook", payload={})
+        s.add_all([a, b])
+        s.flush()
+        assert a.status == "pending" and a.retry_count == 0 and a.processed_at is None
+        assert len(a.uuid) == 36 and a.uuid != b.uuid
+        from mds import clock
+
+        assert a.received_at == clock.now() and a.received_at.tzinfo is None
+
+
+def test_webhook_config_from_env(monkeypatch):
+    from mds.config import Config
+
+    for k in ("MDS_META_VERIFY_TOKEN", "MDS_META_APP_SECRET", "MDS_WEBHOOK_PROCESSING_TIMEOUT_MINUTES"):
+        monkeypatch.delenv(k, raising=False)
+    c = Config()
+    assert (c.meta_verify_token, c.meta_app_secret, c.webhook_processing_timeout_minutes) == ("", "", 5)
+    monkeypatch.setenv("MDS_META_VERIFY_TOKEN", "vt")
+    monkeypatch.setenv("MDS_META_APP_SECRET", "sec")
+    monkeypatch.setenv("MDS_WEBHOOK_PROCESSING_TIMEOUT_MINUTES", "9")
+    c = Config()
+    assert (c.meta_verify_token, c.meta_app_secret, c.webhook_processing_timeout_minutes) == ("vt", "sec", 9)

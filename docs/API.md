@@ -144,7 +144,7 @@
 
 ## `/api/ext/v1` — MDs Manager
 
-Лише читання (D-5). Ключ — заголовок `X-API-Key` = `MDS_MANAGER_API_KEY` (порівняння за сталий час).
+Лише читання (D-5); єдиний запис — ack черги вебхуків (нижче). Ключ — заголовок `X-API-Key` = `MDS_MANAGER_API_KEY` (порівняння за сталий час).
 Ключ не задано → 404 «Інтеграцію вимкнено»; немає/невірний → 401. JWT персоналу тут не приймається, а ключ
 Manager не відкриває решту `/api`. Персональних даних клієнтів (імена, телефони, дати народження, Telegram,
 Instagram, нотатки) немає. Гроші — копійки. Період `date_from`…`date_to` (за замовчуванням останні 30 днів,
@@ -160,4 +160,17 @@ Instagram, нотатки) немає. Гроші — копійки. Періо
 | `GET /api/ext/v1/clients` | `limit`, `offset` | знеособлено: `id`, `created_at`, `source`, `marketing_consent`, `blocked`, `segment`, `visits`, `spent`, `first_visit`, `last_visit` |
 | `GET /api/ext/v1/daily` | період | по днях: `orders`, `revenue`, `price_total`, `discounts`, `masters_share`, `materials`, `salon`, `cash`, `noncash`, `products_revenue/cost/bonus`, `unpaid_count/amount`, `expenses` (лише `completed`; `unpaid` — окремо, Q-8) |
 
-Не робимо (D-5): жодних `POST/PATCH/DELETE`, запису на прийом, скасувань. Рекомендації Manager показує у себе (Q-10).
+| `GET /api/ext/v1/webhooks` | `limit` (1–100, 50) | `{webhooks: [{uuid, source, payload, received_at}], count}` — найстаріші `pending`, одразу стають `processing`. Записи в `processing` довше `MDS_WEBHOOK_PROCESSING_TIMEOUT_MINUTES` (5) спершу повертаються в `pending` |
+| `POST /api/ext/v1/webhooks/{uuid}/ack` | тіло `{status: "completed" \| "failed", error?}` | `{uuid, status}`. `completed` → `processed_at`; `failed` → `retry_count + 1`, знову `pending`, на 5-й раз — `failed`. Для вже завершених (`completed`/`failed`) повертає поточний статус без змін; невідомий `uuid` — 404 |
+
+Не робимо (D-5): жодних інших `POST/PATCH/DELETE`, запису на прийом, скасувань. Рекомендації Manager показує у себе (Q-10).
+
+## `/api/webhooks` — вебхуки Meta (публічні)
+
+Без ключа й JWT (викликає Meta). Connect нічого не обробляє і не відповідає клієнтам — лише кладе подію в чергу
+`webhook_queue` для MDs Manager (D-6a). Сервіс — `services/webhooks.py`.
+
+| Метод і шлях | Перевірка | Відповідь |
+|---|---|---|
+| `GET /api/webhooks/meta` | `hub.mode=subscribe` і `hub.verify_token` = `MDS_META_VERIFY_TOKEN` (якщо токен не задано — завжди 403) | 200 з `hub.challenge` (text/plain) або 403 `Forbidden` |
+| `POST /api/webhooks/meta` | якщо задано `MDS_META_APP_SECRET` — підпис `X-Hub-Signature-256` (HMAC-SHA256 сирого тіла), інакше 403 | 200 `{ok: true}`; `object`: `instagram` → `instagram`, `page` → `facebook`, інше → `unknown`. Не JSON-об'єкт — 400 `bad_json`, тіло > 1 МБ — 413 |
