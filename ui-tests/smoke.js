@@ -42,7 +42,8 @@ async function login(page, user, pass) {
         where = `${user}/${mode.name}/#/${r}`;
         await page.goto(`${BASE}/#/${r}`);
         try {
-          await page.waitForFunction(() => document.querySelector(".main") && !document.querySelector(".view-skel"), null, { timeout: 15000 });
+          await page.waitForSelector(".main", { timeout: 15000 });
+          await page.waitForSelector(".view-skel", { state: "detached", timeout: 15000 });
         } catch (_) { fail(where, "сторінка не завантажилась за 15 с"); continue; }
         await page.waitForTimeout(400);
         const res = await page.evaluate(() => {
