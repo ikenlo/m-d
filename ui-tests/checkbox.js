@@ -62,7 +62,7 @@ function checkboxMock() {
     await page.waitForSelector(".main");
 
     console.log("Налаштування «Checkbox (ПРРО)»");
-    await page.goto(BASE + "/#/settings");
+    await page.goto(BASE + "/#/settings?g=payments");
     await page.waitForSelector("[data-testid=cb-card] :text('Ключі касира задані на сервері')", { timeout: 8000 });
     check(true, "ключі касира задані на сервері");
     await page.check("[data-testid=cb-enabled]");
@@ -83,9 +83,15 @@ function checkboxMock() {
       const users = await api.get("/api/users");
       const m = users.find((u) => u.username === "dmitry");
       const svc = (await api.get("/api/services")).find((s) => s.price > 0 && !s.price_from && !s.needs_materials);
-      const day = new Date(Date.now() + (5 + Math.floor(Math.random() * 300)) * 864e5).toISOString().slice(0, 10);
-      return api.post("/api/appointments", { master_id: m.id, service_id: svc.id, starts_at: `${day}T10:00:00`, client_name: "Чек Тест",
-        confirm_off_hours: true, status: "confirmed" });
+      let last;
+      for (let k = 0; k < 30; k++) {
+        const day = new Date(Date.now() + (5 + Math.floor(Math.random() * 300)) * 864e5).toISOString().slice(0, 10);
+        try {
+          return await api.post("/api/appointments", { master_id: m.id, service_id: svc.id, starts_at: `${day}T10:00:00`, client_name: "Чек Тест",
+            confirm_off_hours: true, status: "confirmed" });
+        } catch (e) { last = e; }
+      }
+      throw last;
     });
     await page.evaluate((a) => closeOrderSheet(a, () => {}), appt);
     await page.waitForSelector("#overlay .sheet");

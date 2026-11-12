@@ -52,11 +52,17 @@ function mockTerminal() {
   });
   let slot = 0;
   const dayOffset = 5 + Math.floor(Math.random() * 300);
+  // Демо-дані мають майбутні записи — при «Майстер зайнятий» пробуємо інший день.
   const newAppt = () => page.evaluate(async ({ c, n, off }) => {
-    const d = new Date(Date.now() + off * 864e5);
-    const day = d.toISOString().slice(0, 10);
-    return api.post("/api/appointments", { master_id: c.master, service_id: c.service, starts_at: `${day}T${String(8 + n).padStart(2, "0")}:00:00`,
-      client_name: "Тест Оплата", confirm_off_hours: true, status: "confirmed" });
+    let last;
+    for (let k = 0; k < 30; k++) {
+      const day = new Date(Date.now() + (off + k * 7) * 864e5).toISOString().slice(0, 10);
+      try {
+        return await api.post("/api/appointments", { master_id: c.master, service_id: c.service, starts_at: `${day}T${String(8 + n).padStart(2, "0")}:00:00`,
+          client_name: "Тест Оплата", confirm_off_hours: true, status: "confirmed" });
+      } catch (e) { last = e; }
+    }
+    throw last;
   }, { c: ctx, n: slot++, off: dayOffset });
   const openClose = async (a) => {
     await page.evaluate((a) => closeOrderSheet(a, () => { window.__closed = (window.__closed || 0) + 1; }), a);
@@ -68,7 +74,7 @@ function mockTerminal() {
   };
 
   console.log("Налаштування «POS Термінал»");
-  await page.goto(BASE + "/#/settings");
+  await page.goto(BASE + "/#/settings?g=payments");
   await page.waitForSelector("[data-testid=pos-card]");
   await page.check("[data-testid=pos-enabled]");
   await page.fill("[data-testid=pos-ip]", "127.0.0.1");

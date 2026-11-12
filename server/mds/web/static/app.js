@@ -1053,8 +1053,15 @@ function viewMore(main) {
   main.append(topbar("Меню"));
   const dark = document.documentElement.getAttribute("data-theme") === "dark";
   const tabs = MOBILE_TABS[state.user.role] || [];
-  main.append(h("div", { class: "card", style: { padding: "6px" } }, NAV[state.user.role].filter(([id]) => !tabs.includes(id)).map(([id, ico, label]) =>
-    h("a", { href: "#/" + id, class: "row", style: { padding: "12px", color: "var(--ink)" } }, icon(ico), h("span", { class: "grow" }, label), icon("right", "sm"))),
+  const groups = [];
+  for (const [id, ico, label, grp] of NAV[state.user.role].filter(([id]) => !tabs.includes(id))) {
+    const key = grp || "";
+    if (!groups.length || groups[groups.length - 1][0] !== key) groups.push([key, []]);
+    groups[groups.length - 1][1].push(h("a", { href: "#/" + id, class: "row menu-link" }, icon(ico), h("span", { class: "grow" }, label), icon("right", "sm")));
+  }
+  main.append(...groups.map(([grp, links]) => h("div", { class: "menu-group" }, grp ? h("div", { class: "set-section" }, grp) : null,
+    h("div", { class: "card menu-card" }, links))));
+  main.append(h("div", { class: "card", style: { padding: "6px", marginTop: "12px" } },
     h("button", { class: "btn ghost", style: { width: "100%", justifyContent: "flex-start", padding: "12px" }, onclick: bugReportForm }, icon("bug"), "Повідомити про помилку"),
     h("button", { class: "btn ghost", style: { width: "100%", justifyContent: "flex-start", padding: "12px" }, onclick: toggleTheme }, icon(dark ? "sun" : "moon"), dark ? "Світла тема" : "Темна тема"),
     h("button", { class: "btn ghost", style: { width: "100%", justifyContent: "flex-start", padding: "12px", color: "var(--danger)" }, onclick: logout }, icon("logout"), "Вийти")),
@@ -4378,82 +4385,158 @@ VIEWS.schedule = async (main) => {
   }
 };
 
+const SETTINGS_GROUPS = [
+  ["salon", "home", "Салон", "Загальне", "Назва, адреса, контакти, графік роботи"],
+  ["booking", "calendar", "Запис клієнтів", "Робота", "Слоти, неробочий час, нагадування, захист онлайн-запису"],
+  ["staff", "users", "Майстри і доступ", "Робота", "Оплата майстрів, режим «Ми у відпустці»"],
+  ["payments", "card", "Оплата і каса", "Гроші", "POS-термінал, Checkbox (ПРРО), чековий принтер"],
+  ["stock", "box", "Склад і генератор", "Гроші", "Автосписання залишків, вартість мотогодини"],
+  ["bot", "send", "Telegram-бот і сповіщення", "Зв'язок", "Код входу персоналу, сповіщення директору"],
+  ["security", "lock", "Безпека входу", "Система", "Код у Telegram на новому пристрої"],
+  ["data", "history", "Копії і швидкодія", "Система", "Резервні копії, Google Drive, швидкодія"],
+];
+
+function settingsNav(active, { index = false } = {}) {
+  let section = null;
+  const out = [];
+  for (const [id, ico, label, sec, desc] of SETTINGS_GROUPS) {
+    if (sec !== section) { out.push(h("div", { class: "set-section" }, sec)); section = sec; }
+    out.push(h("a", { href: `#/settings?g=${id}`, class: "set-link" + (id === active ? " active" : ""), "data-testid": `set-${id}`,
+      "aria-current": id === active ? "page" : null },
+      h("span", { class: "set-ico" }, icon(ico)), h("span", { class: "set-text" }, h("b", {}, label), index ? h("small", {}, desc) : null),
+      index ? icon("right", "sm") : null));
+  }
+  return h("nav", { class: "set-nav" + (index ? " set-index" : ""), "aria-label": "Розділи налаштувань" }, out);
+}
+
+const saveSettingsBtn = (body, label = "Зберегти") => h("button", { class: "btn primary", onclick: async (e) => {
+  const btn = e.currentTarget;
+  btn.disabled = true;
+  try { state.settings = await run(() => api.put("/api/settings", body()), "Налаштування збережено"); } catch (_) {  } finally { btn.disabled = false; }
+} }, label);
+
+const SETTINGS_BUILD = {
+  salon: (s) => {
+    const name = h("input", { value: s.salon_name || "" });
+    const addr = h("input", { value: s.salon_address || "" });
+    const phone = h("input", { value: s.salon_phone || "", type: "tel" });
+    const insta = h("input", { value: s.salon_instagram || "", placeholder: "@md.salon" });
+    const days = WD_LONG.map((n, i) => {
+      const sp = (s.schedule || {})[String(i)];
+      const on = h("input", { type: "checkbox", checked: !!sp });
+      const a = h("input", { type: "time", value: sp ? sp[0] : "09:00" });
+      const b = h("input", { type: "time", value: sp ? sp[1] : "20:00" });
+      return { i, on, a, b, row: h("div", { class: "row small sched-day" }, h("label", { class: "row", style: { width: "130px", gap: "6px" } }, on, n),
+        h("div", { style: { width: "110px" } }, a), "—", h("div", { style: { width: "110px" } }, b)) };
+    });
+    return [
+      h("div", { class: "card stack" }, h("h3", {}, "Дані салону"), field("Назва салону", name), field("Адреса салону", addr),
+        h("div", { class: "form-grid" }, field("Телефон", phone), field("Instagram", insta)),
+        h("p", { class: "muted small", style: { margin: 0 } }, "Показуються клієнтам у Telegram-боті й на чеках."),
+        saveSettingsBtn(() => ({ salon_name: name.value, salon_address: addr.value.trim(), salon_phone: phone.value.trim(), salon_instagram: insta.value.trim() }))),
+      h("div", { class: "card stack" }, h("h3", {}, "Графік салону"), days.map((d) => d.row),
+        saveSettingsBtn(() => ({ schedule: Object.fromEntries(days.map((d) => [String(d.i), d.on.checked ? [d.a.value, d.b.value] : null])) }))),
+    ];
+  },
+  booking: (s) => {
+    const step = h("input", { type: "number", min: 5, step: 5, value: s.slot_step_min });
+    const horizon = h("input", { type: "number", min: 1, value: s.booking_horizon_days });
+    const lead = h("input", { type: "number", min: 0, value: s.booking_min_lead_min });
+    const offPolicy = select([["forbid", "Заборонити"], ["if_free_place", "Лише якщо є вільне робоче місце"], ["allow", "Дозволити (з підтвердженням)"]], s.off_hours_booking || "if_free_place");
+    const places = h("input", { type: "number", min: 1, max: 20, value: s.workplaces || 2 });
+    const maxM = h("input", { type: "number", min: 1, max: 50, value: s.max_masters || 4 });
+    const auto = h("input", { type: "checkbox", checked: s.telegram_auto_confirm });
+    const favVisits = h("input", { type: "number", min: 1, max: 50, value: s.favorite_master_visits || 3 });
+    const remind = h("input", { type: "checkbox", checked: s.reminders_enabled !== false });
+    return [
+      h("div", { class: "card stack" }, h("h3", {}, "Запис клієнтів"),
+        h("div", { class: "form-grid" }, field("Крок слотів, хв", step), field("Запис наперед, днів", horizon), field("Мін. хв до запису (бот)", lead)),
+        field("Запис персоналом у неробочий час", offPolicy),
+        h("div", { class: "form-grid" }, field("Робочих місць (одночасно майстрів)", places), field("Майстрів у салоні, максимум", maxM)),
+        h("label", { class: "row" }, auto, "Записи з Telegram одразу підтверджені"),
+        field("Улюблений майстер клієнта — після скількох візитів", favVisits),
+        h("label", { class: "row" }, remind, "Нагадування клієнтам у Telegram за добу і за 2 години (бот питає згоду)"),
+        saveSettingsBtn(() => ({ slot_step_min: +step.value, booking_horizon_days: +horizon.value, booking_min_lead_min: +lead.value,
+          off_hours_booking: offPolicy.value, workplaces: Math.max(1, parseInt(places.value || "2", 10)), max_masters: Math.max(1, parseInt(maxM.value || "4", 10)),
+          telegram_auto_confirm: auto.checked, favorite_master_visits: Math.max(1, parseInt(favVisits.value || "3", 10)), reminders_enabled: remind.checked }))),
+      antispamSettingsCard(s),
+    ];
+  },
+  staff: (s) => {
+    const takesCash = h("input", { type: "checkbox", checked: s.master_takes_cash !== false });
+    return [
+      h("div", { class: "card stack" }, h("h3", {}, "Оплата майстрів"),
+        h("p", { class: "muted small", style: { margin: 0 } }, "Майстру — 50% від ціни послуги (до знижки). Знижки й матеріали — за рахунок салону. Закриті замовлення не перераховуються."),
+        h("label", { class: "row" }, takesCash, "Після зміни майстер бере заробіток з готівки в касі (решту доплачує директор)"),
+        saveSettingsBtn(() => ({ master_takes_cash: takesCash.checked }))),
+      vacationCard(),
+      h("a", { href: "#/staff", class: "small" }, "Персонал, PIN і ставки майстрів →"),
+    ];
+  },
+  payments: (s) => {
+    const termMode = select([["off", "Вимкнено"], ["mock", "Імітація (без списання грошей)"], ["live", "Реальні оплати (ключі на сервері)"]], s.card_terminal_mode || "off");
+    return [
+      posTerminalCard(),
+      checkboxCard(),
+      h("details", { class: "card" }, h("summary", { class: "row", style: { cursor: "pointer" } }, h("b", { class: "grow" }, "«Термінал» ПриватБанку (NFC, застаріле)"), icon("down", "sm")),
+        h("div", { class: "stack", style: { marginTop: "10px" } }, field("Режим", termMode),
+          h("p", { class: "muted small", style: { margin: 0 } }, "Хмарна інтеграція із застосунком «Термінал» на телефоні відкладена; окремої кнопки в закритті замовлення немає. " +
+            "Для оплати карткою використовуйте «POS Термінал» або ручне підтвердження."),
+          saveSettingsBtn(() => ({ card_terminal_mode: termMode.value })))),
+    ];
+  },
+  stock: (s) => [stockSettingsCard(s), generatorSettingsCard(s)],
+  bot: (s) => {
+    const staffCode = h("input", { inputmode: "numeric", maxlength: 8, value: s.bot_staff_code || "" });
+    return [
+      h("div", { class: "card stack" }, h("h3", {}, "Telegram-бот"),
+        field("Код входу в розділ «Для майстрів»", staffCode),
+        h("p", { class: "muted small", style: { margin: 0 } }, "Після коду кожен обирає себе й вводить особистий PIN (задається в розділі «Персонал»)."),
+        saveSettingsBtn(() => ({ bot_staff_code: staffCode.value.trim() }))),
+      alertsSettingsCard(),
+    ];
+  },
+  security: (s) => [twofaSettingsCard(s), h("a", { href: "#/security", class: "small" }, "Журнал входів і запити дозволу →")],
+  data: async () => {
+    const [backups, drive] = await Promise.all([api.get("/api/backups").catch(() => []), api.get("/api/gdrive").catch(() => null)]);
+    return [
+      h("div", { class: "card stack" }, h("h3", {}, "Резервні копії"),
+        driveBlock(drive),
+        h("p", { class: "muted small" }, "Автоматично кожні 6 годин. Останні копії на сервері:"),
+        backups.slice(0, 5).map((b) => h("div", { class: "sum-line small" }, h("span", {}, b.name), h("span", { class: "muted" }, (b.size / 1024).toFixed(0), " КБ"))),
+        h("button", { class: "btn", onclick: async () => { await run(() => api.post("/api/backups"), "Копію створено"); reload(); } }, "Створити копію зараз")),
+      perfCard(),
+    ];
+  },
+};
+
 VIEWS.settings = async (main) => {
-  const [s, backups, drive] = await Promise.all([api.get("/api/settings"),
-    api.get("/api/backups").catch(() => []), api.get("/api/gdrive").catch(() => null)]);
-  const gq = new URLSearchParams(location.hash.split("?")[1] || "").get("gdrive");
+  const q = new URLSearchParams(location.hash.split("?")[1] || "");
+  const gq = q.get("gdrive");
+  let group = q.get("g");
   if (gq) {
     const msg = { ok: "Google Drive підключено — копії зберігатимуться автоматично", cancelled: "Підключення Google Drive скасовано",
       denied: "Посилання застаріло — натисніть «Підключити» ще раз", error: "Google не дав доступ. Спробуйте ще раз" }[gq];
     if (msg) toast(msg, gq !== "ok");
-    history.replaceState(null, "", "#/settings");
+    group = "data";
+    history.replaceState(null, "", "#/settings?g=data");
   }
-  const name = h("input", { value: s.salon_name });
-  const step = h("input", { type: "number", min: 5, step: 5, value: s.slot_step_min });
-  const horizon = h("input", { type: "number", min: 1, value: s.booking_horizon_days });
-  const lead = h("input", { type: "number", min: 0, value: s.booking_min_lead_min });
-  const offPolicy = select([["forbid", "Заборонити"], ["if_free_place", "Лише якщо є вільне робоче місце"], ["allow", "Дозволити (з підтвердженням)"]], s.off_hours_booking || "if_free_place");
-  const places = h("input", { type: "number", min: 1, max: 20, value: s.workplaces || 2 });
-  const maxM = h("input", { type: "number", min: 1, max: 50, value: s.max_masters || 4 });
-  const auto = h("input", { type: "checkbox", checked: s.telegram_auto_confirm });
-  const takesCash = h("input", { type: "checkbox", checked: s.master_takes_cash !== false });
-  const favVisits = h("input", { type: "number", min: 1, max: 50, value: s.favorite_master_visits || 3 });
-  const remind = h("input", { type: "checkbox", checked: s.reminders_enabled !== false });
-  const termMode = select([["off", "Вимкнено"], ["mock", "Імітація (без списання грошей)"], ["live", "Реальні оплати (ключі на сервері)"]], s.card_terminal_mode || "off");
-  const staffCode = h("input", { inputmode: "numeric", maxlength: 8, value: s.bot_staff_code || "" });
-  const addr = h("input", { value: s.salon_address || "" });
-  const phone = h("input", { value: s.salon_phone || "", type: "tel" });
-  const insta = h("input", { value: s.salon_instagram || "", placeholder: "@md.salon" });
-  const days = WD_LONG.map((n, i) => {
-    const sp = (s.schedule || {})[String(i)];
-    const on = h("input", { type: "checkbox", checked: !!sp });
-    const a = h("input", { type: "time", value: sp ? sp[0] : "09:00" });
-    const b = h("input", { type: "time", value: sp ? sp[1] : "20:00" });
-    return { i, on, a, b, row: h("div", { class: "row small" }, h("label", { class: "row", style: { width: "130px", gap: "6px" } }, on, n), h("div", { style: { width: "110px" } }, a), "—", h("div", { style: { width: "110px" } }, b)) };
-  });
-  main.append(topbar("Налаштування", "Дані салону, робочі години, запис через бот і безпека"), h("div", { class: "grid two" },
-    h("div", { class: "card stack" }, h("h3", {}, "Оплата майстрів"),
-      h("p", { class: "muted small", style: { margin: 0 } }, "Майстру — 50% від ціни послуги (до знижки). Знижки й матеріали — за рахунок салону. Закриті замовлення не перераховуються."),
-      h("label", { class: "row" }, takesCash, "Після зміни майстер бере заробіток з готівки в касі (решту доплачує директор)")),
-    twofaSettingsCard(s), vacationCard(), alertsSettingsCard(),
-    stockSettingsCard(s),
-    perfCard(),
-    antispamSettingsCard(s),
-    generatorSettingsCard(s),
-    h("div", { class: "card stack" }, h("h3", {}, "Запис клієнтів"), field("Назва салону", name),
-      h("div", { class: "form-grid" }, field("Крок слотів, хв", step), field("Запис наперед, днів", horizon), field("Мін. хв до запису (бот)", lead)),
-      field("Запис персоналом у неробочий час", offPolicy),
-      h("div", { class: "form-grid" }, field("Робочих місць (одночасно майстрів)", places), field("Майстрів у салоні, максимум", maxM)),
-      h("label", { class: "row" }, auto, "Записи з Telegram одразу підтверджені"),
-      field("Улюблений майстер клієнта — після скількох візитів", favVisits),
-      h("label", { class: "row" }, remind, "Нагадування клієнтам у Telegram за добу і за 2 години (бот питає згоду)")),
-    h("div", { class: "card stack" }, h("h3", {}, "«Термінал» ПриватБанку (NFC, застаріле)"),
-      field("Режим", termMode),
-      h("p", { class: "muted small" }, "Хмарна інтеграція із застосунком «Термінал» на телефоні відкладена; окремої кнопки в закритті замовлення немає. " +
-        "Для оплати карткою використовуйте «POS Термінал» нижче або ручне підтвердження.")),
-    posTerminalCard(),
-    checkboxCard(),
-    h("div", { class: "card stack" }, h("h3", {}, "Telegram-бот"),
-      field("Код входу в розділ «Для майстрів»", staffCode),
-      h("p", { class: "muted small" }, "Після коду кожен обирає себе й вводить особистий PIN (задається в розділі «Персонал»)."),
-      field("Адреса салону", addr), h("div", { class: "form-grid" }, field("Телефон", phone), field("Instagram", insta))),
-    h("div", { class: "card stack" }, h("h3", {}, "Графік салону"), days.map((d) => d.row)),
-    h("div", { class: "card stack" }, h("h3", {}, "Резервні копії"),
-      driveBlock(drive),
-      h("p", { class: "muted small" }, "Автоматично кожні 6 годин. Останні копії на сервері:"),
-      backups.slice(0, 5).map((b) => h("div", { class: "sum-line small" }, h("span", {}, b.name), h("span", { class: "muted" }, (b.size / 1024).toFixed(0), " КБ"))),
-      h("button", { class: "btn", onclick: async () => { await run(() => api.post("/api/backups"), "Копію створено"); reload(); } }, "Створити копію зараз"))),
-    h("button", { class: "btn gold big", style: { marginTop: "14px" }, onclick: async () => {
-      const body = {
-        salon_name: name.value,
-        slot_step_min: +step.value, booking_horizon_days: +horizon.value, booking_min_lead_min: +lead.value, telegram_auto_confirm: auto.checked,
-        off_hours_booking: offPolicy.value, workplaces: Math.max(1, parseInt(places.value || "2", 10)), max_masters: Math.max(1, parseInt(maxM.value || "4", 10)),
-        master_takes_cash: takesCash.checked, reminders_enabled: remind.checked, card_terminal_mode: termMode.value, favorite_master_visits: Math.max(1, parseInt(favVisits.value || "3", 10)),
-        bot_staff_code: staffCode.value.trim(), salon_address: addr.value.trim(), salon_phone: phone.value.trim(), salon_instagram: insta.value.trim(),
-        schedule: Object.fromEntries(days.map((d) => [String(d.i), d.on.checked ? [d.a.value, d.b.value] : null])),
-      };
-      state.settings = await run(() => api.put("/api/settings", body), "Налаштування збережено");
-    } }, "Зберегти налаштування"));
+  if (group && !SETTINGS_GROUPS.some((g) => g[0] === group)) group = null;
+  const phone = window.matchMedia("(max-width: 900px)").matches;
+  if (!group && phone) {
+    main.append(topbar("Налаштування", "Оберіть розділ"), settingsNav(null, { index: true }));
+    return;
+  }
+  group = group || SETTINGS_GROUPS[0][0];
+  const [, , label, , desc] = SETTINGS_GROUPS.find((g) => g[0] === group);
+  const s = await api.get("/api/settings");
+  const cards = await SETTINGS_BUILD[group](s);
+  main.append(phone ? topbar("Налаштування") : topbar("Налаштування", label),
+    h("div", { class: "set-layout" }, settingsNav(group),
+      h("section", { class: "set-body", "data-testid": `set-body-${group}` },
+        phone ? h("a", { href: "#/settings", class: "set-back small" }, icon("left", "sm"), "Усі налаштування") : null,
+        h("div", { class: "set-head" }, h("h2", {}, label), h("p", { class: "muted small" }, desc)),
+        h("div", { class: "stack" }, cards))));
 };
 
 function checkboxCard() {

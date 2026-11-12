@@ -50,7 +50,7 @@ async function login(browser, user, pass) {
   try {
     console.log("Директор: «POS Термінал» → емулятор");
     const dir = await login(browser, "margaryta", "Director123");
-    await dir.goto(BASE + "/#/settings");
+    await dir.goto(BASE + "/#/settings?g=payments");
     await dir.waitForSelector("[data-testid=pos-card]");
     await dir.check("[data-testid=pos-enabled]");
     await dir.fill("[data-testid=pos-ip]", "127.0.0.1");
