@@ -61,6 +61,9 @@ function mockTerminal() {
   const openClose = async (a) => {
     await page.evaluate((a) => closeOrderSheet(a, () => { window.__closed = (window.__closed || 0) + 1; }), a);
     await page.waitForSelector("#overlay .sheet");
+    await page.waitForTimeout(300);
+    const names = await page.$$eval("#overlay .choice button", (bs) => bs.map((b) => b.textContent.trim()));
+    if (names.join("|") !== "Готівка|Картка") check(false, "кнопки оплати: " + names.join(", "));
     await page.click("#overlay .choice button:has-text('Картка')");
   };
 

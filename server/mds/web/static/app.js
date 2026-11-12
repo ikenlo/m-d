@@ -1195,17 +1195,11 @@ function closeOrderSheet(a, onChange) {
     });
   }).catch(() => {});
   const PAY_ICON = { cash: "banknote", card: "card", transfer: "transfer" };
-  const pick = (k) => (e) => { method = k; [...methods.children].forEach((b) => b.classList.remove("on")); e.currentTarget.classList.add("on");
-    btn.replaceChildren(icon("ok"), k === "terminal" ? "Оплатити на терміналі" : "Закрити замовлення"); };
+  const pick = (k) => (e) => { method = k; [...methods.children].forEach((b) => b.classList.remove("on")); e.currentTarget.classList.add("on"); };
   const methods = h("div", { class: "choice", style: { gridTemplateColumns: "1fr 1fr" } }, Object.entries(PAY_CHOICES).map(([k, t]) =>
     h("button", { type: "button", onclick: pick(k) }, icon(PAY_ICON[k]), t)));
   let ecr = false;
-  api.get("/api/card-terminal/status").then((st) => {
-    if (st.mode === "ecr") { ecr = true; return; }
-    if (st.mode === "off") return;
-    methods.style.gridTemplateColumns = "1fr 1fr 1fr";
-    methods.append(h("button", { type: "button", onclick: pick("terminal") }, icon("card"), st.mode === "mock" ? "Термінал (імітація)" : "Термінал (NFC)"));
-  }).catch(() => {});
+  api.get("/api/card-terminal/status").then((st) => { ecr = st.mode === "ecr"; }).catch(() => {});
   const [first0, ...rest0] = (a.client.name || "").split(/\s+/).filter(Boolean);
   const firstName = h("input", { value: first0 || "", placeholder: "Ім'я", autocomplete: "off", autocapitalize: "words", id: "close-first" });
   const lastName = h("input", { value: rest0.join(" "), placeholder: "Прізвище", autocomplete: "off", autocapitalize: "words", id: "close-last" });
@@ -1263,16 +1257,6 @@ function closeOrderSheet(a, onChange) {
         lockSheet(false);
         await closeNow(closeBody());
       } catch (_) {  } finally { isProcessingPayment = false; lockSheet(false); }
-      return;
-    }
-    if (method === "terminal") {
-      if (kop < 100) return toast("Оплата карткою — від 1 грн", true);
-      btn.disabled = true;
-      try {
-        const p = await run(() => api.post("/api/card-payments", { appointment_id: a.id, amount: kop, materials, client_name: clientName }));
-        closeSheet();
-        terminalPaySheet(p, onChange);
-      } catch (_) { btn.disabled = false; }
       return;
     }
     btn.disabled = true;
@@ -1345,57 +1329,6 @@ function terminalCheckout({ a, kop, materials, products, clientName, price, manu
       if (!cancelled) failure(e.message);
     }
   })();
-}
-
-function terminalPaySheet(p, onChange) {
-  const bridge = window.MDSAndroid && typeof window.MDSAndroid.startTerminal === "function" ? window.MDSAndroid : null;
-  const msg = h("p", { class: "muted" });
-  let busy = false;
-  const done = (r) => {
-    if (r.status === "paid") {
-      window.mdsTerminalResult = null;
-      closeSheet();
-      toast(`Оплачено карткою ${money(r.amount)}${r.masked_pan ? " · " + r.masked_pan : ""}. Замовлення закрито`);
-      onChange();
-      return true;
-    }
-    if (r.status === "failed") {
-      window.mdsTerminalResult = null;
-      msg.textContent = "Оплата не пройшла: " + (r.message || "відмова") + ". Закрийте вікно і спробуйте ще раз або оберіть інший спосіб.";
-      actions.replaceChildren(h("button", { class: "btn", onclick: closeSheet }, "Закрити"));
-      return true;
-    }
-    msg.textContent = r.message || "Очікуємо оплату на терміналі…";
-    return false;
-  };
-  const check = async () => {
-    if (busy) return;
-    busy = true;
-    try { done(await run(() => api.post(`/api/card-payments/${p.id}/check`))); } catch (_) {  }
-    busy = false;
-  };
-  const launch = () => { if (bridge) bridge.startTerminal(p.deeplink); };
-  window.mdsTerminalResult = () => { check(); };
-  const actions = h("div", { class: "row" },
-    p.mode === "mock" ? [
-      h("button", { class: "btn primary", onclick: async () => { try { done(await run(() => api.post(`/api/card-payments/${p.id}/mock-complete?ok=true`))); } catch (_) {} } }, "Імітувати оплату"),
-      h("button", { class: "btn", onclick: async () => { try { done(await run(() => api.post(`/api/card-payments/${p.id}/mock-complete?ok=false`))); } catch (_) {} } }, "Імітувати відмову")]
-      : bridge ? h("button", { class: "btn primary", onclick: launch }, icon("card"), "Відкрити «Термінал»") : null,
-    h("button", { class: "btn", onclick: check }, "Перевірити оплату"),
-    h("button", { class: "btn", onclick: async () => {
-      try {
-        const r = await run(() => api.post(`/api/card-payments/${p.id}/cancel`));
-        if (r.status === "failed") { window.mdsTerminalResult = null; closeSheet(); toast("Оплату скасовано"); } else done(r);
-      } catch (_) {  }
-    } }, "Скасувати"));
-  openSheet("Оплата карткою",
-    h("div", { class: "stack" },
-      h("div", { class: "huge", style: { textAlign: "center", fontWeight: 700 } }, money(p.amount)),
-      p.mode === "mock" ? h("p", { class: "muted small" }, "Режим імітації: гроші не списуються.")
-        : bridge ? h("p", { class: "muted small" }, "Відкриється «Термінал» ПриватБанку — клієнт прикладає картку або телефон до планшета.")
-        : h("p", { class: "muted small" }, "Відкрийте MDS на планшеті з застосунком «Термінал» ПриватБанку, щоб прийняти оплату. Після оплати натисніть «Перевірити оплату»."),
-      msg, actions));
-  if (p.mode !== "mock") launch();
 }
 
 function inlineConfirm(anchor, text, okText) {
@@ -4450,10 +4383,10 @@ VIEWS.settings = async (main) => {
       h("label", { class: "row" }, auto, "Записи з Telegram одразу підтверджені"),
       field("Улюблений майстер клієнта — після скількох візитів", favVisits),
       h("label", { class: "row" }, remind, "Нагадування клієнтам у Telegram за добу і за 2 години (бот питає згоду)")),
-    h("div", { class: "card stack" }, h("h3", {}, "Оплата карткою — «Термінал» ПриватБанку (NFC)"),
+    h("div", { class: "card stack" }, h("h3", {}, "«Термінал» ПриватБанку (NFC, застаріле)"),
       field("Режим", termMode),
-      h("p", { class: "muted small" }, "Планшет з NFC і застосунком «Термінал» ПриватБанку стає платіжним терміналом: у закритті замовлення обираєте «Термінал», " +
-        "клієнт прикладає картку, замовлення закривається саме після підтвердження банку. Для реальних оплат ключі інтеграції задаються лише на сервері.")),
+      h("p", { class: "muted small" }, "Хмарна інтеграція із застосунком «Термінал» на телефоні відкладена; окремої кнопки в закритті замовлення немає. " +
+        "Для оплати карткою використовуйте «POS Термінал» нижче або ручне підтвердження.")),
     posTerminalCard(),
     h("div", { class: "card stack" }, h("h3", {}, "Telegram-бот"),
       field("Код входу в розділ «Для майстрів»", staffCode),
