@@ -51,7 +51,7 @@
 
 - [ ] Переїзд з Railway на VPS з шифрованим диском (LUKS), Caddy і systemd ([OPERATIONS.md](OPERATIONS.md) §3).
 - [ ] Три незалежні копії бекапів у роботі: сервер, Google Drive через Service Account (Q-7), ПК директора ([CANON.md](CANON.md) §6).
-- [ ] Регулярна репетиція відновлення в CI (`scripts/test_restore.sh`) і щомісячна вручну ([OPERATIONS.md](OPERATIONS.md) §5).
+- [ ] Регулярна репетиція відновлення в CI (`server/scripts/test_restore.sh`) і щомісячна вручну ([OPERATIONS.md](OPERATIONS.md) §5).
 - [ ] Замінити всі секрети, що колись потрапляли в чат чи журнал (`audit/09` S-1), — дія власника.
 - [ ] Моніторинг: зовнішня перевірка `GET /api/health` і сповіщення директорам про недоступність.
 - [ ] Реліз-процес: ключ підпису Android у секретах GitHub і перший підписаний Release застосунків ([OPERATIONS.md](OPERATIONS.md) §8).
@@ -64,7 +64,7 @@
 | Мультитенантність, підписки, реєстрація інших салонів | відхилено: система одного салону ([CLAUDE.md](../CLAUDE.md) §1) |
 | Передоплати клієнтів | відхилено |
 | SMS, e-mail, Instagram, Google Calendar із Connect | передано MDs Manager (D-6a, [CANON.md](CANON.md) §7) |
-| Запис клієнтів і будь-які записи від MDs Manager | відхилено: Manager лише читає (D-5) |
+| Запис на прийом чи будь-які інші зміни даних від MDs Manager | відхилено: Manager лише читає (D-5) |
 | Нативні застосунки Flutter | замінено оболонками `apps/android` і `apps/windows` над PWA |
 | Закриття замовлень і повернення з бота | прибрано: лише у веб-застосунку (D-6b, D-10) |
 | Шифрування БД у застосунку (SQLCipher) | не робимо: шифрування диска на рівні VPS ([SECURITY.md](SECURITY.md)) |
