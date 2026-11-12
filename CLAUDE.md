@@ -89,7 +89,7 @@ alembic revision --autogenerate -m "опис" # після зміни models.py 
 |---|---|
 | `docs/CANON.md`, `docs/FINANCE.md` | **авторитетні** (правила) |
 | `docs/ARCHITECTURE.md`, `API.md`, `DATABASE.md`, `BOT.md`, `SECURITY.md`, `OPERATIONS.md` | довідники, тримати в актуальному стані |
-| `docs/ROADMAP.md` | план; перебудовується у фазі 3 |
+| `docs/ROADMAP.md` | єдиний план (наступні версії); історія — `CHANGELOG.md` |
 | `CHANGELOG.md` (корінь) | історія версій; читають тест і release.yml — не переносити |
 | `audit/*` | знімок аудиту 11.11.2026, заморожено |
 | `docs/ARCHIVE/*` | історія до канону, **не** використовувати як інструкцію |
