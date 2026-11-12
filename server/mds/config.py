@@ -41,6 +41,7 @@ class Config:
     idle_minutes: int = field(default_factory=lambda: int(_env("IDLE_MINUTES", "30")))
     timezone: str = field(default_factory=lambda: _env("TIMEZONE", "Europe/Kyiv"))
     telegram_token: str = field(default_factory=lambda: _env("TELEGRAM_TOKEN", ""))
+    manager_api_key: str = field(default_factory=lambda: _env("MANAGER_API_KEY", ""))
     backup_dir: Path | None = None
     backup_interval_hours: int = field(default_factory=lambda: int(_env("BACKUP_INTERVAL_HOURS", "6")))
     backup_keep_days: int = field(default_factory=lambda: int(_env("BACKUP_KEEP_DAYS", "30")))

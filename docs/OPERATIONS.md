@@ -39,7 +39,7 @@ python -m mds run           # API + панель + бот + бекапи, http:/
 | `MDS_TWOFA_DISABLED` | — | аварійно вимкнути 2FA |
 | `MDS_PRIVAT_TERMINAL_CLID`, `_SECRET`, `_CLIENT_TOKEN` | — | «Термінал» (режим `live` — з 0.4.0, D-6c) |
 | `MDS_TURBOSMS_TOKEN`, `MDS_TURBOSMS_SENDER` | — | не використовуються: SMS із Connect вимкнено (D-6a) |
-| `MDS_INTEGRATION_TOKEN` | — | ключ `/api/ext/v1` для MDs Manager (гілка ext) |
+| `MDS_MANAGER_API_KEY` | — | ключ `X-API-Key` для `/api/ext/v1` (MDs Manager, лише читання); порожньо — вимкнено |
 | `MDS_ENV` | `production` | `production` / `test`; у `production` заборонені `MDS_WIPE_DATA`, `MDS_DEMO_FOP1`, `wipe-data`, `demo-fop1`, mock-оплати |
 | `MDS_WIPE_DATA`, `MDS_DEMO_FOP1` | — | лише тестове середовище (§7) |
 

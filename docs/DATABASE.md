@@ -46,7 +46,6 @@
 | SMS | `sms_campaigns`, `sms_messages` | надсилання вимкнено (D-6a); історія лишається |
 | Інше | `settings` | ключ → JSON; значення перевіряє `common.update_settings` |
 | | `expense_files` | не використовується (функцію відкочено); видалити або використати — окреме рішення |
-| Гілка ext | `appointment_attribution` (міграція 0025) | лише в `feat/ext-api-md-manager`, не злита |
 
 Статуси: запис `pending → confirmed → in_progress → completed | cancelled | no_show`;
 зміна `open → closed → paid`.
@@ -74,8 +73,8 @@
 | `notifications` | + `user_id`, `kind`, `level`, `group_key`, `dedupe_key`, `digest_pending`, `read_at`, `handled_at/by` |
 | `materials_mode`, `orders.share_bp`, `master_charges` | лишаються до 0.3.1, потім видаляються |
 
-Увага: гілка `feat/ext-api-md-manager` теж має міграцію `0025` (`appointment_attribution`). Перед злиттям її треба
-перенумерувати після `0030`, інакше Alembic матиме дві «голови».
+Гілка `feat/ext-api-md-manager` (міграція `0025`, `appointment_attribution`) застаріла: read-only API 0.3.0 нових таблиць
+не потребує. Не зливати.
 
 ## Чутливі дані
 

@@ -28,6 +28,11 @@ class Actor:
         return cls(None, f"telegram:{tg_user_id}", "client", tg_user_id)
 
     @classmethod
+    def integration(cls, name: str = "mds-manager") -> "Actor":
+        """MDs Manager: лише читання через /api/ext/v1 (D-5)."""
+        return cls(None, f"integration:{name}", "integration")
+
+    @classmethod
     def system(cls) -> "Actor":
         return cls(None, "system", "system")
 

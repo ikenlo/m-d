@@ -144,7 +144,20 @@
 
 ## `/api/ext/v1` — MDs Manager
 
-**У 0.3.0 не реалізовано.** Код лише в гілці `feat/ext-api-md-manager` (не злита; містить і запис записів, що суперечить D-5).
-Ціль (D-5, лише читання, ключ `X-MDS-Integration-Token` = `MDS_INTEGRATION_TOKEN`):
-`GET /api/ext/v1/catalog`, `/slots`, `/visits`, `/ad-spend`, `/purchases`, `/expenses`, `/consumption`, `/stock`.
-Не робимо: `POST /api/ext/v1/appointments`, `…/lookup`, `…/{id}/cancel`.
+Лише читання (D-5). Ключ — заголовок `X-API-Key` = `MDS_MANAGER_API_KEY` (порівняння за сталий час).
+Ключ не задано → 404 «Інтеграцію вимкнено»; немає/невірний → 401. JWT персоналу тут не приймається, а ключ
+Manager не відкриває решту `/api`. Персональних даних клієнтів (імена, телефони, дати народження, Telegram,
+Instagram, нотатки) немає. Гроші — копійки. Період `date_from`…`date_to` (за замовчуванням останні 30 днів,
+не довше 366); списки — `limit` (1–1000, 500) і `offset`, відповідь `{total, limit, offset, items}`.
+Сервіс — `services/integration.py` (actor `integration`).
+
+| Метод і шлях | Параметри | Відповідь |
+|---|---|---|
+| `GET /api/ext/v1/orders` | період, `status`, `limit`, `offset` | замовлення за датою закриття: `id`, `created_at`, `status`, `master_id`, `service_id`, `service_name`, `client_id`, `payment_method`, `price_snapshot`, `amount`, `discount`, `materials_cost`, `master_earning`, `salon_earning`, `products_total`, `products_cost` |
+| `GET /api/ext/v1/stock-moves` | період, `item_type` (`material`/`product`), `limit`, `offset` | рух складу: `ts`, `item_type`, `name`, `unit`, `reason`, `qty`, `unit_price`, `cost`, `order_id` |
+| `GET /api/ext/v1/products` | — | товари: ціни закупівлі/продажу, націнка, залишок, `active` |
+| `GET /api/ext/v1/services` | — | каталог послуг: ціна, «від», тривалість |
+| `GET /api/ext/v1/clients` | `limit`, `offset` | знеособлено: `id`, `created_at`, `source`, `marketing_consent`, `blocked`, `segment`, `visits`, `spent`, `first_visit`, `last_visit` |
+| `GET /api/ext/v1/daily` | період | по днях: `orders`, `revenue`, `price_total`, `discounts`, `masters_share`, `materials`, `salon`, `cash`, `noncash`, `products_revenue/cost/bonus`, `unpaid_count/amount`, `expenses` (лише `completed`; `unpaid` — окремо, Q-8) |
+
+Не робимо (D-5): жодних `POST/PATCH/DELETE`, запису на прийом, скасувань. Рекомендації Manager показує у себе (Q-10).
