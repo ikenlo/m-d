@@ -67,6 +67,8 @@ jobs:
         run: node ui-tests/e2e_fake_terminal.js http://localhost:8770
       - name: Checkbox (ПРРО) — чек і друк через макет
         run: node ui-tests/checkbox.js http://localhost:8770
+      - name: Друк чеків — емулятори Checkbox і принтера ESC/POS
+        run: node ui-tests/receipt_e2e.js http://localhost:8770
       - name: Знімки екранів
         if: always()
         uses: actions/upload-artifact@v4

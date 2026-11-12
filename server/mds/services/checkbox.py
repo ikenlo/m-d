@@ -29,7 +29,20 @@ SHIFT_AUTO_CLOSE = time(23, 50)
 PAYMENT_TYPES = {PaymentMethod.CASH: "CASH", PaymentMethod.CARD: "CASHLESS", PaymentMethod.TRANSFER: "CASHLESS"}
 PRINTERS = ("none", "wifi", "bluetooth")
 WIDTHS = (32, 42, 48)
-CODEPAGES = {"cp866": 17, "cp1251": 46}
+CODEPAGES = {"cp1251": 46, "cp866": 17}
+# Символи, яких немає в кодовій сторінці принтера (CP866 не має І, і, Ґ, ґ), — найближча заміна замість «?».
+FALLBACK = {"І": "I", "і": "i", "Ґ": "Г", "ґ": "г", "Є": "Е", "є": "е", "Ї": "I", "ї": "i", "—": "-", "–": "-", "₴": "грн",
+            "’": "'", "ʼ": "'", "«": '"', "»": '"', "…": "...", "№": "N", " ": " "}
+
+
+def _encode(text: str, codepage: str) -> bytes:
+    out = bytearray()
+    for ch in text:
+        try:
+            out += ch.encode(codepage)
+        except UnicodeEncodeError:
+            out += FALLBACK.get(ch, "?").encode(codepage, errors="replace")
+    return bytes(out)
 
 
 class CheckboxError(Exception):
@@ -167,14 +180,14 @@ def receipt_payload(receipt_id: str, order_id: int, amount: int, payment_method:
 
 # ESC/POS: Checkbox віддає чек звичайним текстом; команди принтера додаємо самі.
 
-def escpos(text: str, *, codepage: str = "cp866") -> bytes:
+def escpos(text: str, *, codepage: str = "cp1251") -> bytes:
     if codepage not in CODEPAGES:
-        raise ValidationError("Кодова сторінка принтера: cp866 або cp1251")
-    body = text.replace("\r\n", "\n").encode(codepage, errors="replace")
+        raise ValidationError("Кодова сторінка принтера: cp1251 або cp866")
+    body = _encode(text.replace("\r\n", "\n"), codepage)
     return b"\x1b@" + bytes([0x1B, 0x74, CODEPAGES[codepage]]) + body + b"\n\n\n\n" + b"\x1dVB\x00"
 
 
-def escpos_b64(text: str, *, codepage: str = "cp866") -> str:
+def escpos_b64(text: str, *, codepage: str = "cp1251") -> str:
     return base64.b64encode(escpos(text, codepage=codepage)).decode("ascii")
 
 
@@ -189,7 +202,7 @@ def printer_public(s: Session) -> dict:
             "printer_ip": get_setting(s, "checkbox_printer_ip") or "", "printer_port": int(get_setting(s, "checkbox_printer_port") or 9100),
             "printer_bt_name": get_setting(s, "checkbox_printer_bt_name") or "",
             "printer_width": int(get_setting(s, "checkbox_printer_width") or 32),
-            "printer_codepage": get_setting(s, "checkbox_printer_codepage") or "cp866"}
+            "printer_codepage": get_setting(s, "checkbox_printer_codepage") or "cp1251"}
 
 
 def settings_public(s: Session, cfg) -> dict:
@@ -226,7 +239,7 @@ def update_settings(s: Session, actor: Actor, cfg, data: dict) -> dict:
     if new["printer_width"] not in WIDTHS:
         raise ValidationError("Ширина чека: 32 (58 мм), 42 або 48 (80 мм) символів")
     if new["printer_codepage"] not in CODEPAGES:
-        raise ValidationError("Кодова сторінка принтера: cp866 або cp1251")
+        raise ValidationError("Кодова сторінка принтера: cp1251 або cp866")
     new["printer_bt_name"] = str(new["printer_bt_name"] or "").strip()[:64]
     for key, val in new.items():
         if val != cur[key]:

@@ -33,6 +33,9 @@
 - Друк чеків через планшет: ESC/POS від сервера, у застосунку Android 0.1.11 — `MDSAndroid.printWifi` і
   `printBluetooth` (дозвіл BLUETOOTH_CONNECT на Android 12+). UI-тест `ui-tests/checkbox.js` у CI.
 - Залежності: `httpx` у робочих (клієнт Checkbox), `respx` — у тестових.
+- Емулятори для перевірки без каси й принтера: `server/scripts/fake_checkbox.py` (API Checkbox) і
+  `server/scripts/fake_printer.py` (мережевий принтер ESC/POS → `.txt`/`.html`); E2E `ui-tests/receipt_e2e.js` у CI.
+  Кодова сторінка принтера за замовчуванням — Windows-1251 (CP866 не має І, Ґ — у ньому вони замінюються).
 
 ### Змінено
 - У вікні оплати завжди дві кнопки — «Готівка» і «Картка»: кнопку «Термінал (NFC)» хмарної інтеграції прибрано

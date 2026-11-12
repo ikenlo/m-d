@@ -160,6 +160,8 @@ def test_escpos_cyrillic_and_cut():
     assert "Чек".encode("cp866") in raw
     assert b"\x1bt\x2e" in checkbox.escpos("Ї", codepage="cp1251")
     assert base64.b64decode(checkbox.escpos_b64("A")) == checkbox.escpos("A")
+    assert checkbox.escpos("ІД Ґанок — 5₴", codepage="cp866")[5:-8].decode("cp866") == "IД Ганок - 5грн"
+    assert checkbox.escpos("ІД Ґанок — 5₴", codepage="cp1251")[5:-8].decode("cp1251") == "ІД Ґанок — 5грн"
     with pytest.raises(ValidationError):
         checkbox.escpos("x", codepage="utf-8")
 
@@ -181,7 +183,7 @@ def test_fiscalize_success_card_with_auto_shift_and_print(db, seed, order, fake)
     assert r["body"]["payments"] == [{"type": "CASHLESS", "value": 50000, "label": "Картка"}]
     assert r["body"]["goods"][0]["good"]["price"] == 50000 and r["body"]["goods"][0]["quantity"] == 1000
     printed = base64.b64decode(out["print_base64"])
-    assert "Чек FC-1".encode("cp866") in printed and printed.endswith(b"\x1dVB\x00")
+    assert "Чек FC-1".encode("cp1251") in printed and printed.startswith(b"\x1b@\x1bt\x2e") and printed.endswith(b"\x1dVB\x00")
     with db.session() as s:
         assert s.get(Order, order).fiscal_receipt_id == r["id"]
 
@@ -343,7 +345,7 @@ def test_test_print(db, seed):
     with db.session() as s:
         out = checkbox.test_print(s, seed["actors"]["director"])
     raw = base64.b64decode(out["print_base64"])
-    assert "Тестовий друк".encode("cp866") in raw and out["printer"]["printer_type"] == "none"
+    assert "Тестовий друк".encode("cp1251") in raw and out["printer"]["printer_type"] == "none"
 
 
 def test_api(db, seed, order, fake):

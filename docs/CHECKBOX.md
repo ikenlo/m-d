@@ -28,7 +28,7 @@ Connect створює фіскальний чек у [Checkbox](https://checkbo
 | IP і порт Wi-Fi принтера | `checkbox_printer_ip`, `checkbox_printer_port` | — , 9100 (IP лише з локальної мережі) |
 | Bluetooth-принтер | `checkbox_printer_bt_name` | порожньо — перший спарений принтер |
 | Ширина стрічки | `checkbox_printer_width` | 32 (58 мм); 42 / 48 — 80 мм |
-| Кодова сторінка | `checkbox_printer_codepage` | `cp866`; `cp1251` |
+| Кодова сторінка | `checkbox_printer_codepage` | `cp1251` (уся українська абетка); `cp866` — без І, і, Ґ, ґ (замінюються на I, i, Г, г) |
 
 Кнопки: «Перевірити зв'язок» (вхід касира + стан зміни), «Відкрити / Закрити зміну ПРРО», «Тестовий друк»
 (кирилиця — щоб підібрати кодову сторінку). Видно кількість чеків у черзі й з помилкою.
@@ -59,7 +59,8 @@ Connect створює фіскальний чек у [Checkbox](https://checkbo
 ## Друк
 
 Checkbox віддає чек звичайним текстом (`GET /api/v1/receipts/{id}/text?width=…`). Сервер додає команди ESC/POS:
-`ESC @` (скидання), `ESC t n` (кодова сторінка: CP866 = 17, Windows-1251 = 46), текст, подача, `GS V B 0` (обрізання),
+`ESC @` (скидання), `ESC t n` (кодова сторінка: Windows-1251 = 46, CP866 = 17), текст, подача, `GS V B 0` (обрізання),
+символи, яких немає в кодовій сторінці (тире, ₴, у CP866 — І/Ґ), замінюються на найближчі, а не на «?»,
 і повертає Base64. Друкує **лише планшет** у застосунку MDS — сервер у хмарі принтера не бачить:
 
 - `window.MDSAndroid.printWifi(ip, port, base64)` — TCP на принтер (лише адреса локальної мережі: 10.x, 172.16–31.x, 192.168.x);
@@ -86,10 +87,32 @@ Checkbox віддає чек звичайним текстом (`GET /api/v1/rec
 - Чек повернення — на всю суму чека продажу.
 - Офлайн-режим Checkbox не використовується: без зв'язку чеки чекають у черзі Connect.
 
+## Емуляція без каси і принтера
+
+- `server/scripts/fake_checkbox.py` — емулятор API Checkbox (HTTP): вхід, зміна, чеки, текст чека, наближений до
+  макета Checkbox, з позначкою «ЕМУЛЯЦІЯ — НЕ ФІСКАЛЬНИЙ». Фіскальних чеків не створює.
+- `server/scripts/fake_printer.py` — емулятор мережевого чекового принтера (TCP 9100): розбирає ESC/POS
+  (`ESC @`, `ESC t n`, `GS V`), декодує кодову сторінку й зберігає кожен чек як `.txt` і `.html` (вигляд стрічки).
+
+```bash
+cd server
+python scripts/fake_checkbox.py --port 8779 &
+python scripts/fake_printer.py --port 9100 --out /tmp/receipts &
+MDS_ENV=test MDS_CHECKBOX_API_URL=http://127.0.0.1:8779 MDS_CHECKBOX_LOGIN=x MDS_CHECKBOX_PASSWORD=x \
+  MDS_CHECKBOX_LICENSE_KEY=x python -m mds serve
+```
+
+Справжній макет чека формує Checkbox; емулятор перевіряє весь шлях Connect → чек → ESC/POS → принтер.
+
 ## Тести
 
 - `server/tests/test_checkbox.py` — `respx`: контракт запиту (CASH/CASHLESS, копійки, кількість у тисячних),
   ESC/POS, автовідкриття зміни, ідемпотентність, 202 і повтор, обрив після створення (без дубля), відмова, ліміт
   спроб, права, неоплачені, повернення через API, налаштування, зв'язок і зміна, секрети не потрапляють у відповіді.
+- `server/tests/test_receipt_emulation.py` — ESC/POS Connect → розбір емулятором принтера дає той самий текст
+  (cp1251 і cp866 із заміною літер, без «?»); повний ланцюжок з емулятором Checkbox.
+- `ui-tests/receipt_e2e.js` — Playwright з обома емуляторами: директор налаштовує Checkbox і Wi-Fi принтер, закриває
+  замовлення «Готівка + товар» і «Картка»; міст `MDSAndroid.printWifi` емулюється в Node (ті самі байти по TCP);
+  знімки надрукованих чеків — `ui-tests/out/receipt-cash.png`, `receipt-card.png`.
 - `ui-tests/checkbox.js` — Playwright з макетом Checkbox і підміненим `MDSAndroid`: налаштування, «Перевірити
   зв'язок», тестовий друк, закриття замовлення → чек CASH → ESC/POS на принтер, повторний друк без нового чека.

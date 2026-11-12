@@ -4464,7 +4464,7 @@ function checkboxCard() {
   const port = h("input", { type: "number", min: 1, max: 65535, value: 9100, "data-testid": "cb-printer-port" });
   const bt = h("input", { placeholder: "Назва з налаштувань Bluetooth, напр. XP-58", autocomplete: "off", "data-testid": "cb-printer-bt" });
   const width = select([["32", "58 мм (32 символи)"], ["42", "80 мм (42 символи)"], ["48", "80 мм (48 символів)"]], "32");
-  const cp = select([["cp866", "CP866 (більшість принтерів)"], ["cp1251", "Windows-1251"]], "cp866");
+  const cp = select([["cp1251", "Windows-1251 (уся українська абетка)"], ["cp866", "CP866 (без І, Ґ — замінюються)"]], "cp1251");
   const keys = h("div", { class: "small" });
   const queue = h("div", { class: "small muted" });
   const result = h("div", { class: "small", "aria-live": "polite", "data-testid": "cb-result" });
@@ -4474,7 +4474,7 @@ function checkboxCard() {
   ptype.addEventListener("change", sync);
   const fill = (c) => {
     on.checked = !!c.enabled; ptype.value = c.printer_type; ip.value = c.printer_ip || ""; port.value = c.printer_port || 9100;
-    bt.value = c.printer_bt_name || ""; width.value = String(c.printer_width || 32); cp.value = c.printer_codepage || "cp866";
+    bt.value = c.printer_bt_name || ""; width.value = String(c.printer_width || 32); cp.value = c.printer_codepage || "cp1251";
     keys.replaceChildren(c.keys_configured ? h("span", { class: "pos" }, "Ключі касира задані на сервері")
       : h("span", { class: "neg" }, "Ключі не задані: MDS_CHECKBOX_LOGIN, MDS_CHECKBOX_PASSWORD, MDS_CHECKBOX_LICENSE_KEY у Railway → Variables"));
     queue.textContent = c.queue && (c.queue.pending || c.queue.error) ? `Чеки в черзі: ${c.queue.pending}, з помилкою: ${c.queue.error}` : "";

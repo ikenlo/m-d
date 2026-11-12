@@ -179,7 +179,7 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "checkbox_printer_port": 9100,
     "checkbox_printer_bt_name": "",
     "checkbox_printer_width": 32,
-    "checkbox_printer_codepage": "cp866",
+    "checkbox_printer_codepage": "cp1251",
     "fop_tin": "",
     "fop_name": "",
     "fop_address": "",
