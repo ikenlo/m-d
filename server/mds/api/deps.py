@@ -22,7 +22,7 @@ def get_session(request: Request) -> Iterator[Session]:
 def get_user(
     request: Request,
     creds: HTTPAuthorizationCredentials | None = Depends(bearer),
-    s: Session = Depends(get_session),
+    s: Session = Depends(get_session, scope="function"),
 ) -> User:
     if creds is None:
         raise AuthError("Потрібна авторизація")
@@ -45,7 +45,7 @@ def actor_short(request: Request, creds: HTTPAuthorizationCredentials | None = D
         return Actor.of(get_user(request, creds, s))
 
 
-def require_finance_pin(request: Request, u: User = Depends(get_user), s: Session = Depends(get_session)) -> User:
+def require_finance_pin(request: Request, u: User = Depends(get_user), s: Session = Depends(get_session, scope="function")) -> User:
     from ..services.security_journal import finance_pin_required
 
     if not finance_pin_required(s, u):

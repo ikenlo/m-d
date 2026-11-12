@@ -1370,3 +1370,43 @@ tbody tr:hover td, table tr:not(:first-child):hover td { background: color-mix(i
 .pw-ok, .pw-err { width: 56px; height: 56px; border-radius: 50%; display: grid; place-items: center; color: #fff; }
 .pw-ok { background: var(--ok); } .pw-err { background: var(--danger); }
 @media (prefers-reduced-motion: reduce) { .spinner { animation-duration: 2s; } .pay-wait { animation: none; } }
+
+/* Налаштування за розділами (як у GitHub): меню розділів + вміст; на телефоні — спершу список розділів */
+.set-layout { display: grid; grid-template-columns: 250px minmax(0, 1fr); gap: 20px; align-items: start; }
+.set-nav { position: sticky; top: 16px; display: flex; flex-direction: column; gap: 2px; }
+.set-section { font-size: var(--fs-2xs); font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-3); padding: 14px 12px 6px; }
+.set-section:first-child { padding-top: 0; }
+.set-link { display: flex; align-items: center; gap: 12px; min-height: 44px; padding: 8px 12px; border-radius: var(--r-md); color: var(--ink-2);
+  text-decoration: none; font-weight: 600; font-size: var(--fs-sm); position: relative; }
+.set-link:hover { background: var(--surface-3); color: var(--ink); text-decoration: none; }
+.set-link.active { background: var(--surface); color: var(--ink); box-shadow: var(--shadow-sm); }
+.set-link.active::before { content: ""; position: absolute; left: 0; top: 10px; bottom: 10px; width: 3px; border-radius: 2px; background: var(--gold); }
+.set-ico { display: grid; place-items: center; color: var(--ink-3); }
+.set-link.active .set-ico { color: var(--brand-2); }
+:root[data-theme="dark"] .set-link.active .set-ico { color: var(--gold); }
+.set-text { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+.set-text small { font-weight: 500; color: var(--ink-3); font-size: var(--fs-xs); line-height: 1.35; margin-top: 2px; }
+.set-head h2 { margin: 0 0 2px; }
+.set-head p { margin: 0 0 12px; }
+.set-back { display: inline-flex; align-items: center; gap: 4px; margin-bottom: 8px; font-weight: 600; }
+.set-body > .stack > a.small { display: inline-block; }
+.set-index { position: static; background: var(--surface); border-radius: var(--r-xl); box-shadow: var(--shadow-card, var(--shadow-sm)); padding: 8px 6px 6px; }
+.set-index .set-section { padding: 14px 12px 4px; }
+.set-index .set-section:first-child { padding-top: 6px; }
+.set-index .set-link { min-height: 56px; border-bottom: 1px solid var(--line); border-radius: 0; }
+.set-index .set-link:last-child, .set-index .set-link:has(+ .set-section) { border-bottom: 0; }
+.set-index .set-link svg:last-child { color: var(--ink-3); }
+.menu-group + .menu-group { margin-top: 6px; }
+.menu-group .set-section, .menu-group .set-section:first-child { padding: 12px 12px 6px; }
+.menu-card { padding: 6px; }
+.menu-link { padding: 12px; color: var(--ink); min-height: 48px; border-radius: var(--r-md); }
+.menu-link:hover { background: var(--surface-2); text-decoration: none; }
+@media (max-width: 900px) {
+  .set-layout { grid-template-columns: minmax(0, 1fr); }
+  .set-layout > .set-nav { display: none; }
+  .sched-day { flex-wrap: nowrap; }
+}
+@media (max-width: 420px) {
+  .sched-day > label { width: 108px !important; }
+  .sched-day > div { width: auto !important; flex: 1 1 0; min-width: 0; }
+}

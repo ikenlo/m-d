@@ -14,17 +14,17 @@ router = APIRouter(prefix="/api/sms", tags=["sms"])
 
 
 @router.get("/summary")
-def summary(actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
+def summary(actor: Actor = Depends(get_actor), s: Session = Depends(get_session, scope="function")):
     return sms_center.summary(s, actor)
 
 
 @router.get("/insights")
-def insights(actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
+def insights(actor: Actor = Depends(get_actor), s: Session = Depends(get_session, scope="function")):
     return sms_center.insights(s, actor)
 
 
 @router.get("/campaigns")
-def campaigns(actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
+def campaigns(actor: Actor = Depends(get_actor), s: Session = Depends(get_session, scope="function")):
     return sms_center.campaigns(s, actor)
 
 
@@ -36,7 +36,7 @@ class CampaignIn(BaseModel):
 
 @router.post("/campaigns")
 def create_campaign(body: CampaignIn, background: BackgroundTasks, request: Request, dry_run: bool = False,
-                    actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
+                    actor: Actor = Depends(get_actor), s: Session = Depends(get_session, scope="function")):
     r = sms_center.create_campaign(s, actor, title=body.title, text=body.text, audience_key=body.audience, dry_run=dry_run)
     if not dry_run:
         background.add_task(sms_center.flush, request.app.state.db)
@@ -44,7 +44,7 @@ def create_campaign(body: CampaignIn, background: BackgroundTasks, request: Requ
 
 
 @router.get("/messages")
-def messages(client_id: int | None = None, actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
+def messages(client_id: int | None = None, actor: Actor = Depends(get_actor), s: Session = Depends(get_session, scope="function")):
     return sms_center.messages(s, actor, client_id=client_id)
 
 
@@ -55,7 +55,7 @@ class TestIn(BaseModel):
 
 @router.post("/test")
 def test_sms(body: TestIn, background: BackgroundTasks, request: Request, actor: Actor = Depends(get_actor),
-             s: Session = Depends(get_session)):
+             s: Session = Depends(get_session, scope="function")):
     actor.require(Role.DIRECTOR)
     from ...errors import Conflict
     from ...services import sms

@@ -24,24 +24,24 @@ router = APIRouter(prefix="/api", tags=["system"])
 
 
 @router.get("/settings")
-def get_settings(actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
+def get_settings(actor: Actor = Depends(get_actor), s: Session = Depends(get_session, scope="function")):
     return all_settings(s)
 
 
 @router.put("/settings")
-def put_settings(data: dict, actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
+def put_settings(data: dict, actor: Actor = Depends(get_actor), s: Session = Depends(get_session, scope="function")):
     return update_settings(s, actor, data)
 
 
 @router.get("/journal/ledger")
 def ledger(ref_type: str | None = None, ref_id: int | None = None, limit: int = 200,
-           actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
+           actor: Actor = Depends(get_actor), s: Session = Depends(get_session, scope="function")):
     return journal.ledger_list(s, actor, ref_type=ref_type, ref_id=ref_id, limit=min(limit, 1000))
 
 
 @router.get("/journal/feed")
 def journal_feed(date_from: date, date_to: date | None = None, category: str | None = None, q: str | None = None,
-                 limit: int = 300, actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
+                 limit: int = 300, actor: Actor = Depends(get_actor), s: Session = Depends(get_session, scope="function")):
     if date_to and (date_to - date_from).days > 366:
         raise ValidationError("Період журналу — не більше року")
     return journal_feed_svc.feed(s, actor, date_from=date_from, date_to=date_to or date_from, category=category,
@@ -50,7 +50,7 @@ def journal_feed(date_from: date, date_to: date | None = None, category: str | N
 
 @router.get("/journal/audit")
 def audit(entity: str | None = None, entity_id: int | None = None, limit: int = 200,
-          actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
+          actor: Actor = Depends(get_actor), s: Session = Depends(get_session, scope="function")):
     return journal.audit_list(s, actor, entity=entity, entity_id=entity_id, limit=min(limit, 1000))
 
 
@@ -83,7 +83,7 @@ class BugReportIn(BaseModel):
 
 
 @router.post("/bug-report", status_code=201)
-def bug_report(body: BugReportIn, request: Request, actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
+def bug_report(body: BugReportIn, request: Request, actor: Actor = Depends(get_actor), s: Session = Depends(get_session, scope="function")):
     return bugreport.create(s, actor, request.app.state.config.data_dir, text=body.text, page=body.page,
                             context=body.context, image_b64=body.image)
 
@@ -137,7 +137,7 @@ def gdrive_connect(request: Request, actor: Actor = Depends(get_actor)):
 
 @router.get("/gdrive/callback", name="gdrive_callback", include_in_schema=False)
 def gdrive_callback(request: Request, state: str = "", code: str = "", error: str = "",
-                    s: Session = Depends(get_session)):
+                    s: Session = Depends(get_session, scope="function")):
     cfg = request.app.state.config
     try:
         payload = jwt.decode(state, cfg.secret_key, algorithms=["HS256"])
@@ -168,7 +168,7 @@ def gdrive_backup_now(request: Request, actor: Actor = Depends(get_actor)):
 
 
 @router.post("/gdrive/disconnect")
-def gdrive_disconnect(request: Request, actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
+def gdrive_disconnect(request: Request, actor: Actor = Depends(get_actor), s: Session = Depends(get_session, scope="function")):
     actor.require(Role.DIRECTOR)
     gdrive.disconnect(request.app.state.config.data_dir)
     write_audit(s, actor, "gdrive", actor.user_id or 0, "disconnect", None, None)
@@ -176,7 +176,7 @@ def gdrive_disconnect(request: Request, actor: Actor = Depends(get_actor), s: Se
 
 
 @router.get("/sync")
-def sync_changes(since: int | None = None, actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
+def sync_changes(since: int | None = None, actor: Actor = Depends(get_actor), s: Session = Depends(get_session, scope="function")):
     return sync.changes(s, actor, since)
 
 

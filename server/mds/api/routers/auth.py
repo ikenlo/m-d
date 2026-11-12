@@ -108,7 +108,7 @@ def refresh(request: Request, u: User = Depends(get_user)):
 
 
 @router.post("/logout-all")
-def logout_all(actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
+def logout_all(actor: Actor = Depends(get_actor), s: Session = Depends(get_session, scope="function")):
     sj.revoke_sessions(s, actor, actor.user_id)
     return {"ok": True}
 
@@ -119,7 +119,7 @@ class FinancePinIn(BaseModel):
 
 
 @router.post("/finance-pin")
-def set_finance_pin(body: FinancePinIn, actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
+def set_finance_pin(body: FinancePinIn, actor: Actor = Depends(get_actor), s: Session = Depends(get_session, scope="function")):
     sj.set_finance_pin(s, actor, body.pin, body.current_pin)
     return {"ok": True}
 
@@ -141,17 +141,17 @@ def finance_verify(body: FinancePinIn, request: Request, actor: Actor = Depends(
 
 
 @router.get("/devices")
-def my_devices(actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
+def my_devices(actor: Actor = Depends(get_actor), s: Session = Depends(get_session, scope="function")):
     return twofa.list_devices(s, actor)
 
 
 @router.delete("/devices")
-def forget_my_devices(device_id: int | None = None, actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
+def forget_my_devices(device_id: int | None = None, actor: Actor = Depends(get_actor), s: Session = Depends(get_session, scope="function")):
     return {"forgotten": twofa.forget_devices(s, actor, device_id)}
 
 
 @router.get("/me")
-def me(u: User = Depends(get_user), s: Session = Depends(get_session)):
+def me(u: User = Depends(get_user), s: Session = Depends(get_session, scope="function")):
     out = users.user_public(u)
     if u.role == "master":
         sh = orders.current_shift(s, u.id)
@@ -160,11 +160,11 @@ def me(u: User = Depends(get_user), s: Session = Depends(get_session)):
 
 
 @router.post("/change-password")
-def change_password(body: ChangePasswordIn, actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
+def change_password(body: ChangePasswordIn, actor: Actor = Depends(get_actor), s: Session = Depends(get_session, scope="function")):
     users.change_own_password(s, actor, body.old_password, body.new_password)
     return {"ok": True}
 
 
 @router.post("/telegram-code")
-def my_telegram_code(actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
+def my_telegram_code(actor: Actor = Depends(get_actor), s: Session = Depends(get_session, scope="function")):
     return {"code": users.new_telegram_link_code(s, actor, actor.user_id)}

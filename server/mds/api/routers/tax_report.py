@@ -15,25 +15,25 @@ router = APIRouter(prefix="/api/reports", tags=["reports"])
 
 
 @router.get("/income")
-def income(year: int, quarter: int | None = None, actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
+def income(year: int, quarter: int | None = None, actor: Actor = Depends(get_actor), s: Session = Depends(get_session, scope="function")):
     return tax_report.income_report(s, actor, year, quarter)
 
 
 @router.get("/income.csv")
 def income_csv(year: int, quarter: int | None = None, detail: str = "day",
-               actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
+               actor: Actor = Depends(get_actor), s: Session = Depends(get_session, scope="function")):
     body, filename = tax_report.income_csv(s, actor, year, quarter, detail)
     return Response(body.encode("utf-8"), media_type="text/csv; charset=utf-8",
                     headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}"})
 
 
 @router.get("/declaration")
-def declaration(year: int, actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
+def declaration(year: int, actor: Actor = Depends(get_actor), s: Session = Depends(get_session, scope="function")):
     return tax_declaration.declaration_data(s, actor, year)
 
 
 @router.get("/declaration.zip")
-def declaration_zip(year: int, actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
+def declaration_zip(year: int, actor: Actor = Depends(get_actor), s: Session = Depends(get_session, scope="function")):
     body, filename = tax_declaration.declaration_zip(s, actor, year, clock.now().date())
     return Response(body, media_type="application/zip",
                     headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}"})

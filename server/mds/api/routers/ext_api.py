@@ -27,40 +27,40 @@ def ext_actor(request: Request, x_api_key: str | None = Header(default=None, ali
 
 @router.get("/orders")
 def orders(date_from: date | None = None, date_to: date | None = None, status: str | None = None,
-           limit: int = 500, offset: int = 0, a: Actor = Depends(ext_actor), s: Session = Depends(get_session)):
+           limit: int = 500, offset: int = 0, a: Actor = Depends(ext_actor), s: Session = Depends(get_session, scope="function")):
     return integration.orders(s, a, date_from=date_from, date_to=date_to, status=status, limit=limit, offset=offset)
 
 
 @router.get("/stock-moves")
 def stock_moves(date_from: date | None = None, date_to: date | None = None, item_type: str | None = None,
-                limit: int = 500, offset: int = 0, a: Actor = Depends(ext_actor), s: Session = Depends(get_session)):
+                limit: int = 500, offset: int = 0, a: Actor = Depends(ext_actor), s: Session = Depends(get_session, scope="function")):
     return integration.stock_moves(s, a, date_from=date_from, date_to=date_to, item_type=item_type,
                                    limit=limit, offset=offset)
 
 
 @router.get("/products")
-def products(a: Actor = Depends(ext_actor), s: Session = Depends(get_session)):
+def products(a: Actor = Depends(ext_actor), s: Session = Depends(get_session, scope="function")):
     return integration.products(s, a)
 
 
 @router.get("/services")
-def services(a: Actor = Depends(ext_actor), s: Session = Depends(get_session)):
+def services(a: Actor = Depends(ext_actor), s: Session = Depends(get_session, scope="function")):
     return integration.services_catalog(s, a)
 
 
 @router.get("/clients")
-def clients(limit: int = 500, offset: int = 0, a: Actor = Depends(ext_actor), s: Session = Depends(get_session)):
+def clients(limit: int = 500, offset: int = 0, a: Actor = Depends(ext_actor), s: Session = Depends(get_session, scope="function")):
     return integration.clients(s, a, limit=limit, offset=offset)
 
 
 @router.get("/daily")
 def daily(date_from: date | None = None, date_to: date | None = None,
-          a: Actor = Depends(ext_actor), s: Session = Depends(get_session)):
+          a: Actor = Depends(ext_actor), s: Session = Depends(get_session, scope="function")):
     return integration.daily(s, a, date_from=date_from, date_to=date_to)
 
 
 @router.get("/webhooks")
-def webhooks_pull(request: Request, limit: int = 50, a: Actor = Depends(ext_actor), s: Session = Depends(get_session)):
+def webhooks_pull(request: Request, limit: int = 50, a: Actor = Depends(ext_actor), s: Session = Depends(get_session, scope="function")):
     return webhooks.pull(s, a, limit=limit, timeout_minutes=request.app.state.config.webhook_processing_timeout_minutes)
 
 
@@ -70,5 +70,5 @@ class AckIn(BaseModel):
 
 
 @router.post("/webhooks/{uuid}/ack")
-def webhooks_ack(uuid: str, body: AckIn, a: Actor = Depends(ext_actor), s: Session = Depends(get_session)):
+def webhooks_ack(uuid: str, body: AckIn, a: Actor = Depends(ext_actor), s: Session = Depends(get_session, scope="function")):
     return webhooks.ack(s, a, uuid, body.status, body.error)

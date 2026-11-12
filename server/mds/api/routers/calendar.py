@@ -29,7 +29,7 @@ class ShiftIn(BaseModel):
 
 @router.post("/appointments/shift")
 def shift_appointments(body: ShiftIn, background: BackgroundTasks, request: Request, actor: Actor = Depends(get_actor),
-                       s: Session = Depends(get_session)):
+                       s: Session = Depends(get_session, scope="function")):
     from ...services import sms_center
 
     r = bookings.shift_appointments(s, actor, master_id=body.master_id, minutes=body.minutes,
@@ -46,14 +46,14 @@ def shift_appointments(body: ShiftIn, background: BackgroundTasks, request: Requ
 
 
 @router.get("/appointments/unclosed")
-def unclosed(master_id: int | None = None, actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
+def unclosed(master_id: int | None = None, actor: Actor = Depends(get_actor), s: Session = Depends(get_session, scope="function")):
     return [bookings.appt_public(a) for a in bookings.unclosed(s, actor, master_id)]
 
 
 @router.get("/appointments")
 def list_appointments(
     date_from: date, date_to: date | None = None, master_id: int | None = None,
-    actor: Actor = Depends(get_actor), s: Session = Depends(get_session),
+    actor: Actor = Depends(get_actor), s: Session = Depends(get_session, scope="function"),
 ):
     items = bookings.list_appointments(s, actor, date_from=date_from, date_to=date_to or date_from, master_id=master_id)
     return [bookings.appt_public(a) for a in items]
@@ -61,7 +61,7 @@ def list_appointments(
 
 @router.get("/availability")
 def availability(master_id: int, service_id: int, day: date, duration_min: int | None = None,
-                 actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
+                 actor: Actor = Depends(get_actor), s: Session = Depends(get_session, scope="function")):
     if duration_min is not None and not (5 <= duration_min <= 12 * 60):
         duration_min = None
     return [t.strftime("%H:%M") for t in bookings.free_slots(s, master_id, service_id, day, duration_min=duration_min)]
@@ -69,42 +69,42 @@ def availability(master_id: int, service_id: int, day: date, duration_min: int |
 
 @router.get("/availability/detail")
 def availability_detail(master_id: int, service_id: int, day: date, duration_min: int | None = None,
-                        actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
+                        actor: Actor = Depends(get_actor), s: Session = Depends(get_session, scope="function")):
     if duration_min is not None and not (5 <= duration_min <= 12 * 60):
         duration_min = None
     return bookings.booking_options(s, actor, master_id, service_id, day, duration_min)
 
 
 @router.post("/appointments", status_code=201)
-def create_appointment(body: AppointmentIn, actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
+def create_appointment(body: AppointmentIn, actor: Actor = Depends(get_actor), s: Session = Depends(get_session, scope="function")):
     data = body.model_dump()
     data["starts_at"] = data["starts_at"].replace(tzinfo=None, second=0, microsecond=0)
     return bookings.appt_public(bookings.create_appointment(s, actor, **data))
 
 
 @router.get("/appointments/pending")
-def pending(actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
+def pending(actor: Actor = Depends(get_actor), s: Session = Depends(get_session, scope="function")):
     return [bookings.appt_public(a) for a in bookings.pending_list(s, actor)]
 
 
 @router.post("/appointments/{appt_id}/decline-busy")
-def decline_busy(appt_id: int, actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
+def decline_busy(appt_id: int, actor: Actor = Depends(get_actor), s: Session = Depends(get_session, scope="function")):
     return bookings.decline_busy(s, actor, appt_id)
 
 
 @router.post("/appointments/{appt_id}/propose")
-def propose(appt_id: int, body: ProposeIn, actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
+def propose(appt_id: int, body: ProposeIn, actor: Actor = Depends(get_actor), s: Session = Depends(get_session, scope="function")):
     a, notified = bookings.propose_time(s, actor, appt_id, body.starts_at.replace(tzinfo=None, second=0, microsecond=0))
     return {**bookings.appt_public(a), "notified": notified}
 
 
 @router.get("/appointments/{appt_id}")
-def get_appointment(appt_id: int, actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
+def get_appointment(appt_id: int, actor: Actor = Depends(get_actor), s: Session = Depends(get_session, scope="function")):
     return bookings.appt_public(bookings.get_appointment(s, actor, appt_id))
 
 
 @router.patch("/appointments/{appt_id}")
-def update_appointment(appt_id: int, body: AppointmentPatch, actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
+def update_appointment(appt_id: int, body: AppointmentPatch, actor: Actor = Depends(get_actor), s: Session = Depends(get_session, scope="function")):
     data = body.model_dump(exclude_unset=True, exclude={"version"})
     if data.get("starts_at"):
         data["starts_at"] = data["starts_at"].replace(tzinfo=None, second=0, microsecond=0)
@@ -119,13 +119,13 @@ def _check_appt_version(s: Session, actor: Actor, appt_id: int, expected: int | 
 
 
 @router.post("/appointments/{appt_id}/status")
-def set_status(appt_id: int, body: StatusIn, actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
+def set_status(appt_id: int, body: StatusIn, actor: Actor = Depends(get_actor), s: Session = Depends(get_session, scope="function")):
     _check_appt_version(s, actor, appt_id, body.version)
     return bookings.appt_public(bookings.set_status(s, actor, appt_id, body.status, body.reason))
 
 
 @router.post("/appointments/{appt_id}/close")
-def close_order(appt_id: int, body: CloseOrderIn, actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
+def close_order(appt_id: int, body: CloseOrderIn, actor: Actor = Depends(get_actor), s: Session = Depends(get_session, scope="function")):
     payload = body.model_dump() | {"appointment_id": appt_id}
 
     def do() -> dict:

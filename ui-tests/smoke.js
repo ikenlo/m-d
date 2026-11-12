@@ -36,7 +36,8 @@ async function login(page, user, pass) {
       page.on("response", (r) => { if (r.url().includes("/api/") && r.status() >= 500) fail(where, `сервер ${r.status()} ${new URL(r.url()).pathname}`); });
 
       await login(page, user, pass);
-      const routes = await page.evaluate(() => [...(NAV[state.user.role] || []).map((i) => i[0]), "more", "profile"]);
+      const routes = await page.evaluate(() => [...(NAV[state.user.role] || []).map((i) => i[0]), "more", "profile",
+        ...((NAV[state.user.role] || []).some((i) => i[0] === "settings") ? SETTINGS_GROUPS.map((g) => "settings?g=" + g[0]) : [])]);
       console.log(`${user} · ${mode.name}: ${routes.length} сторінок`);
       for (const r of [...new Set(routes)]) {
         where = `${user}/${mode.name}/#/${r}`;
@@ -63,7 +64,7 @@ async function login(page, user, pass) {
           const nodes = await page.evaluate(() => [...document.querySelectorAll(".mermaid-box svg")].map((s) => s.querySelectorAll("g.node").length));
           if (nodes.length !== 3 || nodes.some((n) => n < 5)) fail(where, `схеми «Логіки системи» не побудовані: ${JSON.stringify(nodes)}`);
         }
-        await page.screenshot({ path: path.join(OUT, `${user}-${mode.name}-${r}.png`), fullPage: mode.name === "desk" ? false : true });
+        await page.screenshot({ path: path.join(OUT, `${user}-${mode.name}-${r.replace(/[?=]/g, "-")}.png`), fullPage: mode.name === "desk" ? false : true });
       }
       await ctx.close();
     }

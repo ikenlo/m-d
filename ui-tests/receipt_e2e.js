@@ -72,7 +72,7 @@ const waitFile = async (f, ms = 10000) => {
 
     console.log("Директор: Checkbox + принтер Wi-Fi (емулятор)");
     await page.evaluate(() => api.patch("/api/settings/terminal", { enabled: false }).catch(() => {}));
-    await page.goto(BASE + "/#/settings");
+    await page.goto(BASE + "/#/settings?g=payments");
     await page.waitForSelector("[data-testid=cb-card] :text('Ключі касира задані на сервері')", { timeout: 8000 });
     await page.check("[data-testid=cb-enabled]");
     await page.selectOption("[data-testid=cb-printer-type]", "wifi");
@@ -96,8 +96,17 @@ const waitFile = async (f, ms = 10000) => {
     });
     const day = new Date(Date.now() + (5 + Math.floor(Math.random() * 300)) * 864e5).toISOString().slice(0, 10);
     const closeOrder = async (hour, client, pay, withProduct) => {
-      const a = await page.evaluate(async ({ c, day, hour, client }) => api.post("/api/appointments", { master_id: c.master, service_id: c.svc.id,
-        starts_at: `${day}T${hour}:00:00`, client_name: client, confirm_off_hours: true, status: "confirmed" }), { c: ctxData, day, hour, client });
+      const a = await page.evaluate(async ({ c, day, hour, client }) => {
+        let last;
+        for (let k = 0; k < 30; k++) {
+          const d = new Date(new Date(day + "T12:00:00").getTime() + k * 7 * 864e5).toISOString().slice(0, 10);
+          try {
+            return await api.post("/api/appointments", { master_id: c.master, service_id: c.svc.id,
+              starts_at: `${d}T${hour}:00:00`, client_name: client, confirm_off_hours: true, status: "confirmed" });
+          } catch (e) { last = e; }
+        }
+        throw last;
+      }, { c: ctxData, day, hour, client });
       await page.evaluate((a) => closeOrderSheet(a, () => {}), a);
       await page.waitForSelector("#overlay .sheet");
       await page.waitForTimeout(300);

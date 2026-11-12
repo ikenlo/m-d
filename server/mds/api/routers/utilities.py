@@ -74,56 +74,56 @@ def _month(m: date | None) -> date:
 
 
 @router.get("/utilities/readings")
-def readings(actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
+def readings(actor: Actor = Depends(get_actor), s: Session = Depends(get_session, scope="function")):
     return u.list_readings(s, actor)
 
 
 @router.post("/utilities/readings", status_code=201)
-def create_reading(body: ReadingIn, actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
+def create_reading(body: ReadingIn, actor: Actor = Depends(get_actor), s: Session = Depends(get_session, scope="function")):
     return u.reading_public(u.create_reading(s, actor, **body.model_dump()))
 
 
 @router.patch("/utilities/readings/{reading_id}")
-def update_reading(reading_id: int, body: ReadingPatch, actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
+def update_reading(reading_id: int, body: ReadingPatch, actor: Actor = Depends(get_actor), s: Session = Depends(get_session, scope="function")):
     data = body.model_dump(exclude_unset=True, exclude={"reason"})
     return u.reading_public(u.update_reading(s, actor, reading_id, data, body.reason))
 
 
 @router.post("/utilities/readings/{reading_id}/confirm")
-def confirm_reading(reading_id: int, actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
+def confirm_reading(reading_id: int, actor: Actor = Depends(get_actor), s: Session = Depends(get_session, scope="function")):
     return u.reading_public(u.confirm_reading(s, actor, reading_id))
 
 
 @router.get("/generator")
-def generator_state(actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
+def generator_state(actor: Actor = Depends(get_actor), s: Session = Depends(get_session, scope="function")):
     return u.generator_state(s, actor)
 
 
 @router.post("/generator/start")
-def generator_start(body: StartIn, actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
+def generator_start(body: StartIn, actor: Actor = Depends(get_actor), s: Session = Depends(get_session, scope="function")):
     u.start_generator(s, actor, power_outage=body.power_outage, note=body.note)
     return u.generator_state(s, actor)
 
 
 @router.post("/generator/stop")
-def generator_stop(actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
+def generator_stop(actor: Actor = Depends(get_actor), s: Session = Depends(get_session, scope="function")):
     g = u.stop_generator(s, actor)
     return {**u.generator_state(s, actor), "stopped": u.run_public(g)}
 
 
 @router.get("/generator/runs")
-def generator_runs(month: date | None = None, actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
+def generator_runs(month: date | None = None, actor: Actor = Depends(get_actor), s: Session = Depends(get_session, scope="function")):
     return u.list_runs(s, actor, _month(month))
 
 
 @router.post("/generator/runs", status_code=201)
-def generator_add_run(body: RunIn, actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
+def generator_add_run(body: RunIn, actor: Actor = Depends(get_actor), s: Session = Depends(get_session, scope="function")):
     return u.run_public(u.add_run(s, actor, started_at=body.started_at.replace(tzinfo=None), hours=body.hours,
                                   power_outage=body.power_outage, note=body.note))
 
 
 @router.patch("/generator/runs/{run_id}")
-def generator_correct_run(run_id: int, body: RunPatch, actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
+def generator_correct_run(run_id: int, body: RunPatch, actor: Actor = Depends(get_actor), s: Session = Depends(get_session, scope="function")):
     data = body.model_dump(exclude_unset=True, exclude={"reason"})
     return u.run_public(u.correct_run(s, actor, run_id, data, body.reason))
 
@@ -136,21 +136,21 @@ class HoursIn(BaseModel):
 
 
 @router.post("/generator/hours", status_code=201)
-def generator_hours(body: HoursIn, actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
+def generator_hours(body: HoursIn, actor: Actor = Depends(get_actor), s: Session = Depends(get_session, scope="function")):
     g = u.record_hours(s, actor, on=body.on, current=body.current, hours=body.hours, note=body.note)
     return {"run": u.run_public(g), "state": u.generator_state(s, actor)}
 
 
 @router.get("/generator/history")
-def generator_history(months: int = 6, actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
+def generator_history(months: int = 6, actor: Actor = Depends(get_actor), s: Session = Depends(get_session, scope="function")):
     return u.generator_history(s, actor, months)
 
 
 @router.post("/generator/motohours")
-def generator_motohours(body: MotohoursIn, actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
+def generator_motohours(body: MotohoursIn, actor: Actor = Depends(get_actor), s: Session = Depends(get_session, scope="function")):
     return u.set_motohours(s, actor, body.current)
 
 
 @router.get("/utilities/summary")
-def summary(month: date | None = None, actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
+def summary(month: date | None = None, actor: Actor = Depends(get_actor), s: Session = Depends(get_session, scope="function")):
     return u.month_summary(s, actor, _month(month))
