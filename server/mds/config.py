@@ -43,7 +43,7 @@ class Config:
     telegram_token: str = field(default_factory=lambda: _env("TELEGRAM_TOKEN", ""))
     backup_dir: Path | None = None
     backup_interval_hours: int = field(default_factory=lambda: int(_env("BACKUP_INTERVAL_HOURS", "6")))
-    backup_keep: int = field(default_factory=lambda: int(_env("BACKUP_KEEP", "40")))
+    backup_keep_days: int = field(default_factory=lambda: int(_env("BACKUP_KEEP_DAYS", "30")))
     host: str = field(default_factory=lambda: _env("HOST", "0.0.0.0"))
     port: int = field(default_factory=lambda: int(_env("PORT", os.getenv("PORT") or "8000")))
 

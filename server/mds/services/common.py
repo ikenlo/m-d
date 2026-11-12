@@ -234,6 +234,11 @@ def update_settings(s: Session, actor: Actor, data: dict[str, Any]) -> dict[str,
 
             if not (isinstance(value, list) and all(k in IMPORTANT for k in value)):
                 raise ValidationError("Вимкнути можна лише важливі сповіщення")
+        if key == "reports_hidden":
+            from .analytics import REPORT_KEYS
+
+            if not (isinstance(value, list) and all(k in REPORT_KEYS for k in value)):
+                raise ValidationError("Невідомий звіт у списку прихованих")
         if key == "alerts_digest_hour" and not (isinstance(value, int) and not isinstance(value, bool) and 0 <= value <= 23):
             raise ValidationError("Година дайджесту — від 0 до 23")
         if key == "schedule":

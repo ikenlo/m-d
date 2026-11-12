@@ -48,9 +48,12 @@ class FakeGoogle:
             self.files.insert(0, {"id": f"new{len(self.uploaded)}", "name": name})
             return Resp(200, json.dumps({"id": "x", "name": name}).encode(), {})
         if method == "GET" and url.startswith(gdrive.API + "/files?"):
-            return Resp(200, json.dumps({"files": self.files}).encode(), {})
+            files = self.files
+            if "createdTime" in parse_qs(urlparse(url).query).get("q", [""])[0]:
+                files = [f for f in files if f["id"].startswith("old")]
+            return Resp(200, json.dumps({"files": files}).encode(), {})
         if method == "DELETE":
-            self.deleted.append(url.rsplit("/", 1)[1])
+            self.deleted.append(url.rsplit("/", 1)[1].split("?")[0])
             return Resp(204, b"", {})
         if "revoke" in url:
             return Resp(200, b"", {})
@@ -61,7 +64,8 @@ class FakeGoogle:
 def env(db, seed, tmp_path, monkeypatch):
     monkeypatch.setenv("MDS_GDRIVE_CLIENT_ID", "cid")
     monkeypatch.setenv("MDS_GDRIVE_CLIENT_SECRET", "csecret")
-    monkeypatch.setenv("MDS_GDRIVE_KEEP", "3")
+    monkeypatch.delenv("MDS_GDRIVE_SA_JSON", raising=False)
+    monkeypatch.delenv("MDS_BACKUP_ENCRYPTION_KEY", raising=False)
     fake = FakeGoogle(keep_files=4)
     monkeypatch.setattr(gdrive, "http", fake)
     cfg = Config(data_dir=tmp_path / "data", database_url=db.url, secret_key="test-secret-key-for-unit-tests-only-0123456789")
@@ -88,7 +92,7 @@ def test_connect_upload_rotate(env, db):
     r = c.post("/api/gdrive/backup-now", headers=hd)
     assert r.status_code == 200, r.text
     assert fake.uploaded and r.json()["status"]["last_file"] == fake.uploaded[0]
-    assert fake.deleted == ["old2", "old3"]
+    assert fake.deleted == ["old0", "old1", "old2", "old3"]
     assert (cfg.data_dir / "gdrive.json").stat().st_mode & 0o077 == 0
 
 

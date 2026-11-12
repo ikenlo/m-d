@@ -146,6 +146,32 @@ def finance_insights(period: str | None = None, date_from: date | None = None, d
     return analytics.insights(s, actor, a, b)
 
 
+@router.get("/finance/logic-stats", dependencies=[Depends(require_finance_pin)])
+def logic_stats(actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
+    return analytics.logic_stats(s, actor)
+
+
+@router.get("/exports/{name}.{fmt}", dependencies=[Depends(require_finance_pin)])
+def export_report(name: str, fmt: str, period: str | None = None, date_from: date | None = None, date_to: date | None = None,
+                  actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
+    from fastapi.responses import Response
+
+    from ...reports.export import build
+
+    a, b = _range(period, date_from, date_to)
+    data, ctype, fname = build(s, actor, name, fmt, a, b)
+    return Response(data, media_type=ctype, headers={"Content-Disposition": f'attachment; filename="{fname}"'})
+
+
+@router.post("/analytics/recommend", dependencies=[Depends(require_finance_pin)])
+def recommend(period: str | None = None, date_from: date | None = None, date_to: date | None = None, refresh: bool = False,
+              actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
+    from ...services import ai
+
+    a, b = _range(period, date_from, date_to)
+    return ai.recommend(s, actor, a, b, refresh=refresh)
+
+
 @router.get("/finance/my")
 def my_finance(master_id: int | None = None, actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
     return analytics.my_earnings(s, actor, master_id)

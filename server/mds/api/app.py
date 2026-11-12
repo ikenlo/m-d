@@ -42,8 +42,9 @@ async def _backup_loop(cfg: Config, db: Database) -> None:
             res = await asyncio.to_thread(backup.backup_cycle, cfg, db)
             log.info("Резервна копія: %s; Google Drive: %s", res.get("local"),
                      (res.get("drive") or {}).get("name") or res.get("drive_error") or "не підключено")
-        except Exception:  # noqa: BLE001
+        except Exception as e:  # noqa: BLE001
             log.exception("Помилка резервного копіювання")
+            await asyncio.to_thread(backup.alert_local_failure, db, str(e))
         await asyncio.sleep(max(cfg.backup_interval_hours, 1) * 3600)
 
 
