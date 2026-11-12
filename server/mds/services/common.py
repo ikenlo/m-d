@@ -170,6 +170,9 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "generator_hours_initial_milli": 0,
     "fop_income_limit": 0,
     "card_terminal_mode": "off",
+    "pos_terminal_enabled": False,
+    "pos_terminal_ip": "",
+    "pos_terminal_port": 2000,
     "fop_tin": "",
     "fop_name": "",
     "fop_address": "",
@@ -189,7 +192,8 @@ DEFAULT_SETTINGS: dict[str, Any] = {
 }
 
 
-INTERNAL_SETTINGS = ("vacation_mode_active", "vacation_mode_expires_at", "jobs_daily_last")
+INTERNAL_SETTINGS = ("vacation_mode_active", "vacation_mode_expires_at", "jobs_daily_last",
+                     "pos_terminal_enabled", "pos_terminal_ip", "pos_terminal_port")
 
 
 def get_setting(s: Session, key: str) -> Any:

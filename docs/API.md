@@ -139,7 +139,9 @@
 | `GET /api/gdrive`, `POST /api/gdrive/connect`, `/backup-now`, `/disconnect`, `GET /api/gdrive/callback` | директор | Google Drive (Service Account або OAuth) |
 | `GET /api/sync?since=<rev>` | персонал | живе оновлення |
 | `POST /api/bug-report`, `GET /api/perf`, `POST /api/perf/rum` | усі / директор | |
-| `GET /api/card-terminal/status`, `POST /api/card-payments`, `…/{id}/check`, `…/{id}/cancel`, `GET /api/appointments/{id}/card-payments` | персонал | «Термінал»: у 0.3.0 лише ручний режим (D-6c); `…/mock-complete` — лише `MDS_ENV=test` |
+| `GET /api/card-terminal/status`, `POST /api/card-payments`, `…/{id}/check`, `…/{id}/cancel`, `GET /api/appointments/{id}/card-payments` | персонал | «Термінал»: у 0.3.0 лише ручний режим (D-6c); `…/mock-complete` — лише `MDS_ENV=test`. `status.mode = "ecr"` — увімкнено POS-термінал |
+| `POST /api/card-payments/{id}/pay` | персонал (власний запис) / директор | POS-термінал (ECR по TCP): оплата на терміналі до 60 с, після «схвалено» замовлення закривається як «Картка»; 400 `terminal_disabled`, 409 `payment_in_progress`. Деталі — [TERMINAL.md](TERMINAL.md) |
+| `GET/PATCH /api/settings/terminal`, `POST /api/settings/terminal/check` | директор | налаштування POS-термінала (`enabled`, `ip`, `port`) і «Перевірити зв'язок» |
 | `GET /api/sms/*`, `POST /api/sms/campaigns?dry_run=1` | директор | історія і розрахунок аудиторії; надсилання вимкнено (D-6a, 409 `sms_disabled`) |
 
 ## `/api/ext/v1` — MDs Manager
