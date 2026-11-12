@@ -25,7 +25,7 @@ def meta_verify(request: Request):
 
 
 @router.post("/meta", include_in_schema=False)
-async def meta_event(request: Request, s: Session = Depends(get_session)):
+async def meta_event(request: Request, s: Session = Depends(get_session, scope="function")):
     if int(request.headers.get("content-length") or 0) > MAX_BODY:
         return JSONResponse({"error": "too_large", "detail": "Завеликий вебхук"}, status_code=413)
     raw = await request.body()

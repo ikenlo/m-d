@@ -78,34 +78,34 @@ class InventoryIn(BaseModel):
 
 
 @router.get("/products")
-def list_products(all: bool = False, actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
+def list_products(all: bool = False, actor: Actor = Depends(get_actor), s: Session = Depends(get_session, scope="function")):
     return [products.product_public(p) for p in products.list_products(s, active_only=not all)]
 
 
 @router.post("/products", status_code=201)
-def create_product(body: ProductIn, actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
+def create_product(body: ProductIn, actor: Actor = Depends(get_actor), s: Session = Depends(get_session, scope="function")):
     return products.product_public(products.create_product(s, actor, body.model_dump()))
 
 
 @router.patch("/products/{product_id}")
-def update_product(product_id: int, body: ProductPatch, actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
+def update_product(product_id: int, body: ProductPatch, actor: Actor = Depends(get_actor), s: Session = Depends(get_session, scope="function")):
     return products.product_public(products.update_product(s, actor, product_id, body.model_dump(exclude_unset=True)))
 
 
 @router.post("/products/{product_id}/receive", status_code=201)
-def receive(product_id: int, body: QtyIn, actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
+def receive(product_id: int, body: QtyIn, actor: Actor = Depends(get_actor), s: Session = Depends(get_session, scope="function")):
     products.receive(s, actor, product_id, body.qty, cost=body.cost, note=body.note)
     return products.product_public(s.get(products.Product, product_id))
 
 
 @router.post("/orders/{order_id}/products", status_code=201)
-def add_product(order_id: int, body: ProductLine, actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
+def add_product(order_id: int, body: ProductLine, actor: Actor = Depends(get_actor), s: Session = Depends(get_session, scope="function")):
     products.sell(s, actor, order_id, body.product_id, body.qty)
     return orders.order_public(s.get(orders.Order, order_id))
 
 
 @router.post("/orders/products-only", status_code=201)
-def products_only(body: ProductsOnlyIn, actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
+def products_only(body: ProductsOnlyIn, actor: Actor = Depends(get_actor), s: Session = Depends(get_session, scope="function")):
     o = products.sell_alone(s, actor, master_id=body.master_id, items=[x.model_dump() for x in body.items],
                             payment_method=body.payment_method, client_id=body.client_id, idempotency_key=body.idempotency_key)
     s.flush()
@@ -114,28 +114,28 @@ def products_only(body: ProductsOnlyIn, actor: Actor = Depends(get_actor), s: Se
 
 
 @router.post("/order-products/{line_id}/refund")
-def refund_line(line_id: int, body: ReasonIn, actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
+def refund_line(line_id: int, body: ReasonIn, actor: Actor = Depends(get_actor), s: Session = Depends(get_session, scope="function")):
     return products.line_public(products.refund_line(s, actor, line_id, body.reason))
 
 
 @router.post("/bonuses/pay")
-def pay_bonuses(body: PayBonusIn, actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
+def pay_bonuses(body: PayBonusIn, actor: Actor = Depends(get_actor), s: Session = Depends(get_session, scope="function")):
     p = products.pay_bonuses(s, actor, master_id=body.master_id, until=body.until, method=body.method)
     return {"paid": p.amount if p else 0, "payout_id": p.id if p else None}
 
 
 @router.get("/bonuses/my")
-def my_bonuses(actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
+def my_bonuses(actor: Actor = Depends(get_actor), s: Session = Depends(get_session, scope="function")):
     return products.bonus_summary(s, actor, actor.user_id)
 
 
 @router.get("/bonuses")
-def bonuses(master_id: int, actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
+def bonuses(master_id: int, actor: Actor = Depends(get_actor), s: Session = Depends(get_session, scope="function")):
     return products.bonus_summary(s, actor, master_id)
 
 
 @router.post("/stock/inventory")
-def stock_inventory(body: InventoryIn, actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
+def stock_inventory(body: InventoryIn, actor: Actor = Depends(get_actor), s: Session = Depends(get_session, scope="function")):
     out = []
     for it in body.items:
         if (it.material_id is None) == (it.product_id is None):

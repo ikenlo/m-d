@@ -29,17 +29,17 @@ class ShiftIn(BaseModel):
 
 
 @router.get("/settings/checkbox")
-def get_settings(request: Request, actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
+def get_settings(request: Request, actor: Actor = Depends(get_actor), s: Session = Depends(get_session, scope="function")):
     return checkbox.get_settings(s, actor, request.app.state.config)
 
 
 @router.patch("/settings/checkbox")
-def patch_settings(body: CheckboxSettingsIn, request: Request, actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
+def patch_settings(body: CheckboxSettingsIn, request: Request, actor: Actor = Depends(get_actor), s: Session = Depends(get_session, scope="function")):
     return checkbox.update_settings(s, actor, request.app.state.config, body.model_dump(exclude_unset=True))
 
 
 @router.get("/checkbox/client-config")
-def client_config(actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
+def client_config(actor: Actor = Depends(get_actor), s: Session = Depends(get_session, scope="function")):
     return checkbox.client_config(s)
 
 
@@ -55,7 +55,7 @@ def shift(body: ShiftIn, request: Request, actor: Actor = Depends(actor_short)):
 
 
 @router.post("/checkbox/test-print")
-def test_print(actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
+def test_print(actor: Actor = Depends(get_actor), s: Session = Depends(get_session, scope="function")):
     return checkbox.test_print(s, actor)
 
 

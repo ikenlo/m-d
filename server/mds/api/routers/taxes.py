@@ -79,54 +79,54 @@ class EmployeeIn(BaseModel):
 
 
 @router.get("/taxes/rates")
-def tax_rates(actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
+def tax_rates(actor: Actor = Depends(get_actor), s: Session = Depends(get_session, scope="function")):
     return taxes.list_rates(s, actor)
 
 
 @router.post("/taxes/rates", status_code=201)
-def tax_add_rate(body: RateIn, actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
+def tax_add_rate(body: RateIn, actor: Actor = Depends(get_actor), s: Session = Depends(get_session, scope="function")):
     return taxes.rate_public(taxes.add_rate(s, actor, **body.model_dump()))
 
 
 @router.get("/taxes/fop")
-def tax_fop(year: int | None = None, actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
+def tax_fop(year: int | None = None, actor: Actor = Depends(get_actor), s: Session = Depends(get_session, scope="function")):
     return taxes.fop_summary(s, actor, year or clock.now().year)
 
 
 @router.post("/taxes/fop/accrue", status_code=201)
-def tax_accrue(body: AccrueIn, actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
+def tax_accrue(body: AccrueIn, actor: Actor = Depends(get_actor), s: Session = Depends(get_session, scope="function")):
     return taxes.accrual_public(taxes.accrue_fop(s, actor, body.key, body.on))
 
 
 @router.post("/taxes/fop/{accrual_id}/correct")
-def tax_correct(accrual_id: int, body: CorrectTaxIn, actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
+def tax_correct(accrual_id: int, body: CorrectTaxIn, actor: Actor = Depends(get_actor), s: Session = Depends(get_session, scope="function")):
     return taxes.accrual_public(taxes.correct_fop(s, actor, accrual_id, body.reason, body.amount))
 
 
 @router.post("/taxes/payments", status_code=201)
-def tax_pay(body: TaxPayIn, actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
+def tax_pay(body: TaxPayIn, actor: Actor = Depends(get_actor), s: Session = Depends(get_session, scope="function")):
     p = taxes.pay_tax(s, actor, **body.model_dump())
     return {"id": p.id, "amount": p.amount}
 
 
 @router.get("/employees")
-def employees(actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
+def employees(actor: Actor = Depends(get_actor), s: Session = Depends(get_session, scope="function")):
     return taxes.list_employees(s, actor)
 
 
 @router.put("/employees/{user_id}")
-def employee_set(user_id: int, body: EmployeeIn, actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
+def employee_set(user_id: int, body: EmployeeIn, actor: Actor = Depends(get_actor), s: Session = Depends(get_session, scope="function")):
     return taxes.set_employee(s, actor, user_id, body.model_dump())
 
 
 @router.get("/payroll")
-def payroll(month: date | None = None, actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
+def payroll(month: date | None = None, actor: Actor = Depends(get_actor), s: Session = Depends(get_session, scope="function")):
     return taxes.payroll_summary(s, actor, month or clock.now().date())
 
 
 @router.get("/payroll/calc")
 def payroll_calc(gross: int, month: date, user_id: int | None = None, actor: Actor = Depends(get_actor),
-                 s: Session = Depends(get_session)):
+                 s: Session = Depends(get_session, scope="function")):
     from ...models import Role
 
     actor.require(Role.DIRECTOR)
@@ -134,33 +134,33 @@ def payroll_calc(gross: int, month: date, user_id: int | None = None, actor: Act
 
 
 @router.post("/payroll", status_code=201)
-def payroll_accrue(body: SalaryIn, actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
+def payroll_accrue(body: SalaryIn, actor: Actor = Depends(get_actor), s: Session = Depends(get_session, scope="function")):
     return taxes.payroll_public(taxes.accrue_salary(s, actor, **body.model_dump()))
 
 
 @router.post("/payroll/{accrual_id}/correct")
-def payroll_correct(accrual_id: int, body: SalaryCorrectIn, actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
+def payroll_correct(accrual_id: int, body: SalaryCorrectIn, actor: Actor = Depends(get_actor), s: Session = Depends(get_session, scope="function")):
     return taxes.payroll_public(taxes.correct_salary(s, actor, accrual_id, gross=body.gross, reason=body.reason))
 
 
 @router.post("/payroll/payments", status_code=201)
-def payroll_pay(body: SalaryPayIn, actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
+def payroll_pay(body: SalaryPayIn, actor: Actor = Depends(get_actor), s: Session = Depends(get_session, scope="function")):
     p = taxes.pay_salary(s, actor, **body.model_dump())
     return {"id": p.id, "amount": p.amount}
 
 
 @router.get("/payroll/history/{user_id}")
-def payroll_history(user_id: int, actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
+def payroll_history(user_id: int, actor: Actor = Depends(get_actor), s: Session = Depends(get_session, scope="function")):
     return taxes.payroll_history(s, actor, user_id)
 
 
 @router.get("/payroll/quarter")
-def payroll_quarter(year: int, quarter: int, actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
+def payroll_quarter(year: int, quarter: int, actor: Actor = Depends(get_actor), s: Session = Depends(get_session, scope="function")):
     return taxes.payroll_quarter(s, actor, year, quarter)
 
 
 @router.get("/payroll/quarter.csv")
-def payroll_quarter_csv(year: int, quarter: int, actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
+def payroll_quarter_csv(year: int, quarter: int, actor: Actor = Depends(get_actor), s: Session = Depends(get_session, scope="function")):
     body, name = taxes.payroll_quarter_csv(s, actor, year, quarter)
     return Response(body.encode("utf-8"), media_type="text/csv; charset=utf-8",
                     headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(name)}"})

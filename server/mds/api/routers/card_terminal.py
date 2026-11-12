@@ -28,12 +28,12 @@ class TerminalSettingsIn(BaseModel):
 
 
 @router.get("/card-terminal/status")
-def status(actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
+def status(actor: Actor = Depends(get_actor), s: Session = Depends(get_session, scope="function")):
     return card_terminal.status(s, actor)
 
 
 @router.post("/card-payments")
-def start(body: StartIn, actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
+def start(body: StartIn, actor: Actor = Depends(get_actor), s: Session = Depends(get_session, scope="function")):
     return card_terminal.start_payment(s, actor, body.appointment_id, amount=body.amount,
                                        materials=[m.model_dump() for m in body.materials], client_name=body.client_name,
                                        products=[x.model_dump() for x in body.products], price=body.price)
@@ -45,12 +45,12 @@ def pay_on_terminal(payment_id: int, request: Request, actor: Actor = Depends(ac
 
 
 @router.get("/settings/terminal")
-def get_terminal_settings(actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
+def get_terminal_settings(actor: Actor = Depends(get_actor), s: Session = Depends(get_session, scope="function")):
     return terminal.get_settings(s, actor)
 
 
 @router.patch("/settings/terminal")
-def patch_terminal_settings(body: TerminalSettingsIn, actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
+def patch_terminal_settings(body: TerminalSettingsIn, actor: Actor = Depends(get_actor), s: Session = Depends(get_session, scope="function")):
     return terminal.update_settings(s, actor, **body.model_dump(exclude_unset=True))
 
 
@@ -67,22 +67,22 @@ def check_terminal(request: Request, actor: Actor = Depends(actor_short)):
 
 
 @router.post("/card-payments/{payment_id}/check")
-def check(payment_id: int, actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
+def check(payment_id: int, actor: Actor = Depends(get_actor), s: Session = Depends(get_session, scope="function")):
     return card_terminal.check_payment(s, actor, payment_id)
 
 
 @router.post("/card-payments/{payment_id}/cancel")
-def cancel(payment_id: int, actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
+def cancel(payment_id: int, actor: Actor = Depends(get_actor), s: Session = Depends(get_session, scope="function")):
     return card_terminal.cancel_payment(s, actor, payment_id)
 
 
 @router.get("/appointments/{appt_id}/card-payments")
-def for_appointment(appt_id: int, actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
+def for_appointment(appt_id: int, actor: Actor = Depends(get_actor), s: Session = Depends(get_session, scope="function")):
     return card_terminal.list_for_appointment(s, actor, appt_id)
 
 
 @router.post("/card-payments/{payment_id}/mock-complete")
-def mock_complete(payment_id: int, ok: bool = True, actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
+def mock_complete(payment_id: int, ok: bool = True, actor: Actor = Depends(get_actor), s: Session = Depends(get_session, scope="function")):
     from ...config import is_production
     from ...errors import Forbidden
     from ...services import card_terminal_providers as tp

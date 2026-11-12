@@ -19,36 +19,36 @@ router = APIRouter(prefix="/api/clients", tags=["clients"])
 
 @router.get("/base")
 def base(q: str = "", segment: str = "", sort: str = "name", page: int = 1, per_page: int = 50, birthdays: int | None = None,
-         actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
+         actor: Actor = Depends(get_actor), s: Session = Depends(get_session, scope="function")):
     return cb.list_clients(s, actor, q=q, segment_key=segment, sort=sort, page=page, per_page=per_page, birthdays_days=birthdays)
 
 
 @router.get("/lookup")
-def lookup(phone: str, actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
+def lookup(phone: str, actor: Actor = Depends(get_actor), s: Session = Depends(get_session, scope="function")):
     c = cb.find_by_phone(s, actor, phone)
     return {"found": bool(c), "client": client_public(c) if c else None}
 
 
 @router.get("/duplicates")
-def duplicates(actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
+def duplicates(actor: Actor = Depends(get_actor), s: Session = Depends(get_session, scope="function")):
     return cb.duplicates(s, actor)
 
 
 @router.get("/analytics")
 def analytics(date_from: date | None = None, date_to: date | None = None, actor: Actor = Depends(get_actor),
-              s: Session = Depends(get_session)):
+              s: Session = Depends(get_session, scope="function")):
     b = date_to or clock.now().date()
     return cb.analytics(s, actor, date_from or b - timedelta(days=29), b)
 
 
 @router.get("/export.csv")
-def export(actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
+def export(actor: Actor = Depends(get_actor), s: Session = Depends(get_session, scope="function")):
     return Response(cb.export_csv(s, actor), media_type="text/csv; charset=utf-8",
                     headers={"Content-Disposition": 'attachment; filename="klienty.csv"'})
 
 
 @router.get("/{client_id}/card")
-def card(client_id: int, actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
+def card(client_id: int, actor: Actor = Depends(get_actor), s: Session = Depends(get_session, scope="function")):
     return cb.card(s, actor, client_id)
 
 
@@ -67,7 +67,7 @@ class CardIn(BaseModel):
 
 
 @router.patch("/{client_id}/card")
-def update_card(client_id: int, body: CardIn, actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
+def update_card(client_id: int, body: CardIn, actor: Actor = Depends(get_actor), s: Session = Depends(get_session, scope="function")):
     cb.update_card(s, actor, client_id, body.model_dump(exclude_unset=True))
     return cb.card(s, actor, client_id)
 
@@ -77,7 +77,7 @@ class MergeIn(BaseModel):
 
 
 @router.post("/{client_id}/merge")
-def merge(client_id: int, body: MergeIn, actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
+def merge(client_id: int, body: MergeIn, actor: Actor = Depends(get_actor), s: Session = Depends(get_session, scope="function")):
     return client_public(cb.merge(s, actor, client_id, body.duplicate_id))
 
 
@@ -86,5 +86,5 @@ class ReasonIn(BaseModel):
 
 
 @router.post("/{client_id}/anonymize")
-def anonymize(client_id: int, body: ReasonIn, actor: Actor = Depends(get_actor), s: Session = Depends(get_session)):
+def anonymize(client_id: int, body: ReasonIn, actor: Actor = Depends(get_actor), s: Session = Depends(get_session, scope="function")):
     return client_public(cb.anonymize(s, actor, client_id, body.reason))
