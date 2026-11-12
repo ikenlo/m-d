@@ -87,3 +87,26 @@
 - `GET /api/sms/campaigns`, `POST /api/sms/campaigns?dry_run=1 {title, text, audience}` — розсилки
   (dry_run — лише розрахунок отримувачів і вартості).
 - `GET /api/sms/messages[?client_id]` (директор/адмін) — історія повідомлень; `POST /api/sms/test {phone}` — тестове SMS.
+
+## Ключі API для інтеграцій
+
+Для таблиць, автоматизацій та інших програм директор створює ключ у «Налаштування → Ключі API для інтеграцій».
+Повний ключ (`mds_…`) показується **один раз**; на сервері зберігається лише його хеш. Ключ можна відкликати.
+
+- Передавайте ключ у заголовку `X-Api-Key: mds_…` (або `Authorization: Bearer mds_…`).
+- Права: `read` — лише GET; `write` — читання і зміни. Дії ключа пишуться в журнал як `api:<назва ключа>`.
+- Ключ діє від імені директора, який його створив; якщо директора деактивовано, ключ перестає працювати.
+- Через ключ **недоступні**: `/api/auth`, `/api/users`, `/api/settings`, `/api/api-keys`, `/api/backups`, `/api/gdrive`,
+  `/api/employees`, `/api/payroll`, `/api/perf`, `/api/bug-report`, знеособлення/об'єднання/масове видалення клієнтів.
+
+```bash
+curl -H "X-Api-Key: mds_…" https://<сервер>/api/services
+curl -H "X-Api-Key: mds_…" "https://<сервер>/api/appointments?date_from=2026-11-10&date_to=2026-11-16"
+curl -H "X-Api-Key: mds_…" "https://<сервер>/api/orders?period=month"
+```
+
+| Метод | Хто | Що |
+|---|---|---|
+| `GET /api/api-keys` | директор (лише в панелі) | Список ключів (без самих ключів) |
+| `POST /api/api-keys` `{name, scope}` | директор | Створити; відповідь містить `key` — єдиний раз |
+| `POST /api/api-keys/{id}/revoke` | директор | Відкликати |

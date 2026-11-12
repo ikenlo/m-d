@@ -24,6 +24,13 @@ def get_user(
     creds: HTTPAuthorizationCredentials | None = Depends(bearer),
     s: Session = Depends(get_session),
 ) -> User:
+    raw_key = request.headers.get("x-api-key") or (creds.credentials if creds and creds.credentials.startswith("mds_") else None)
+    if raw_key:
+        from ..services.api_keys import authenticate
+
+        k = authenticate(s, raw_key, request.method, request.url.path)
+        request.state.api_key = k
+        return k.creator
     if creds is None:
         raise AuthError("Потрібна авторизація")
     payload = decode_token(request.app.state.config.secret_key, creds.credentials)
@@ -35,5 +42,8 @@ def get_user(
     return u
 
 
-def get_actor(u: User = Depends(get_user)) -> Actor:
+def get_actor(request: Request, u: User = Depends(get_user)) -> Actor:
+    k = getattr(request.state, "api_key", None)
+    if k is not None:
+        return Actor(u.id, f"api:{k.name}"[:64], u.role)
     return Actor.of(u)

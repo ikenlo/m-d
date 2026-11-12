@@ -709,3 +709,21 @@ class SmsMessage(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
     sent_at: Mapped[datetime | None] = mapped_column(DateTime)
     updated_at: Mapped[datetime | None] = mapped_column(DateTime)
+
+
+class ApiKey(Base):
+
+    __tablename__ = "api_keys"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(80))
+    prefix: Mapped[str] = mapped_column(String(16))
+    key_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    scope: Mapped[str] = mapped_column(String(8), default="read")
+    created_by: Mapped[int] = mapped_column(ForeignKey("users.id", name="fk_api_keys_created_by"))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime)
+    revoked_by: Mapped[int | None] = mapped_column(Integer)
+
+    creator: Mapped[User] = relationship(foreign_keys=[created_by])
