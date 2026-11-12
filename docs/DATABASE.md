@@ -42,6 +42,7 @@
 | Податки | `tax_rates`, `tax_accruals`, `tax_payments`, `payroll_accruals`, `payroll_payments`, `employee_profiles` | ставки з датами; нарахування зі сторно (`reverses_id`, `dedupe_key`) |
 | Журнали | `audit_log` | хто, коли, сутність, дія, було/стало, причина |
 | | `notifications` | черга Telegram: `sent_at`, `attempts` (до 5), `last_error` |
+| Інтеграції | `webhook_queue` | вхідні вебхуки Meta для MDs Manager (з 0.3.1, міграція 0032): `uuid` UNIQUE, `source`, `payload` JSON, `status` (`pending` за замовчуванням), `retry_count`, `error_message`, `received_at`, `processing_started_at`, `processed_at`; індекси `status`, `received_at` (D-5, D-6a) |
 | Вхід | `login_challenges`, `trusted_devices` | 2FA-коди (хеш), довірені пристрої (хеш токена, `token_version`) |
 | SMS | `sms_campaigns`, `sms_messages` | надсилання вимкнено (D-6a); історія лишається |
 | Інше | `settings` | ключ → JSON; значення перевіряє `common.update_settings` |

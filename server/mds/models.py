@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime
+from uuid import uuid4
 
 from sqlalchemy import (
     event,
@@ -875,3 +876,20 @@ class SmsMessage(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
     sent_at: Mapped[datetime | None] = mapped_column(DateTime)
     updated_at: Mapped[datetime | None] = mapped_column(DateTime)
+
+
+class WebhookQueue(Base):
+
+    __tablename__ = "webhook_queue"
+    __table_args__ = (Index("ix_webhook_queue_status", "status"), Index("ix_webhook_queue_received_at", "received_at"))
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    uuid: Mapped[str] = mapped_column(String(36), unique=True, default=lambda: str(uuid4()))
+    source: Mapped[str] = mapped_column(String(20))
+    payload: Mapped[dict] = mapped_column(JSON)
+    status: Mapped[str] = mapped_column(String(20), default="pending")
+    retry_count: Mapped[int] = mapped_column(Integer, default=0)
+    error_message: Mapped[str | None] = mapped_column(Text)
+    received_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
+    processing_started_at: Mapped[datetime | None] = mapped_column(DateTime)
+    processed_at: Mapped[datetime | None] = mapped_column(DateTime)

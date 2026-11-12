@@ -12,6 +12,11 @@
 
 ## [Невипущене]
 
+### Додано
+- Черга вхідних вебхуків Meta для MDs Manager (частина 1): таблиця `webhook_queue` (міграція `0032`), налаштування
+  `MDS_META_VERIFY_TOKEN`, `MDS_META_APP_SECRET`, `MDS_WEBHOOK_PROCESSING_TIMEOUT_MINUTES` (5 хв). Ендпоінтів ще немає.
+  Рішення директора 12.11.2026 записано в канон: D-5 (виняток — ack черги від Manager), D-6a (вебхуки Meta приймає Connect).
+
 ## [0.3.0] — 2026-11-12
 
 Реліз канону (рішення директора 11.11.2026). Правила — [docs/CANON.md](docs/CANON.md) і [docs/FINANCE.md](docs/FINANCE.md).
