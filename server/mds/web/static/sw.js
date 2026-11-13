@@ -1,5 +1,5 @@
 const CACHE = "mds-shell-v68";
-const SHELL = ["/", "/static/style.css", "/static/app.js", "/static/icon.svg", "/static/manifest.webmanifest"];
+const SHELL = ["/", "/static/style.css", "/static/h.js", "/static/store.js", "/static/app.js", "/static/icon.svg", "/static/manifest.webmanifest"];
 
 self.addEventListener("install", (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));

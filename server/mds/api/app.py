@@ -31,7 +31,7 @@ def _asset_version() -> str:
     import hashlib
 
     digest = hashlib.sha256()
-    for name in ("app.js", "style.css"):
+    for name in ("h.js", "store.js", "app.js", "style.css"):
         digest.update((STATIC / name).read_bytes())
     return f"{__version__}-{digest.hexdigest()[:10]}"
 

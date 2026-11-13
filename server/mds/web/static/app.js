@@ -9,16 +9,6 @@ if (!Element.prototype.replaceChildren) {
   DocumentFragment.prototype.replaceChildren = replaceChildren;
 }
 
-const store = {
-  get(k) { try { return localStorage.getItem(k); } catch (_) { return null; } },
-  set(k, v) { try { localStorage.setItem(k, v); } catch (_) {  } },
-  del(k) { try { localStorage.removeItem(k); } catch (_) {  } },
-};
-const sessionStore = {
-  get(k) { try { return sessionStorage.getItem(k); } catch (_) { return null; } },
-  set(k, v) { try { sessionStorage.setItem(k, v); } catch (_) {  } },
-  del(k) { try { sessionStorage.removeItem(k); } catch (_) {  } },
-};
 const session = {
   idleMin: 30, lastActive: Date.now(), issued: Date.now(),
   touch() { session.lastActive = Date.now(); },
@@ -160,24 +150,6 @@ setInterval(() => rum.flush(), 60000);
 document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") rum.flush(); });
 
 const state = { user: null, services: [], masters: [], materials: [], settings: null };
-
-function h(tag, attrs, ...children) {
-  const el = document.createElement(tag);
-  for (const [k, v] of Object.entries(attrs || {})) {
-    if (v === null || v === undefined || v === false) continue;
-    if (k === "class") el.className = v;
-    else if (k === "style" && typeof v === "object") Object.assign(el.style, v);
-    else if (k.startsWith("on")) el.addEventListener(k.slice(2), v);
-    else if (k === "value") el.value = v;
-    else if (k === "checked") el.checked = !!v;
-    else el.setAttribute(k, v === true ? "" : v);
-  }
-  for (const c of children.flat(Infinity)) {
-    if (c === null || c === undefined || c === false) continue;
-    el.append(c instanceof Node ? c : document.createTextNode(String(c)));
-  }
-  return el;
-}
 
 const money = (k) => {
   const v = (k || 0) / 100;
