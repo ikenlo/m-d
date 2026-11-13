@@ -23,6 +23,8 @@ jobs:
         run: ruff check mds tests
       - name: JS syntax
         run: |
+          node --check mds/web/static/h.js
+          node --check mds/web/static/store.js
           node --check mds/web/static/app.js
       - name: Tests
         run: python -m pytest
