@@ -45,7 +45,7 @@
 
 ## Наступна — 0.3.3 (прибирання після 0.3.0)
 
-- [x] Видалити застарілі колонки `users.materials_mode`, `orders.materials_mode`, `orders.share_bp` новою міграцією ([FINANCE.md](FINANCE.md) «Застаріле»). — міграція `0034`.
+- [x] Видалити застарілі колонки `users.materials_mode`, `orders.materials_mode`, `orders.share_bp` новою міграцією ([FINANCE.md](FINANCE.md) «Застаріле») — міграція `0034`.
 - [ ] Архівувати й видалити таблицю `master_charges` після відповіді директора на Q-1 ([CANON.md](CANON.md) §2).
 - [ ] Вирішити долю невикористаної таблиці `expense_files`: видалити або використати ([DATABASE.md](DATABASE.md)).
 - [ ] Переглянути з директором тимчасові варіанти Q-1…Q-11 і записати рішення в CANON.md.

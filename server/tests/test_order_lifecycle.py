@@ -206,6 +206,10 @@ def test_migration_keeps_past_orders_unchanged(tmp_path):
     upgrade(url)
     with eng.connect() as c:
         row = c.execute(text("SELECT price_snapshot, amount, master_rate_bp, status, master_earning, salon_earning, "
-                             "materials_not_entered, version, share_bp, materials_mode FROM orders")).one()
-        assert tuple(row) == (80000, 80000, 4000, "completed", 29600, 44400, 1, 1, 4000, "split")
+                             "materials_not_entered, version FROM orders")).one()
+        assert tuple(row) == (80000, 80000, 4000, "completed", 29600, 44400, 1, 1)
         assert c.execute(text("SELECT master_rate_bp FROM users ORDER BY id")).scalars().all() == [4000, 5000]
+        order_cols = {r[1] for r in c.execute(text("PRAGMA table_info(orders)"))}
+        user_cols = {r[1] for r in c.execute(text("PRAGMA table_info(users)"))}
+        assert "share_bp" not in order_cols and "materials_mode" not in order_cols
+        assert "materials_mode" not in user_cols

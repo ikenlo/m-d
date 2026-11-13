@@ -20,7 +20,7 @@
 
 | Група | Таблиця | Ключове |
 |---|---|---|
-| Персонал | `users` | `role` (`director`, `master`; колишні `admin` → `director`, міграція 0027), `token_version`, `failed_logins`/`locked_until`, `bot_pin_hash`, `booking_lock` (лічильник для блокування рядка), графік JSON, `master_rate_bp` (5000; колишній `share_bp`), `finance_pin_hash`; `materials_mode` — застаріле, не читається |
+| Персонал | `users` | `role` (`director`, `master`; колишні `admin` → `director`, міграція 0027), `token_version`, `failed_logins`/`locked_until`, `bot_pin_hash`, `booking_lock` (лічильник для блокування рядка), графік JSON, `master_rate_bp` (5000; колишній `share_bp`), `finance_pin_hash` (`materials_mode` видалено міграцією `0034`) |
 | | `master_services` | які послуги виконує майстер |
 | Каталог | `services` | ціна (коп.), тривалість, `price_from` («від»), `needs_materials`, розділ/тип/вид |
 | | `materials` | одиниця г/мл/шт, упаковка (`pack_size`), `unit_cost` (ціна упаковки), `stock_milli`, мінімум. `markup_bp` |
@@ -29,7 +29,7 @@
 | | `callback_requests` | заявки «передзвоніть» |
 | Календар | `appointments` | майстер, послуга, `starts_at`/`ends_at`, `price`, `status`, `source`, `version` |
 | | `schedule_days` | винятки графіка на дату, UNIQUE(master, day) |
-| Гроші | `orders` | UNIQUE `appointment_id`, UNIQUE `idempotency_key`, `amount`, `materials_cost`, `payment_method`, знімок `share_bp`/`materials_mode`, `master_earning`, `salon_earning`, `revision`, хто закрив/редагував |
+| Гроші | `orders` | UNIQUE `appointment_id`, UNIQUE `idempotency_key`, `amount`, `materials_cost`, `payment_method`, `price_snapshot`, `master_rate_bp` (колишній знімок `share_bp` перенесено в `0026`; колонки `share_bp`/`materials_mode` видалено в `0034`), `master_earning`, `salon_earning`, `revision`, хто закрив/редагував |
 | | `order_materials` | рядки матеріалів: `qty` (тисячні), `unit_cost`, `total` — знімок на момент закриття |
 | | `shifts` | `open → closed → paid`, `report` (знімок JSON), `payout_due` |
 | | `payouts` | UNIQUE `shift_id` (може бути NULL — довільна виплата), `cash_shift_id` (взято з каси), `method` |
@@ -73,7 +73,7 @@
 | `users.finance_pin_hash`, `auth_throttle` | PIN «Фінансів»; лічильники спроб (бот: користувач і чат; IP; PIN фінансів) у БД (D-7) |
 | `expenses.archived_at` | разом із `is_deleted` (архів, не видалення) |
 | `notifications` | + `user_id`, `kind`, `level`, `group_key`, `dedupe_key`, `digest_pending`, `read_at`, `handled_at/by` |
-| `materials_mode`, `orders.share_bp`, `master_charges` | лишаються до 0.3.3, потім видаляються |
+| `materials_mode`, `orders.share_bp` | видалено міграцією `0034`; `master_charges` лишається до рішення Q-1 |
 
 Гілка `feat/ext-api-md-manager` (міграція `0025`, `appointment_attribution`) застаріла: read-only API 0.3.0 нових таблиць
 не потребує. Не зливати.
