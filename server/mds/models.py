@@ -32,14 +32,6 @@ class Role:
     ALL = (DIRECTOR, MASTER)
 
 
-class MaterialsMode:
-
-    SALON = "salon"
-    MASTER = "master"
-    SPLIT = "split"
-    ALL = (SALON, MASTER, SPLIT)
-
-
 class ApptStatus:
     PENDING = "pending"
     CONFIRMED = "confirmed"
@@ -121,7 +113,6 @@ class User(Base):
     role: Mapped[str] = mapped_column(String(16))
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     master_rate_bp: Mapped[int] = mapped_column(Integer, default=5000, server_default="5000")
-    materials_mode: Mapped[str | None] = mapped_column(String(16))
     schedule: Mapped[dict | None] = mapped_column(JSON)
     telegram_chat_id: Mapped[int | None] = mapped_column(BigInteger)
     telegram_link_code: Mapped[str | None] = mapped_column(String(16), unique=True)
@@ -350,8 +341,6 @@ class Order(Base):
     materials_not_entered: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
     version: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
     __mapper_args__ = {"version_id_col": version}
-    share_bp: Mapped[int | None] = mapped_column(Integer)
-    materials_mode: Mapped[str | None] = mapped_column(String(16))
     master_earning: Mapped[int] = mapped_column(Integer)
     salon_earning: Mapped[int] = mapped_column(Integer)
     closed_at: Mapped[datetime] = mapped_column(DateTime, default=_now)
@@ -605,7 +594,6 @@ __all__ = [
     "Material",
     "ScheduleDay",
     "StockMove",
-    "MaterialsMode",
     "GeneratorRun",
     "MasterCharge",
     "MeterReading",
