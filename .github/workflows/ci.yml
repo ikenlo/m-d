@@ -46,6 +46,8 @@ jobs:
         run: |
           npm install --no-save --no-package-lock playwright@1.48.2
           npx playwright install --with-deps chromium
+      - name: Звук кліку не ламає кнопки
+        run: node ui-tests/click_sound.js
       - name: Демо-база і сервер
         env:
           MDS_ENV: test

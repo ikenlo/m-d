@@ -38,6 +38,48 @@ const session = {
 ["pointerdown", "keydown", "touchstart"].forEach((ev) => document.addEventListener(ev, session.touch, { passive: true }));
 setInterval(() => session.tick(), 60000);
 
+let clickAudio = null;
+let lastUiTick = 0;
+
+function uiSoundsEnabled() {
+  try { return localStorage.getItem("ui_sounds") !== "false"; } catch (_) { return true; }
+}
+
+function playClickSound() {
+  const AC = window.AudioContext || window.webkitAudioContext;
+  if (!AC) return;
+  if (!clickAudio) clickAudio = new AC();
+  if (clickAudio.state === "suspended") clickAudio.resume();
+  const t = clickAudio.currentTime;
+  const osc = clickAudio.createOscillator();
+  const gain = clickAudio.createGain();
+  osc.type = "sine";
+  osc.frequency.setValueAtTime(800, t);
+  gain.gain.setValueAtTime(0.05, t);
+  gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.05);
+  osc.connect(gain);
+  gain.connect(clickAudio.destination);
+  osc.start(t);
+  osc.stop(t + 0.05);
+}
+
+function triggerHaptic() {
+  if (typeof navigator.vibrate === "function") navigator.vibrate(10);
+}
+
+function onUiTick(e) {
+  const el = e.target.closest && e.target.closest("button, .btn, .tab, .nav-item, nav.nav a, nav.tabbar a");
+  if (!el || el.disabled) return;
+  if (!uiSoundsEnabled()) return;
+  const now = Date.now();
+  if (now - lastUiTick < 300) return;
+  lastUiTick = now;
+  try { playClickSound(); } catch (_) {  }
+  try { triggerHaptic(); } catch (_) {  }
+}
+document.addEventListener("click", onUiTick);
+document.addEventListener("touchstart", onUiTick, { passive: true });
+
 let finPinOpen = null;
 function financePinPrompt(setup) {
   if (finPinOpen) return finPinOpen;
@@ -2337,7 +2379,10 @@ VIEWS.profile = async (main) => {
       h("div", { class: "row" },
         h("button", { class: "btn", onclick: toggleTheme }, icon(dark ? "sun" : "moon", "sm"), dark ? "Світла тема" : "Темна тема"),
         h("button", { class: "btn", onclick: bugReportForm }, icon("bug", "sm"), "Повідомити про помилку"),
-        h("button", { class: "btn danger", onclick: logout }, icon("logout", "sm"), "Вийти"))),
+        h("button", { class: "btn danger", onclick: logout }, icon("logout", "sm"), "Вийти")),
+      h("label", { class: "row" },
+        h("input", { type: "checkbox", checked: uiSoundsEnabled(), onchange() { try { localStorage.setItem("ui_sounds", this.checked); } catch (_) {  } } }),
+        "Звуки та вібрація інтерфейсу")),
     h("div", { class: "card stack" }, h("h3", {}, "Сповіщення в Telegram"),
       h("p", { class: "muted", style: { margin: 0 } }, u.telegram_linked ? "Telegram підключено ✓" : "Увійдіть у бот через «Для майстрів» з PIN — або отримайте код і надішліть боту: /link КОД"),
       code,
